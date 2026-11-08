@@ -223,7 +223,13 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
             <mesh geometry={headGeo} position={[0, 2.0, 0]} castShadow>
               <meshStandardMaterial color="#e8d4bc" roughness={0.8} />
             </mesh>
-            {labelIds.includes(id) && (
+            {world.player.followedCharacterId === id && (
+              <mesh position={[0, 3.4, 0]} rotation={[0, 0, Math.PI / 4]}>
+                <boxGeometry args={[0.45, 0.45, 0.45]} />
+                <meshBasicMaterial color="#6fd6ff" />
+              </mesh>
+            )}
+            {(labelIds.includes(id) || world.player.followedCharacterId === id) && (
               <Html center position={[0, 2.9, 0]} distanceFactor={14} style={{ pointerEvents: 'none' }} zIndexRange={[6, 0]}>
                 <div className="npc-label">
                   <b>{c.givenName}</b>

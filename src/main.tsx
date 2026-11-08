@@ -17,7 +17,7 @@ createRoot(document.getElementById('root')!).render(
 // Small debugging/automation surface (used by the end-to-end script).
 import('./state/store').then((store) =>
   import('./explorer/explorerStore').then((ex) => {
-    (window as unknown as { __genesis: unknown }).__genesis = { store, player: ex.playerState, commands: ex.playerCommands };
+    (window as unknown as { __genesis: unknown }).__genesis = { store, player: ex.playerState, commands: ex.playerCommands, npcs: ex.npcPositions, explorer: ex.useExplorer };
   }),
 );
 

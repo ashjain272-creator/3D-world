@@ -179,7 +179,7 @@ function Galaxy({ onSelect, version }: { onSelect: (id: string) => void; version
   return (
     <group ref={group}>
       <points geometry={geo}>
-        <pointsMaterial size={2.4} sizeAttenuation vertexColors map={glowSprite()} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.9} />
+        <pointsMaterial size={3.2} sizeAttenuation vertexColors map={glowSprite()} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.95} />
       </points>
       <points geometry={neb}>
         <pointsMaterial size={70} sizeAttenuation vertexColors map={glowSprite()} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.06} />
@@ -230,7 +230,7 @@ function SystemMarker({ sys, world, onSelect }: { sys: StarSystem; world: World;
           <meshBasicMaterial color={c} transparent opacity={0.8} side={THREE.DoubleSide} />
         </mesh>
       ))}
-      <Html center distanceFactor={420} position={[0, 16, 0]} style={{ pointerEvents: 'none' }} zIndexRange={[10, 0]}>
+      <Html center position={[0, 16, 0]} style={{ pointerEvents: 'none' }} zIndexRange={[10, 0]}>
         <div className={`map-label ${hover ? 'on' : ''}`}>
           <span>{sys.name}</span>
           <small>
@@ -333,7 +333,7 @@ function OrbitingPlanet({ planet, radius, world, onSelect }: { planet: Planet; r
           <meshStandardMaterial map={tex.color} roughness={0.9} metalness={0} />
         </mesh>
         {planet.hasRings && <Rings size={size} color={planet.palette.mid} />}
-        <Html center distanceFactor={70} position={[0, size + 1.6, 0]} style={{ pointerEvents: 'none' }} zIndexRange={[10, 0]}>
+        <Html center position={[0, size + 1.6, 0]} style={{ pointerEvents: 'none' }} zIndexRange={[10, 0]}>
           <div className={`map-label ${hover ? 'on' : ''}`}>
             <span>{planet.name}</span>
             {civ.length > 0 && <small style={{ color: civ[0].color }}>{civ.map((c) => c.adjective).join(' · ')}</small>}
@@ -388,14 +388,26 @@ void main() {
   vView = normalize(-mv.xyz);
   gl_Position = projectionMatrix * mv;
 }`;
+// Outer halo, rendered on the back faces of a slightly larger shell: brightest
+// just outside the planet's limb, fading to nothing at the shell's edge.
 const atmosphereFragment = `
 uniform vec3 uColor;
 uniform float uPower;
 varying vec3 vNormal;
 varying vec3 vView;
 void main() {
-  float f = pow(1.0 - max(dot(vNormal, vView), 0.0), uPower);
-  gl_FragColor = vec4(uColor, f * 0.9);
+  float d = dot(normalize(vNormal), normalize(vView));
+  float glow = pow(clamp(-d / 0.36, 0.0, 1.0), uPower);
+  gl_FragColor = vec4(uColor, glow * 0.85);
+}`;
+// Inner limb haze on the planet itself.
+const hazeFragment = `
+uniform vec3 uColor;
+varying vec3 vNormal;
+varying vec3 vView;
+void main() {
+  float f = pow(1.0 - max(dot(normalize(vNormal), normalize(vView)), 0.0), 3.0);
+  gl_FragColor = vec4(uColor, f * 0.55);
 }`;
 
 function PlanetView({
@@ -488,7 +500,7 @@ function PlanetView({
               <sprite scale={[size * 9, size * 9, 1]}>
                 <spriteMaterial map={glowSprite()} color={civ?.color ?? '#fff'} transparent opacity={sel ? 0.9 : 0.55} blending={THREE.AdditiveBlending} depthWrite={false} />
               </sprite>
-              <Html center distanceFactor={26} position={[d[0] * 1.2, d[1] * 1.2, d[2] * 1.2]} style={{ pointerEvents: 'none' }} occlude={false} zIndexRange={[10, 0]}>
+              <Html center position={[d[0] * 1.2, d[1] * 1.2, d[2] * 1.2]} style={{ pointerEvents: 'none' }} occlude={false} zIndexRange={[10, 0]}>
                 <div className={`map-label small ${sel ? 'on' : ''}`}>
                   <span>{s.name}</span>
                 </div>
@@ -498,12 +510,18 @@ function PlanetView({
         })}
       </group>
       {planet.atmosphere.pressure > 0.05 && (
+        <mesh scale={1.012}>
+          <sphereGeometry args={[R, 64, 48]} />
+          <shaderMaterial vertexShader={atmosphereVertex} fragmentShader={hazeFragment} uniforms={{ uColor: { value: new THREE.Color(planet.palette.atmosphere) } }} transparent blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+      )}
+      {planet.atmosphere.pressure > 0.05 && (
         <mesh scale={1.06}>
           <sphereGeometry args={[R, 64, 48]} />
           <shaderMaterial
             vertexShader={atmosphereVertex}
             fragmentShader={atmosphereFragment}
-            uniforms={{ uColor: { value: new THREE.Color(planet.palette.atmosphere) }, uPower: { value: planet.atmosphere.pressure > 1.5 ? 2.2 : 3.2 } }}
+            uniforms={{ uColor: { value: new THREE.Color(planet.palette.atmosphere) }, uPower: { value: planet.atmosphere.pressure > 1.5 ? 1.4 : 2.2 } }}
             transparent
             blending={THREE.AdditiveBlending}
             side={THREE.BackSide}
@@ -552,7 +570,7 @@ function Moon({ index, radius, orbit, color, name }: { index: number; radius: nu
           <sphereGeometry args={[radius, 32, 24]} />
           <meshStandardMaterial color={color} roughness={1} />
         </mesh>
-        <Html center distanceFactor={40} position={[0, radius + 0.9, 0]} style={{ pointerEvents: 'none' }} zIndexRange={[10, 0]}>
+        <Html center position={[0, radius + 0.9, 0]} style={{ pointerEvents: 'none' }} zIndexRange={[10, 0]}>
           <div className="map-label small faint">
             <span>{name}</span>
           </div>

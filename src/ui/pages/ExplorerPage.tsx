@@ -74,7 +74,8 @@ function Explorer({ target }: { target: Target }) {
   const [discovered, setDiscovered] = useState<string[]>(() => [...w.player.discoveredLandmarkIds]);
 
   useEffect(() => {
-    const id = window.setTimeout(() => setReady(true), 350);
+    // fallback in case the renderer is slow to report its first frames
+    const id = window.setTimeout(() => setReady(true), 4000);
     return () => window.clearTimeout(id);
   }, []);
 
@@ -161,7 +162,7 @@ function Explorer({ target }: { target: Target }) {
 
   return (
     <div className="canvas-wrap" data-testid="explorer-page">
-      <ExplorerScene planet={planet} system={system} settlement={settlement} terrain={terrain} layout={layout} civColor={civColor} locationKey={target.key} onInteract={interact} onPick={pick} />
+      <ExplorerScene planet={planet} system={system} settlement={settlement} terrain={terrain} layout={layout} civColor={civColor} locationKey={target.key} onInteract={interact} onPick={pick} onReady={() => setReady(true)} />
       <div className="loading-veil" style={{ opacity: ready ? 0 : 1, pointerEvents: 'none' }}>
         <div style={{ textAlign: 'center' }}>
           <div className="eyebrow">Descending to</div>

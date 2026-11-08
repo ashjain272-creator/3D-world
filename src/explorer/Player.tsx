@@ -96,7 +96,7 @@ export function Player({ t, layout, onInteract, spawnKey }: { t: TerrainData; la
 
   const tmp = useRef(new THREE.Vector3());
   useFrame((_, rawDt) => {
-    const dt = Math.min(rawDt, 0.05);
+    const dt = Math.min(rawDt, 0.12);
     const s = st.current;
     const k = keys.current;
     const frozen = !!talking;

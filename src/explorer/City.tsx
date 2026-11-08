@@ -568,7 +568,7 @@ function LandmarkModel({ l, y, style, civColor, shadows }: { l: PlacedLandmark; 
   return (
     <group position={[l.x, y, l.z]}>
       {body}
-      <Html center position={[0, l.kind === 'spire' ? 150 : 26, 0]} distanceFactor={90} style={{ pointerEvents: 'none' }} zIndexRange={[5, 0]}>
+      <Html center position={[0, l.kind === 'spire' ? 150 : 26, 0]} style={{ pointerEvents: 'none' }} zIndexRange={[5, 0]}>
         <div className="poi-label">
           <i />
           {l.name}

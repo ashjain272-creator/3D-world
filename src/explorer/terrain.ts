@@ -1,0 +1,147 @@
+import { createNoise2D } from 'simplex-noise';
+import { Rng, clamp, hashInts } from '../sim/rng';
+import type { Biome, Planet } from '../sim/types';
+
+export const WORLD_SIZE = 720;
+export const TERRAIN_RES = 144;
+
+export interface BiomeLook {
+  amplitude: number;
+  roughness: number;
+  water: number | null; // water level height or null
+  low: string;
+  mid: string;
+  high: string;
+  cliff: string;
+  sand: string;
+  vegetation: 'conifer' | 'broadleaf' | 'jungle' | 'cactus' | 'sparse' | 'none';
+  density: number;
+  grassColor: string;
+}
+
+const LOOKS: Record<Biome, BiomeLook> = {
+  grassland: { amplitude: 14, roughness: 0.5, water: -2.5, low: '#5d8a3e', mid: '#6f9848', high: '#8a8f5c', cliff: '#7a6f60', sand: '#c8b98a', vegetation: 'broadleaf', density: 0.45, grassColor: '#79a24a' },
+  forest: { amplitude: 22, roughness: 0.55, water: -3, low: '#3f6b33', mid: '#4b7a3a', high: '#6b7356', cliff: '#6e665c', sand: '#bfae80', vegetation: 'conifer', density: 1, grassColor: '#4f7f3a' },
+  jungle: { amplitude: 26, roughness: 0.6, water: -2, low: '#2f6a2c', mid: '#3a7d33', high: '#56703e', cliff: '#5a5a48', sand: '#b8a874', vegetation: 'jungle', density: 1.1, grassColor: '#3d8a33' },
+  coast: { amplitude: 12, roughness: 0.45, water: 0.5, low: '#c9b98a', mid: '#7a9a50', high: '#6f8a4a', cliff: '#8a7a68', sand: '#ddc995', vegetation: 'broadleaf', density: 0.4, grassColor: '#86a654' },
+  desert: { amplitude: 16, roughness: 0.35, water: null, low: '#d4a86a', mid: '#dcb47a', high: '#c08a55', cliff: '#a5704a', sand: '#e2c08a', vegetation: 'cactus', density: 0.18, grassColor: '#c9a46a' },
+  tundra: { amplitude: 12, roughness: 0.45, water: -3, low: '#8a9078', mid: '#9aa088', high: '#b8bcae', cliff: '#7e7a72', sand: '#b0aa94', vegetation: 'sparse', density: 0.22, grassColor: '#9aa284' },
+  ice: { amplitude: 18, roughness: 0.5, water: null, low: '#dfe8f0', mid: '#eef4f8', high: '#ffffff', cliff: '#a8b8c8', sand: '#e6eef4', vegetation: 'none', density: 0, grassColor: '#e8f0f6' },
+  mountain: { amplitude: 60, roughness: 0.62, water: -6, low: '#5f7346', mid: '#7a7a68', high: '#c8c8c8', cliff: '#6a645c', sand: '#a89a80', vegetation: 'conifer', density: 0.5, grassColor: '#62774a' },
+  volcanic: { amplitude: 30, roughness: 0.6, water: null, low: '#2a2422', mid: '#3a302c', high: '#4a3c34', cliff: '#1e1a18', sand: '#3c3430', vegetation: 'none', density: 0, grassColor: '#3a302c' },
+  wasteland: { amplitude: 16, roughness: 0.5, water: null, low: '#8a7a64', mid: '#9a8a70', high: '#a8987c', cliff: '#6e6050', sand: '#b0a088', vegetation: 'sparse', density: 0.1, grassColor: '#9a8a70' },
+  ocean: { amplitude: 8, roughness: 0.4, water: 2, low: '#c9b98a', mid: '#a0a070', high: '#7a8a5a', cliff: '#8a7a68', sand: '#ddc995', vegetation: 'broadleaf', density: 0.25, grassColor: '#8aa060' },
+};
+
+export function biomeLook(b: Biome, planet: Planet): BiomeLook {
+  const base = { ...LOOKS[b] };
+  // Arctic and cold worlds frost the palette; desert worlds dry it.
+  const temp = planet.baseTemperature + planet.environment.temperatureOffset;
+  if (temp < -10 && b !== 'ice') {
+    base.mid = '#d8e2ea';
+    base.high = '#f4f8fb';
+    base.low = mixHex(base.low, '#dfe8ef', 0.6);
+    base.grassColor = '#cfd9e0';
+    base.water = null;
+  }
+  if (planet.type === 'volcanic' || planet.type === 'barren') base.water = null;
+  return base;
+}
+
+export function mixHex(a: string, b: string, t: number): string {
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  const r = Math.round(((pa >> 16) & 255) * (1 - t) + ((pb >> 16) & 255) * t);
+  const g = Math.round(((pa >> 8) & 255) * (1 - t) + ((pb >> 8) & 255) * t);
+  const bl = Math.round((pa & 255) * (1 - t) + (pb & 255) * t);
+  return `#${((r << 16) | (g << 8) | bl).toString(16).padStart(6, '0')}`;
+}
+
+export interface TerrainData {
+  size: number;
+  res: number;
+  heights: Float32Array; // (res+1)^2
+  look: BiomeLook;
+  waterLevel: number | null;
+  flatRadius: number;
+  flatHeight: number;
+  seed: number;
+  height: (x: number, z: number) => number;
+  slope: (x: number, z: number) => number;
+}
+
+/**
+ * Generate a local heightfield for a region. Deterministic per planet+region.
+ * A circular zone around the origin is flattened for settlements.
+ */
+export function generateTerrain(planet: Planet, regionIndex: number, biome: Biome, flatRadius: number): TerrainData {
+  const seed = hashInts(planet.seed, regionIndex, 77);
+  const rng = new Rng(seed);
+  const n2 = createNoise2D(() => rng.next());
+  const look = biomeLook(biome, planet);
+  const size = WORLD_SIZE;
+  const res = TERRAIN_RES;
+  const heights = new Float32Array((res + 1) * (res + 1));
+  const ridged = biome === 'mountain' || biome === 'volcanic';
+  const dunes = biome === 'desert';
+  const raw = (x: number, z: number) => {
+    let a = 1,
+      f = 1 / 260,
+      s = 0,
+      norm = 0;
+    for (let o = 0; o < 5; o++) {
+      let v = n2(x * f, z * f);
+      if (ridged && o < 3) v = 1 - Math.abs(v) * 2;
+      s += v * a;
+      norm += a;
+      a *= look.roughness;
+      f *= 2.1;
+    }
+    let h = (s / norm) * look.amplitude;
+    if (dunes) h += Math.sin((x + n2(x / 90, z / 90) * 60) / 22) * 2.2;
+    // Edge mountains frame the playable area.
+    const edge = Math.max(Math.abs(x), Math.abs(z)) / (size / 2);
+    if (edge > 0.72) h += Math.pow((edge - 0.72) / 0.28, 2) * look.amplitude * 1.6 + 8;
+    return h;
+  };
+  // Settlement plateau height = average around centre, kept above water.
+  let flatHeight = 0;
+  for (let i = 0; i < 16; i++) flatHeight += raw(Math.cos(i) * flatRadius * 0.5, Math.sin(i) * flatRadius * 0.5);
+  flatHeight /= 16;
+  if (look.water !== null) flatHeight = Math.max(flatHeight, look.water + 2.5);
+  const shaped = (x: number, z: number) => {
+    const h = raw(x, z);
+    if (flatRadius <= 0) return h;
+    const d = Math.sqrt(x * x + z * z);
+    const t = clamp((d - flatRadius) / 70, 0, 1);
+    const s = t * t * (3 - 2 * t);
+    return flatHeight + (h - flatHeight) * s;
+  };
+  const step = size / res;
+  for (let j = 0; j <= res; j++) {
+    for (let i = 0; i <= res; i++) {
+      heights[j * (res + 1) + i] = shaped(-size / 2 + i * step, -size / 2 + j * step);
+    }
+  }
+  const height = (x: number, z: number) => {
+    const fx = clamp((x + size / 2) / step, 0, res - 0.001);
+    const fz = clamp((z + size / 2) / step, 0, res - 0.001);
+    const i = Math.floor(fx);
+    const j = Math.floor(fz);
+    const tx = fx - i;
+    const tz = fz - j;
+    const r = res + 1;
+    const h00 = heights[j * r + i];
+    const h10 = heights[j * r + i + 1];
+    const h01 = heights[(j + 1) * r + i];
+    const h11 = heights[(j + 1) * r + i + 1];
+    return h00 * (1 - tx) * (1 - tz) + h10 * tx * (1 - tz) + h01 * (1 - tx) * tz + h11 * tx * tz;
+  };
+  const slope = (x: number, z: number) => {
+    const e = 2;
+    const dx = height(x + e, z) - height(x - e, z);
+    const dz = height(x, z + e) - height(x, z - e);
+    return Math.sqrt(dx * dx + dz * dz) / (2 * e);
+  };
+  return { size, res, heights, look, waterLevel: look.water, flatRadius, flatHeight, seed, height, slope };
+}

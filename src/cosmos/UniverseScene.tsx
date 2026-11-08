@@ -118,7 +118,7 @@ function useGalaxyGeometry(world: World) {
         const th = rng.range(0, Math.PI * 2);
         x = Math.cos(th) * r;
         z = Math.sin(th) * r * 0.85;
-        y = rng.normal(0, 14 * (1 - r / 140));
+        y = rng.normal(0, Math.min(12 * (1 - r / 140), r * 0.35 + 2.5));
         c.copy(core).lerp(arm, r / 260);
       } else {
         const armI = rng.int(0, g.arms - 1);

@@ -88,8 +88,10 @@ export function scoreActivities(world: World, rng: Rng, c: Character, now: numbe
     c.occupation === 'student' ? 'attending school' : `curiosity ${(p.openness * 100).toFixed(0)}`,
     ...(bias.study ? ['pursuing a goal'] : []),
   ]);
-  const others = socialTargets(world, c);
-  if (others.length && !(night && h < 5)) {
+  // Only look for company when it could plausibly win (keeps decisions cheap).
+  const wantsCompany = d(n.social) > 0.2 || evening || (bias.socialize ?? 0) > 0;
+  const others = wantsCompany && !(night && h < 5) ? socialTargets(world, c) : [];
+  if (others.length) {
     const target = rng.weighted(others, (o) => 1 + Math.max(0, (c.relationships[o.id]?.affinity ?? 0) + 20) / 20 + (c.relationships[o.id]?.kind === 'partner' ? 4 : 0));
     push('socialize', d(n.social) * (0.35 + p.extraversion * 0.85) + (evening ? 0.28 : 0) + (bias.socialize ?? 0), [`social need ${n.social.toFixed(0)}`, `extraversion ${(p.extraversion * 100).toFixed(0)}`, ...(evening ? ['evening'] : [])], target.id);
   }
@@ -112,6 +114,27 @@ export function scoreActivities(world: World, rng: Rng, c: Character, now: numbe
   return cands.sort((a, b) => b.score - a.score);
 }
 
+/** Living residents grouped by settlement, rebuilt daily or when the roster changes. */
+let residentCache: { world: World | null; day: number; count: number; map: Map<string, Character[]> } = { world: null, day: -1, count: -1, map: new Map() };
+
+function residents(world: World, settlementId: string): Character[] {
+  const day = Math.floor(world.time / MINUTES_PER_DAY);
+  let count = 0;
+  for (const _ in world.characters) count++;
+  if (residentCache.world !== world || residentCache.day !== day || residentCache.count !== count) {
+    const map = new Map<string, Character[]>();
+    for (const id in world.characters) {
+      const ch = world.characters[id];
+      if (!ch.alive) continue;
+      const list = map.get(ch.settlementId);
+      if (list) list.push(ch);
+      else map.set(ch.settlementId, [ch]);
+    }
+    residentCache = { world, day, count, map };
+  }
+  return residentCache.map.get(settlementId) ?? [];
+}
+
 function socialTargets(world: World, c: Character): Character[] {
   const out: Character[] = [];
   for (const id of Object.keys(c.relationships)) {
@@ -121,7 +144,7 @@ function socialTargets(world: World, c: Character): Character[] {
   if (out.length < 4) {
     // meet new people in town (bounded scan)
     let found = 0;
-    for (const o of Object.values(world.characters)) {
+    for (const o of residents(world, c.settlementId)) {
       if (found >= 4) break;
       if (o.alive && o.id !== c.id && o.settlementId === c.settlementId && !c.relationships[o.id] && isAvailable(o, world.time)) {
         out.push(o);

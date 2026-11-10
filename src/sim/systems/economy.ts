@@ -2,7 +2,8 @@ import type { Rng } from '../rng';
 import { clamp } from '../rng';
 import { GOVERNMENTS, POLICIES, SPECIALIZATION_OUTPUT } from '../data/society';
 import { GOODS, type Civilization, type Good, type Planet, type Settlement, type Specialization, type World } from '../types';
-import { getRelation, recordEvent } from '../world';
+import { causeKey, gatherCauses, getRelation, lastCause, noteCause, recordEvent } from '../world';
+import { MINUTES_PER_YEAR } from '../time';
 import type { Modifiers } from './technology';
 
 /** Baseline output per million employed per day, before specialisation. */
@@ -142,13 +143,15 @@ function trackShortages(world: World, civ: Civilization): void {
     if (!civ.conditions[key] && days < 3 && deficit) {
       civ.conditions[key] = 1;
       const planet = world.planets[civ.homeworldId];
-      const causeIds: string[] = [];
+      const K = (t: string) => causeKey.civ(civ.id, t);
+      const causeIds: (string | undefined)[] = [];
       let cause = `${g} production (${e.production[g].toFixed(2)}/day) fell below consumption (${e.consumption[g].toFixed(2)}/day) and reserves ran out.`;
       if (g === 'food' && planet.environment.disturbanceEventId && planet.environment.disturbanceDays > 0) {
         causeIds.push(planet.environment.disturbanceEventId);
         cause += ` Crop yields were reduced by the ${planet.environment.disturbance}.`;
       }
-      if (civ.causeLinks.leader_policy) causeIds.push(civ.causeLinks.leader_policy);
+      causeIds.push(...gatherCauses(world, [K(g === 'food' ? 'th_granaries' : `th_chronic_${g}`), K('disturbance'), K('th_housing'), K('retool'), K('disaster'), K('policy')], 3, 2 * MINUTES_PER_YEAR));
+      if (!causeIds.some(Boolean)) causeIds.push(lastCause(world, K('th_deficit')) ?? lastCause(world, K('leader')));
       const ev = recordEvent(world, {
         category: 'economy',
         title: g === 'food' ? `Famine grips the ${civ.name}` : `${cap(g)} shortage in the ${civ.name}`,
@@ -156,28 +159,30 @@ function trackShortages(world: World, civ: Civilization): void {
         importance: g === 'food' ? 4 : 3,
         civIds: [civ.id],
         cause,
-        causeIds: causeIds.slice(0, 2),
+        causeIds: causeIds.slice(0, 4),
         effects: [
           { label: `${cap(g)} price`, before: '1.0×', after: `${e.prices[g].toFixed(2)}×` },
           { label: 'Satisfaction', after: 'falling' },
         ],
       });
-      civ.causeLinks[key] = ev.id;
+      noteCause(world, [K(key), K('shortage'), K('disaster')], ev.id);
     } else if (civ.conditions[key]) {
       civ.conditions[key] += 1;
       if (days > 12) {
         const dur = civ.conditions[key];
         delete civ.conditions[key];
-        recordEvent(world, {
+        const K = (t: string) => causeKey.civ(civ.id, t);
+        const end = recordEvent(world, {
           category: 'economy',
           title: g === 'food' ? `Famine ends in the ${civ.name}` : `${cap(g)} shortage eases in the ${civ.name}`,
           description: `After ${dur} days, reserves of ${g} have recovered.`,
           importance: 2,
           civIds: [civ.id],
           cause: `Production and trade restored ${days.toFixed(0)} days of ${g} reserves.`,
-          causeIds: civ.causeLinks[key] ? [civ.causeLinks[key]] : [],
+          causeIds: [lastCause(world, K(key)), ...gatherCauses(world, [K('disturbance_end'), K('retool'), K('trade'), K('policy_agrarian_subsidies'), K('policy_industrial_drive')], 2, MINUTES_PER_YEAR)],
           effects: [{ label: `${cap(g)} reserves`, after: `${days.toFixed(0)} days` }],
         });
+        noteCause(world, [K(`shortage_end_${g}`), K('shortage_end')], end.id);
       }
     }
   }
@@ -250,16 +255,19 @@ export function structuralTick(world: World, rng: Rng, civ: Civilization): void 
   else if (e.treasury < 0 && e.taxRate < 0.45) e.taxRate = Math.min(0.45, e.taxRate + 0.015);
   if (Math.abs(e.taxRate - (civ.conditions.tax_reported ?? before)) >= 0.05) {
     const up = e.taxRate > (civ.conditions.tax_reported ?? before);
-    recordEvent(world, {
+    const K = (t: string) => causeKey.civ(civ.id, t);
+    const tax = recordEvent(world, {
       category: 'economy',
       title: `${civ.name} ${up ? 'raises' : 'cuts'} taxes`,
       description: `The tax rate now stands at ${(e.taxRate * 100).toFixed(0)}%.`,
       importance: 2,
       civIds: [civ.id],
       cause: up ? `The treasury fell into deficit (${Math.round(e.treasury)}).` : `A large treasury surplus (${Math.round(e.treasury)}) allowed relief for taxpayers.`,
+      causeIds: [lastCause(world, K(up ? 'th_deficit' : 'th_surplus')), ...gatherCauses(world, [K('tax'), K('policy')], 1)],
       effects: [{ label: 'Tax rate', before: `${((civ.conditions.tax_reported ?? before) * 100).toFixed(0)}%`, after: `${(e.taxRate * 100).toFixed(0)}%` }],
     });
     civ.conditions.tax_reported = e.taxRate;
+    noteCause(world, [K(up ? 'tax_up' : 'tax_down'), K('tax')], tax.id);
   }
   if (civ.conditions.tax_reported === undefined) civ.conditions.tax_reported = e.taxRate;
   // Retooling under chronic shortage
@@ -277,6 +285,20 @@ export function structuralTick(world: World, rng: Rng, civ: Civilization): void 
     return;
   }
   civ.conditions.chronic = (civ.conditions.chronic ?? 0) + 1;
+  const K = (t: string) => causeKey.civ(civ.id, t);
+  if (civ.conditions.chronic === 3) {
+    const shortfall = recordEvent(world, {
+      category: 'economy',
+      title: `Persistent ${worst} shortfall in the ${civ.name}`,
+      description: `For three months ${worst} supply has covered only ${(worstRatio * 100).toFixed(0)}% of consumption.`,
+      importance: 1,
+      civIds: [civ.id],
+      cause: 'Output failed to keep pace with consumption.',
+      causeIds: gatherCauses(world, [K(`shortage_${worst}`), K('disturbance'), K('th_housing'), K('retool'), K('tech'), K('policy'), K('leader')], 3),
+      trigger: { kind: 'threshold', text: `${worst} supply below 92% of consumption for three months` },
+    });
+    noteCause(world, K(`th_chronic_${worst}`), shortfall.id);
+  }
   if (civ.conditions.chronic < 3 || !rng.chance(0.4)) return;
   const want = SPEC_FOR_GOOD[worst];
   const candidates = civ.settlementIds
@@ -294,7 +316,7 @@ export function structuralTick(world: World, rng: Rng, civ: Civilization): void 
   s.specialization = want;
   s.infrastructure = Math.max(1, s.infrastructure - 0.3);
   civ.conditions.chronic = 0;
-  recordEvent(world, {
+  const retool = recordEvent(world, {
     category: 'economy',
     title: `${s.name} retools toward ${want}`,
     description: `Facing persistent ${worst} shortfalls, ${s.name} converted its economy from ${prev} to ${want}.`,
@@ -302,10 +324,11 @@ export function structuralTick(world: World, rng: Rng, civ: Civilization): void 
     civIds: [civ.id],
     settlementId: s.id,
     cause: `${worst} supply covered only ${(worstRatio * 100).toFixed(0)}% of consumption for three months.`,
-    causeIds: civ.causeLinks[`shortage_${worst}`] ? [civ.causeLinks[`shortage_${worst}`]] : [],
+    causeIds: [lastCause(world, K(`th_chronic_${worst}`)), lastCause(world, K(`shortage_${worst}`)), lastCause(world, causeKey.settlement(s.id))],
     effects: [
       { label: 'Specialisation', before: prev, after: want },
       { label: 'Infrastructure', after: 'temporarily reduced' },
     ],
   });
+  noteCause(world, [K('retool'), causeKey.settlement(s.id)], retool.id);
 }

@@ -10,7 +10,7 @@ import { createCharacter, createSettlement, generateCivilization } from './gener
 import { GOVERNMENTS } from './data/society';
 import { TECH_BY_ID } from './data/techs';
 import type { ArchitectureStyle, Civilization, GovernmentType, PlanetType, TechCategory, TechDef, World } from './types';
-import { addMemory, fullName, getRelation, recordEvent, relationKey } from './world';
+import { addMemory, causeKey, fullName, getRelation, lastCause, noteCause, recordEvent, relationKey } from './world';
 import { completeResearch, techById } from './systems/technology';
 import { DISTURBANCE_LIST, startDisturbance, startPlague } from './systems/environment';
 import { succession } from './systems/politics';
@@ -45,7 +45,9 @@ export function discoverStarSystem(world: World): InterventionResult {
       { label: 'Planets', after: sys.planetIds.map((id) => world.planets[id].name).join(', ') },
     ],
     source: 'creator',
+    root: true,
   });
+  noteCause(world, [causeKey.world(`system_${sys.id}`), ...sys.planetIds.map((pid) => causeKey.planet(pid, 'origin'))], ev.id);
   return { ok: true, message: `Charted ${sys.name} with ${count} planets.`, eventId: ev.id, createdId: sys.id };
 }
 
@@ -72,7 +74,9 @@ export function createPlanet(world: World, systemId: string, type?: PlanetType):
       { label: 'Habitability', after: `${Math.round(p.habitability * 100)}%` },
     ],
     source: 'creator',
+    root: true,
   });
+  noteCause(world, causeKey.planet(p.id, 'origin'), ev.id);
   return { ok: true, message: `${p.name} created around ${sys.name}.`, eventId: ev.id, createdId: p.id };
 }
 
@@ -107,7 +111,10 @@ export function foundSettlement(world: World, civId: string, planetId: string, r
       { label: `${source.name} population`, before: Math.round(source.population + settlers), after: Math.round(source.population) },
     ],
     source: 'creator',
+    root: true,
   });
+  noteCause(world, [causeKey.settlement(s.id), causeKey.civ(civ.id, 'expansion')], ev.id);
+  for (const ch of Object.values(world.characters)) if (ch.settlementId === s.id && !world.causes[causeKey.char(ch.id)]) noteCause(world, causeKey.char(ch.id), ev.id);
   return { ok: true, message: `${s.name} founded.`, eventId: ev.id, createdId: s.id };
 }
 
@@ -157,7 +164,7 @@ export function introduceCivilization(
     }
   }
   world.rngState = rng.state;
-  return { ok: true, message: `The ${civ.name} now inhabit ${planet.name}.`, createdId: civ.id, eventId: civ.causeLinks.founding };
+  return { ok: true, message: `The ${civ.name} now inhabit ${planet.name}.`, createdId: civ.id, eventId: lastCause(world, causeKey.civ(civ.id, 'founding')) };
 }
 
 export type EnvironmentChange =
@@ -188,8 +195,10 @@ export function changeEnvironment(world: World, planetId: string, change: Enviro
         { label: 'Disturbance risk', after: `×${(1 + Math.abs(env.temperatureOffset) / 6).toFixed(1)}` },
       ],
       source: 'creator',
+      root: true,
     });
     if (env.temperatureOffset < -8) env.weather = 'snow';
+    noteCause(world, [causeKey.planet(planet.id, 'climate'), ...planet.civIds.map((c) => causeKey.civ(c, 'climate'))], ev.id);
     result = { ok: true, message: `${planet.name} is now ${planet.baseTemperature + env.temperatureOffset}°C on average.`, eventId: ev.id };
   } else if (change.kind === 'disturbance') {
     const d = DISTURBANCE_LIST.find((x) => x.name === change.name);
@@ -216,7 +225,9 @@ export function changeEnvironment(world: World, planetId: string, change: Enviro
         { label: 'Disturbance', before: before.d ?? 'none', after: 'none' },
       ],
       source: 'creator',
+      root: true,
     });
+    noteCause(world, [causeKey.planet(planet.id, 'climate'), causeKey.planet(planet.id, 'disturbance_end'), ...planet.civIds.map((c) => causeKey.civ(c, 'disturbance_end'))], ev.id);
     result = { ok: true, message: `${planet.name} restored.`, eventId: ev.id };
   } else {
     const r = change.resource;
@@ -233,7 +244,9 @@ export function changeEnvironment(world: World, planetId: string, change: Enviro
       cause: 'Introduced through the Creator Console.',
       effects: [{ label: `${r} abundance`, before: `${Math.round(before * 100)}%`, after: `${Math.round(planet.resources[r] * 100)}%` }],
       source: 'creator',
+      root: true,
     });
+    noteCause(world, [causeKey.planet(planet.id, 'resources'), ...planet.civIds.map((c) => causeKey.civ(c, 'resources'))], ev.id);
     result = { ok: true, message: `${planet.name} enriched with ${r}.`, eventId: ev.id };
   }
   world.rngState = rng.state;
@@ -266,6 +279,7 @@ export function grantTechnology(world: World, civId: string, techId: string): In
     cause: 'Introduced through the Creator Console.',
     effects: chain.map((t) => ({ label: 'Technology', after: t.name })),
     source: 'creator',
+    root: true,
   });
   for (const t of chain) completeResearch(world, rng, civ, t, { text: 'Knowledge introduced through the Creator Console.', ids: [intro.id] });
   world.rngState = rng.state;
@@ -339,6 +353,7 @@ export function introduceDiscovery(
     cause: 'Introduced through the Creator Console.',
     effects: [{ label: 'Magnitude', after: `${m.toFixed(1)}×` }],
     source: 'creator',
+    root: true,
   });
   completeResearch(world, rng, civ, tech, { text: 'A sudden revelation introduced through the Creator Console.', ids: [intro.id] });
   // Responses
@@ -461,9 +476,10 @@ export function diplomaticIntervention(world: World, aId: string, bId: string, a
       { label: 'Status', before: before.status, after: rel.status },
     ],
     source: 'creator',
+    root: true,
   });
-  a.causeLinks[`rel_${b.id}`] = ev.id;
-  b.causeLinks[`rel_${a.id}`] = ev.id;
+  noteCause(world, causeKey.pair(a.id, b.id), ev.id);
+  if (action === 'trade' || action === 'alliance') noteCause(world, [causeKey.civ(a.id, 'trade'), causeKey.civ(b.id, 'trade')], ev.id);
   return { ok: true, message: `${title}.`, eventId: ev.id };
 }
 
@@ -486,11 +502,12 @@ export function historicalIntervention(world: World, civId: string, kind: Histor
   const rng = worldRng(world);
   let res: InterventionResult;
   const ev = (title: string, description: string, importance: 2 | 3 | 4 | 5, effects: { label: string; before?: string | number; after?: string | number }[], extra: Partial<{ settlementId: string; characterIds: string[] }> = {}) =>
-    recordEvent(world, { category: 'intervention', title, description, importance, civIds: [civ.id], cause: 'Created through the Creator Console.', effects, source: 'creator', ...extra });
+    recordEvent(world, { category: 'intervention', title, description, importance, civIds: [civ.id], cause: 'Created through the Creator Console.', effects, source: 'creator', root: true, ...extra });
   switch (kind) {
     case 'golden_age': {
       civ.conditions.golden_age = 360;
       const e = ev(`A golden age is proclaimed in the ${civ.name}`, 'Confidence and prosperity sweep the realm.', 4, [{ label: 'Satisfaction', after: '+10 for a year' }, { label: 'Birth rate', after: '+10%' }]);
+      noteCause(world, causeKey.civ(civ.id, 'golden_age'), e.id);
       res = { ok: true, message: 'Golden age begun.', eventId: e.id };
       break;
     }
@@ -498,6 +515,7 @@ export function historicalIntervention(world: World, civId: string, kind: Histor
       civ.conditions.festival = 30;
       const e = ev(`The ${civ.adjective} Festival of Lights`, 'For a month, cities are hung with lanterns and music.', 2, [{ label: 'Satisfaction', after: '+6 for 30 days' }]);
       for (const c of Object.values(world.characters)) if (c.alive && c.civId === civ.id) c.needs.fun = 100;
+      noteCause(world, causeKey.civ(civ.id, 'festival'), e.id);
       res = { ok: true, message: 'Festival declared.', eventId: e.id };
       break;
     }
@@ -510,6 +528,7 @@ export function historicalIntervention(world: World, civId: string, kind: Histor
           addMemory(c, { t: world.time, text: 'Inspired by the renaissance to create something lasting.', valence: 0.6, importance: 3, eventId: e.id });
         }
       }
+      noteCause(world, causeKey.civ(civ.id, 'renaissance'), e.id);
       res = { ok: true, message: 'Renaissance begun.', eventId: e.id };
       break;
     }
@@ -522,6 +541,7 @@ export function historicalIntervention(world: World, civId: string, kind: Histor
       c.personality.extraversion = 0.9;
       c.goals = [{ id: `${c.id}-glead`, type: 'lead', target: 'lead', progress: 0, createdAt: world.time, description: 'Rise to a position of leadership' }];
       const e = ev(`${fullName(c)} rises as a visionary`, `A charismatic speaker draws crowds in ${s.name}.`, 3, [{ label: 'New notable figure', after: fullName(c) }], { settlementId: s.id, characterIds: [c.id] });
+      noteCause(world, causeKey.char(c.id), e.id);
       res = { ok: true, message: `${fullName(c)} appears.`, eventId: e.id, createdId: c.id };
       break;
     }
@@ -535,12 +555,13 @@ export function historicalIntervention(world: World, civId: string, kind: Histor
       }
       for (let i = 0; i < 3; i++) createCharacter(world, rng, civ, world.settlements[rng.pick(civ.settlementIds)], { age: rng.int(18, 40) });
       const e = ev(`A wave of migrants reaches the ${civ.name}`, 'Refugees and settlers from distant lands seek a new home.', 3, [{ label: 'Population', after: `+${Math.round(total).toLocaleString()}` }]);
+      noteCause(world, causeKey.civ(civ.id, 'migration'), e.id);
       res = { ok: true, message: 'Migrants arrived.', eventId: e.id };
       break;
     }
     case 'plague': {
       startPlague(world, rng, civ, 'Unleashed through the Creator Console.', [], 'creator');
-      res = { ok: true, message: 'Plague unleashed.', eventId: civ.causeLinks.plague };
+      res = { ok: true, message: 'Plague unleashed.', eventId: lastCause(world, causeKey.civ(civ.id, 'plague')) };
       break;
     }
     case 'meteor': {
@@ -557,6 +578,7 @@ export function historicalIntervention(world: World, civId: string, kind: Histor
       const victims = Object.values(world.characters).filter((c) => c.alive && c.settlementId === target.id && c.id !== civ.government.leaderId && rng.chance(0.25));
       for (const v of victims) die(world, rng, v, 'the meteor strike', [e.id]);
       for (const c of Object.values(world.characters)) if (c.alive && c.civId === civ.id) addMemory(c, { t: world.time, text: `The sky fell on ${target.name}.`, valence: -0.8, importance: 5, eventId: e.id });
+      noteCause(world, [causeKey.civ(civ.id, 'disaster'), causeKey.settlement(target.id)], e.id);
       res = { ok: true, message: `${target.name} struck; ${victims.length} named inhabitants lost.`, eventId: e.id };
       break;
     }
@@ -572,6 +594,7 @@ export function historicalIntervention(world: World, civId: string, kind: Histor
         civ.government.leaderId = null;
       }
       const next = succession(world, rng, civ, 'creator', [e.id], old?.id);
+      noteCause(world, causeKey.civ(civ.id, 'unrest'), e.id);
       res = { ok: true, message: next ? `${fullName(next)} seized power.` : 'The leader was deposed.', eventId: e.id };
       break;
     }
@@ -603,6 +626,7 @@ export function setGovernment(world: World, civId: string, type: GovernmentType)
       { label: 'Leader title', after: def.leaderTitle },
     ],
     source: 'creator',
+    root: true,
   });
   succession(world, rng, civ, 'creator', [e.id]);
   world.rngState = rng.state;
@@ -613,4 +637,31 @@ export function techOptionsFor(world: World, civ: Civilization) {
   return Object.values(TECH_BY_ID)
     .concat(world.customTechs)
     .filter((t) => !civ.tech.known.includes(t.id));
+}
+
+/** Every Creator action, addressable by name (used by the worker protocol and replay). */
+export const INTERVENTIONS = {
+  discoverStarSystem,
+  createPlanet,
+  foundSettlement,
+  introduceCivilization,
+  changeEnvironment,
+  grantTechnology,
+  introduceDiscovery,
+  diplomaticIntervention,
+  historicalIntervention,
+  setGovernment,
+} as const;
+
+export type InterventionKind = keyof typeof INTERVENTIONS;
+
+const MAX_LOG = 2000;
+
+/** Apply an intervention by name and append it to the world's intervention log. */
+export function applyIntervention(world: World, kind: InterventionKind, args: unknown[]): InterventionResult {
+  const fn = INTERVENTIONS[kind] as unknown as (w: World, ...a: unknown[]) => InterventionResult;
+  if (!fn) return fail(`Unknown intervention: ${kind}`);
+  world.interventionLog.push({ t: world.time, kind, args: JSON.parse(JSON.stringify(args)) as unknown[] });
+  if (world.interventionLog.length > MAX_LOG) world.interventionLog.splice(0, world.interventionLog.length - MAX_LOG);
+  return fn(world, ...args);
 }

@@ -68,6 +68,8 @@ export interface TerrainData {
   seed: number;
   height: (x: number, z: number) => number;
   slope: (x: number, z: number) => number;
+  /** Optional walkable mask (floating platforms): moves onto false points are refused. */
+  walkable?: (x: number, z: number) => boolean;
 }
 
 /**

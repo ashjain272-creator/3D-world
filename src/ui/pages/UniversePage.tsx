@@ -369,6 +369,14 @@ function PlanetPanel({ w, id, settlementId, region }: { w: World; id: string; se
             )}
           </div>
         )}
+        {!surface && (
+          <div className="section">
+            <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>No solid surface. A floating outpost rides the upper cloud deck.</p>
+            <button className="btn accent" style={{ width: '100%' }} data-testid="visit-cloud" onClick={() => navigate(`explorer/${p.id}`)}>
+              <Icon.Explorer style={{ width: 16, height: 16 }} /> Visit the cloud platforms
+            </button>
+          </div>
+        )}
         {history.length > 0 && (
           <div className="section">
             <div className="section-title">

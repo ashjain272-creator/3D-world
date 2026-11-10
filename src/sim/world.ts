@@ -13,9 +13,19 @@ import type {
 } from './types';
 import { MINUTES_PER_YEAR } from './time';
 
-export const SCHEMA_VERSION = 3;
-export const MAX_EVENTS = 6000;
+export const SCHEMA_VERSION = 4;
 export const MAX_MEMORIES = 36;
+
+const characterVersions = new WeakMap<World, number>();
+
+/** Changes whenever a character is added (cheap cache key for per-step lookups). */
+export function characterVersion(world: World): number {
+  return characterVersions.get(world) ?? 0;
+}
+
+export function bumpCharacterVersion(world: World): void {
+  characterVersions.set(world, characterVersion(world) + 1);
+}
 
 export function newId(world: World, prefix: string): Id {
   world.nextId += 1;
@@ -74,19 +84,71 @@ export interface EventInput {
   settlementId?: Id;
   characterIds?: Id[];
   cause: string;
-  causeIds?: Id[];
+  causeIds?: (Id | undefined | null)[];
   effects?: StateChange[];
   source?: HistoryEvent['source'];
   t?: number;
+  /** Declare that this event legitimately has no prior event as cause. */
+  root?: boolean;
+  trigger?: HistoryEvent['trigger'];
+}
+
+/**
+ * Development guard: when strict, recording an important event (importance ≥ 2)
+ * without any cause and without an explicit `root: true` throws. Enabled in
+ * tests and the dev server; off in production builds.
+ */
+export const causality = { strict: false };
+
+export class CausalityError extends Error {}
+
+/** Numeric part of an event id (ids are `e` + base-36 counter). */
+export function eventNum(id: Id): number {
+  return parseInt(id.slice(1), 36);
+}
+
+/** Is this id known to history at all (hot, compacted into a summary, or archived)? */
+export function isKnownEventId(world: World, id: Id): boolean {
+  if (eventIndex(world).has(id)) return true;
+  if (world.history.redirects[id]) return true;
+  const n = eventNum(id);
+  return world.history.chunks.some((c) => n >= c.from && n <= c.to);
 }
 
 /**
  * Record an event in permanent history. Back-links causes to their
- * consequences and attaches the event to involved characters.
+ * consequences (including archived ones), propagates the root source of the
+ * causal chain, and attaches the event to involved characters.
  */
 export function recordEvent(world: World, input: EventInput): HistoryEvent {
+  const id = newId(world, 'e');
+  const seen = new Set<Id>();
+  const causeIds: Id[] = [];
+  for (const raw of input.causeIds ?? []) {
+    if (!raw || raw === id || seen.has(raw)) continue;
+    // a compacted cause is cited through its summary
+    const cid = world.history.redirects[raw] ?? raw;
+    if (seen.has(cid)) continue;
+    seen.add(cid);
+    if (isKnownEventId(world, cid)) causeIds.push(cid);
+  }
+  if (causality.strict && input.importance >= 2 && causeIds.length === 0 && !input.root) {
+    throw new CausalityError(`Event "${input.title}" (importance ${input.importance}) has no cause and is not marked root.`);
+  }
+  const source = input.source ?? 'simulation';
+  const lookup = eventIndex(world);
+  let rootSource: HistoryEvent['rootSource'] = source;
+  if (source === 'simulation') {
+    for (const cid of causeIds) {
+      const c = lookup.get(cid);
+      if (c && (c.rootSource ?? c.source) === 'creator') {
+        rootSource = 'creator';
+        break;
+      }
+    }
+  }
   const ev: HistoryEvent = {
-    id: newId(world, 'e'),
+    id,
     t: input.t ?? world.time,
     category: input.category,
     title: input.title,
@@ -98,19 +160,24 @@ export function recordEvent(world: World, input: EventInput): HistoryEvent {
     settlementId: input.settlementId,
     characterIds: input.characterIds ?? [],
     cause: input.cause,
-    causeIds: (input.causeIds ?? []).filter(Boolean),
+    causeIds,
     effects: input.effects ?? [],
     consequenceIds: [],
-    source: input.source ?? 'simulation',
+    source,
+    rootSource,
   };
+  if (input.root) ev.root = true;
+  if (input.trigger) ev.trigger = input.trigger;
   if (!ev.planetId && ev.settlementId) ev.planetId = world.settlements[ev.settlementId]?.planetId;
   if (!ev.systemId && ev.planetId) ev.systemId = world.planets[ev.planetId]?.systemId;
   world.events.push(ev);
-  if (ev.causeIds.length) {
-    const lookup = eventIndex(world);
-    for (const cid of ev.causeIds) {
-      const cause = lookup.get(cid);
-      if (cause && !cause.consequenceIds.includes(ev.id)) cause.consequenceIds.push(ev.id);
+  for (const cid of causeIds) {
+    const cause = lookup.get(cid);
+    if (cause) {
+      if (!cause.consequenceIds.includes(ev.id)) cause.consequenceIds.push(ev.id);
+    } else {
+      // cause lives in the archive: remember the back-link alongside the save
+      (world.history.lateConsequences[cid] ??= []).push(ev.id);
     }
   }
   for (const cid of ev.characterIds) {
@@ -120,16 +187,15 @@ export function recordEvent(world: World, input: EventInput): HistoryEvent {
       if (ch.eventIds.length > 60) ch.eventIds.splice(0, ch.eventIds.length - 60);
     }
   }
-  if (world.events.length > MAX_EVENTS) pruneEvents(world);
   return ev;
 }
 
-// Lightweight cache of id → event; rebuilt lazily when stale.
-let indexCache: { world: World | null; len: number; map: Map<Id, HistoryEvent> } = { world: null, len: 0, map: new Map() };
+// Lightweight cache of id → hot event; rebuilt lazily when stale.
+let indexCache: { world: World | null; arr: HistoryEvent[] | null; len: number; map: Map<Id, HistoryEvent> } = { world: null, arr: null, len: 0, map: new Map() };
 
 export function eventIndex(world: World): Map<Id, HistoryEvent> {
-  if (indexCache.world !== world || indexCache.len > world.events.length) {
-    indexCache = { world, len: 0, map: new Map() };
+  if (indexCache.world !== world || indexCache.arr !== world.events || indexCache.len > world.events.length) {
+    indexCache = { world, arr: world.events, len: 0, map: new Map() };
   }
   const { map } = indexCache;
   for (let i = indexCache.len; i < world.events.length; i++) map.set(world.events[i].id, world.events[i]);
@@ -137,28 +203,67 @@ export function eventIndex(world: World): Map<Id, HistoryEvent> {
   return map;
 }
 
+/** Synchronous lookup of hot events; compacted ids resolve to their summary. */
 export function findEvent(world: World, id: Id): HistoryEvent | undefined {
-  return eventIndex(world).get(id);
+  const idx = eventIndex(world);
+  return idx.get(id) ?? (world.history.redirects[id] ? idx.get(world.history.redirects[id]) : undefined);
 }
 
-/** Drop the least important old events while keeping milestones forever. */
-function pruneEvents(world: World): void {
-  const keepRecent = 1500;
-  const cutoff = world.events.length - keepRecent;
-  const kept: HistoryEvent[] = [];
-  for (let i = 0; i < world.events.length; i++) {
-    const e = world.events[i];
-    if (i >= cutoff || e.importance >= 3 || e.source !== 'simulation') kept.push(e);
+// ───────────────────────────── Cause registry ─────────────────────────────
+
+export const CAUSE_SLOTS = 6;
+
+export const causeKey = {
+  civ: (civId: Id, type: string) => `c:${civId}:${type}`,
+  planet: (planetId: Id, type: string) => `p:${planetId}:${type}`,
+  settlement: (settlementId: Id) => `s:${settlementId}`,
+  char: (charId: Id) => `h:${charId}`,
+  pair: (a: Id, b: Id) => `r:${relationKey(a, b)}`,
+  world: (type: string) => `w:${type}`,
+};
+
+/** Register an event as a potential cause under one or more keys. */
+export function noteCause(world: World, keys: string | string[], eventId: Id): void {
+  for (const k of Array.isArray(keys) ? keys : [keys]) {
+    const list = (world.causes[k] ??= []);
+    if (list[list.length - 1] === eventId) continue;
+    list.push(eventId);
+    if (list.length > CAUSE_SLOTS) list.splice(0, list.length - CAUSE_SLOTS);
   }
-  // Still too many? drop importance-3 personal/population events from the oldest half.
-  if (kept.length > MAX_EVENTS * 0.9) {
-    const half = Math.floor(kept.length / 2);
-    for (let i = half - 1; i >= 0; i--) {
-      if (kept[i].importance === 3 && (kept[i].category === 'personal' || kept[i].category === 'population')) kept.splice(i, 1);
+}
+
+/** Most recent registered cause under a key (or undefined). */
+export function lastCause(world: World, key: string): Id | undefined {
+  const l = world.causes[key];
+  return l ? l[l.length - 1] : undefined;
+}
+
+/**
+ * Collect recent causes from several keys, newest first, optionally only
+ * those recorded within `withinMinutes`.
+ */
+export function gatherCauses(world: World, keys: string[], limit = 4, withinMinutes = Infinity): Id[] {
+  const out: Id[] = [];
+  const idx = eventIndex(world);
+  for (const k of keys) {
+    const l = world.causes[k];
+    if (!l?.length) continue;
+    const id = l[l.length - 1];
+    if (out.includes(id)) continue;
+    if (withinMinutes !== Infinity) {
+      const e = idx.get(id);
+      if (!e || world.time - e.t > withinMinutes) continue;
     }
+    out.push(id);
+    if (out.length >= limit) break;
   }
-  world.events = kept;
-  indexCache = { world: null, len: 0, map: new Map() };
+  return out;
+}
+
+export function forgetCauses(world: World, prefix: string): void {
+  // exact key or its ':'-separated children only — 'h:c1' must not erase 'h:c12'
+  const child = `${prefix}:`;
+  for (const k of Object.keys(world.causes)) if (k === prefix || k.startsWith(child)) delete world.causes[k];
 }
 
 export function addMemory(c: Character, m: Memory): void {

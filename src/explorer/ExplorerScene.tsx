@@ -5,10 +5,15 @@ import type { Planet, Settlement, StarSystem } from '../sim/types';
 import { useApp } from '../state/store';
 import { City } from './City';
 import { TerrainMesh, Vegetation } from './Landscape';
-import type { Layout } from './layout';
-import { Crowd, Inhabitants } from './People';
+import type { ColliderGrid, Layout } from './layout';
+import type { VegetationData } from './vegetation';
+import { Inhabitants } from './People';
+import { Crowd } from './Crowd';
+import { CloudPlatforms } from './CloudPlatforms';
+import type { CloudCity } from './cloudCity';
 import { Player } from './Player';
 import { SkyWeather } from './SkyWeather';
+import { PostFX } from '../ui/components/PostFX';
 import type { TerrainData } from './terrain';
 
 interface Props {
@@ -17,7 +22,11 @@ interface Props {
   settlement?: Settlement;
   terrain: TerrainData;
   layout: Layout;
+  vegetation: VegetationData;
+  colliders: ColliderGrid;
   civColor: string;
+  /** Gas/ice giant visit: floating platforms instead of terrain. */
+  cloud?: CloudCity;
   locationKey: string;
   onInteract: () => void;
   onPick: (id: string) => void;
@@ -37,12 +46,19 @@ export function ExplorerScene(p: Props) {
     >
       <Suspense fallback={null}>
         <SkyWeather planet={p.planet} system={p.system} quality={quality} />
-        <TerrainMesh t={p.terrain} layout={p.layout} waterColor={p.planet.palette.shallow} />
-        <Vegetation t={p.terrain} layout={p.layout} quality={quality} />
+        {p.cloud ? (
+          <CloudPlatforms city={p.cloud} planet={p.planet} />
+        ) : (
+          <>
+            <TerrainMesh t={p.terrain} layout={p.layout} waterColor={p.planet.palette.shallow} />
+            <Vegetation data={p.vegetation} kind={p.terrain.look.vegetation} cliff={p.terrain.look.cliff} quality={quality} />
+          </>
+        )}
         <City layout={p.layout} t={p.terrain} quality={quality} civColor={p.civColor} />
         {p.settlement && <Inhabitants settlementId={p.settlement.id} layout={p.layout} t={p.terrain} onPick={p.onPick} />}
-        {p.settlement && <Crowd layout={p.layout} t={p.terrain} population={p.settlement.population} quality={quality} />}
-        <Player t={p.terrain} layout={p.layout} onInteract={p.onInteract} spawnKey={p.locationKey} />
+        {(p.settlement || p.cloud) && <Crowd layout={p.layout} t={p.terrain} population={p.settlement?.population ?? 3000} quality={quality} planetId={p.planet.id} />}
+        <PostFX quality={quality} bloom={0.7} threshold={0.8} />
+        <Player t={p.terrain} layout={p.layout} colliders={p.colliders} onInteract={p.onInteract} spawnKey={p.locationKey} />
       </Suspense>
     </Canvas>
   );

@@ -1,7 +1,8 @@
 import type { Rng } from '../rng';
 import { clamp } from '../rng';
 import type { Civilization, Planet, World } from '../types';
-import { addMemory, recordEvent } from '../world';
+import { addMemory, causeKey, gatherCauses, lastCause, noteCause, recordEvent } from '../world';
+import { MINUTES_PER_YEAR } from '../time';
 import { defaultWeather } from '../generate/cosmos';
 
 interface Disturbance {
@@ -33,7 +34,7 @@ export function environmentTick(world: World, rng: Rng): void {
         env.climateYield = 1;
         env.weather = defaultWeather(planet.type);
         if (planet.civIds.length && name) {
-          recordEvent(world, {
+          const end = recordEvent(world, {
             category: 'environment',
             title: `The ${name} on ${planet.name} ends`,
             description: 'Conditions return to normal and harvests recover.',
@@ -41,9 +42,10 @@ export function environmentTick(world: World, rng: Rng): void {
             civIds: [...planet.civIds],
             planetId: planet.id,
             cause: 'The disturbance ran its natural course.',
-            causeIds: env.disturbanceEventId ? [env.disturbanceEventId] : [],
+            causeIds: [env.disturbanceEventId, lastCause(world, causeKey.planet(planet.id, 'disturbance'))],
             effects: [{ label: 'Crop yield', after: '100%' }],
           });
+          noteCause(world, [causeKey.planet(planet.id, 'disturbance_end'), ...planet.civIds.map((c) => causeKey.civ(c, 'disturbance_end'))], end.id);
         }
       }
       continue;
@@ -54,7 +56,15 @@ export function environmentTick(world: World, rng: Rng): void {
     if (rng.chance(0.0012 * stress)) {
       const options = DISTURBANCES.filter((d) => d.types.includes(planet.type));
       if (!options.length) continue;
-      startDisturbance(world, rng, planet, rng.pick(options), `Natural climate variability on ${planet.name}${env.temperatureOffset ? ` (amplified by a ${env.temperatureOffset > 0 ? '+' : ''}${env.temperatureOffset}°C climate shift)` : ''}.`);
+      // A creator-imposed climate shift is the cause; otherwise it is natural chance (a root event).
+      startDisturbance(
+        world,
+        rng,
+        planet,
+        rng.pick(options),
+        `Natural climate variability on ${planet.name}${env.temperatureOffset ? ` (amplified by a ${env.temperatureOffset > 0 ? '+' : ''}${env.temperatureOffset}°C climate shift)` : ''}.`,
+        env.temperatureOffset ? gatherCauses(world, [causeKey.planet(planet.id, 'climate')], 1) : [],
+      );
     } else if (rng.chance(0.08)) {
       // ordinary day-to-day weather variation for Explorer
       const pool: Planet['environment']['weather'][] =
@@ -80,6 +90,7 @@ export function startDisturbance(world: World, rng: Rng, planet: Planet, d: Dist
     planetId: planet.id,
     cause,
     causeIds,
+    root: causeIds.length === 0,
     effects: [
       { label: 'Crop yield', before: `${Math.round(before * 100)}%`, after: `${Math.round(env.climateYield * 100)}%` },
       { label: 'Expected duration', after: `${env.disturbanceDays} days` },
@@ -87,6 +98,7 @@ export function startDisturbance(world: World, rng: Rng, planet: Planet, d: Dist
     source,
   });
   env.disturbanceEventId = ev.id;
+  noteCause(world, [causeKey.planet(planet.id, 'disturbance'), ...planet.civIds.map((c) => causeKey.civ(c, 'disturbance'))], ev.id);
   for (const c of Object.values(world.characters)) {
     if (c.alive && world.settlements[c.settlementId]?.planetId === planet.id && (c.occupation === 'farmer' || rng.chance(0.2))) {
       addMemory(c, { t: world.time, text: `Lived through the ${d.name}.`, valence: -0.5, importance: c.occupation === 'farmer' ? 4 : 2, eventId: ev.id });
@@ -102,25 +114,46 @@ export function societalConditionsTick(world: World, rng: Rng, civ: Civilization
   // Golden age: sustained prosperity.
   if (civ.stability > 78 && civ.satisfaction > 74) civ.conditions.prosperity = (civ.conditions.prosperity ?? 0) + 1;
   else delete civ.conditions.prosperity;
+  if (civ.conditions.prosperity === 3) {
+    const ev = recordEvent(world, {
+      category: 'culture',
+      title: `An era of prosperity in the ${civ.name}`,
+      description: 'Three months of high stability and contentment.',
+      importance: 1,
+      civIds: [civ.id],
+      cause: `Stability ${civ.stability.toFixed(0)} and satisfaction ${civ.satisfaction.toFixed(0)} held for three months.`,
+      causeIds: gatherCauses(world, ['th_discontent_end', 'th_surplus', 'policy', 'trade', 'tech', 'leader'].map((t) => causeKey.civ(civ.id, t)), 3),
+      trigger: { kind: 'threshold', text: 'Prosperity sustained for three months' },
+    });
+    noteCause(world, causeKey.civ(civ.id, 'th_prosperity'), ev.id);
+  }
   if (!civ.conditions.golden_age && !civ.conditions.ga_cooldown && (civ.conditions.prosperity ?? 0) >= 6 && rng.chance(0.2)) {
     delete civ.conditions.prosperity;
     civ.conditions.golden_age = 360;
-    recordEvent(world, {
+    const ga = recordEvent(world, {
       category: 'culture',
       title: `A golden age dawns for the ${civ.name}`,
       description: 'Prosperity, peace and confidence feed one another. Arts and sciences flourish.',
       importance: 4,
       civIds: [civ.id],
       cause: `Sustained high stability (${civ.stability.toFixed(0)}) and satisfaction (${civ.satisfaction.toFixed(0)}).`,
-      causeIds: [civ.causeLinks.leader_policy, civ.causeLinks.leader].filter(Boolean).slice(0, 2) as string[],
+      causeIds: gatherCauses(world, ['th_prosperity', 'policy', 'leader'].map((t) => causeKey.civ(civ.id, t)), 3),
       effects: [{ label: 'Satisfaction', after: '+10 for a year' }, { label: 'Birth rate', after: '+10%' }],
     });
+    noteCause(world, causeKey.civ(civ.id, 'golden_age'), ga.id);
   }
   // Epidemics: rarer with medicine; likelier when crowded or starving.
   if (!civ.conditions.plague) {
     const crowd = civ.settlementIds.reduce((a, id) => a + (world.settlements[id]?.population ?? 0) / Math.max(1, world.settlements[id]?.capacity ?? 1), 0) / Math.max(1, civ.settlementIds.length);
     const p = 0.0015 * (1 - Math.min(0.85, healthMod)) * (crowd > 1 ? 2 : 1) * (civ.conditions.shortage_food ? 2.5 : 1);
-    if (rng.chance(p)) startPlague(world, rng, civ, `Crowding (${(crowd * 100).toFixed(0)}% of capacity)${civ.conditions.shortage_food ? ' and famine' : ''} with limited medicine.`, civ.conditions.shortage_food && civ.causeLinks.shortage_food ? [civ.causeLinks.shortage_food] : []);
+    if (rng.chance(p))
+      startPlague(
+        world,
+        rng,
+        civ,
+        `Crowding (${(crowd * 100).toFixed(0)}% of capacity)${civ.conditions.shortage_food ? ' and famine' : ''} with limited medicine.`,
+        gatherCauses(world, ['shortage_food', 'th_housing', 'th_granaries'].map((t) => causeKey.civ(civ.id, t)), 2, MINUTES_PER_YEAR),
+      );
   }
 }
 
@@ -134,6 +167,7 @@ export function startPlague(world: World, rng: Rng, civ: Civilization, cause: st
     civIds: [civ.id],
     cause,
     causeIds,
+    root: causeIds.length === 0,
     effects: [
       { label: 'Death rate', after: '×3.5' },
       { label: 'Satisfaction', after: '−15 while it lasts' },
@@ -141,7 +175,7 @@ export function startPlague(world: World, rng: Rng, civ: Civilization, cause: st
     ],
     source,
   });
-  civ.causeLinks.plague = ev.id;
+  noteCause(world, [causeKey.civ(civ.id, 'plague'), causeKey.civ(civ.id, 'disaster')], ev.id);
   for (const c of Object.values(world.characters)) {
     if (c.alive && c.civId === civ.id) {
       c.health = clamp(c.health - rng.range(0, 25), 5, 100);

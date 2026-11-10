@@ -2,7 +2,7 @@ import type { Rng } from '../rng';
 import { clamp } from '../rng';
 import type { Civilization, CultureValues, DiplomaticRelation, RelationStatus, World } from '../types';
 import { MINUTES_PER_DAY } from '../time';
-import { addMemory, recordEvent } from '../world';
+import { addMemory, causeKey, gatherCauses, lastCause, noteCause, recordEvent } from '../world';
 import type { Modifiers } from './technology';
 
 export function cultureSimilarity(a: Civilization, b: Civilization): number {
@@ -147,7 +147,7 @@ function complementaryNeeds(a: Civilization, b: Civilization): string | null {
   return null;
 }
 
-function treatyEvent(world: World, rel: DiplomaticRelation, a: Civilization, b: Civilization, title: string, description: string, cause: string, importance: 1 | 2 | 3 | 4 | 5) {
+function treatyEvent(world: World, rel: DiplomaticRelation, a: Civilization, b: Civilization, title: string, description: string, cause: string, importance: 1 | 2 | 3 | 4 | 5, extraCauseKeys: string[] = []) {
   const la = a.government.leaderId;
   const lb = b.government.leaderId;
   const ev = recordEvent(world, {
@@ -158,11 +158,17 @@ function treatyEvent(world: World, rel: DiplomaticRelation, a: Civilization, b: 
     civIds: [a.id, b.id],
     characterIds: [la, lb].filter(Boolean) as string[],
     cause,
-    causeIds: [a.causeLinks[`rel_${b.id}`]].filter(Boolean) as string[],
+    causeIds: [
+      lastCause(world, causeKey.pair(a.id, b.id)),
+      ...gatherCauses(world, [...extraCauseKeys.map((k) => causeKey.civ(a.id, k)), ...extraCauseKeys.map((k) => causeKey.civ(b.id, k))], 2),
+      // leaders conduct diplomacy: their accession is the fallback cause
+      lastCause(world, causeKey.civ(a.id, 'leader')),
+      lastCause(world, causeKey.civ(b.id, 'leader')),
+    ].filter(Boolean).slice(0, 4),
     effects: [{ label: 'Relation', before: rel.status, after: statusFor(rel) }, { label: 'Opinion', after: rel.opinion.toFixed(0) }],
   });
-  a.causeLinks[`rel_${b.id}`] = ev.id;
-  b.causeLinks[`rel_${a.id}`] = ev.id;
+  noteCause(world, causeKey.pair(a.id, b.id), ev.id);
+  if (/Trade agreement signed|Alliance formed/.test(title)) noteCause(world, [causeKey.civ(a.id, 'trade'), causeKey.civ(b.id, 'trade')], ev.id);
   return ev;
 }
 
@@ -181,7 +187,7 @@ function borderDispute(world: World, rng: Rng, a: Civilization, b: Civilization,
     if (!contested.length) continue;
     const r = rng.pick(contested);
     r.ownerCivId = strong.id;
-    recordEvent(world, {
+    const sev = recordEvent(world, {
       category: 'diplomacy',
       title: `${strong.adjective} forces seize the ${r.name}`,
       description: `After a border dispute, the unsettled ${r.name} on ${planet.name} passed from the ${weak.name} to the ${strong.name}.`,
@@ -189,9 +195,10 @@ function borderDispute(world: World, rng: Rng, a: Civilization, b: Civilization,
       civIds: [strong.id, weak.id],
       planetId: pid,
       cause: `Rivalry and border incidents; the ${strong.name} held the stronger position.`,
-      causeIds: [causeId],
+      causeIds: [causeId, lastCause(world, causeKey.pair(a.id, b.id))],
       effects: [{ label: `${r.name} control`, before: weak.name, after: strong.name }],
     });
+    noteCause(world, [causeKey.pair(a.id, b.id), causeKey.civ(weak.id, 'disaster'), causeKey.civ(strong.id, 'expansion')], sev.id);
     weak.stability = Math.max(0, weak.stability - 6);
     return;
   }
@@ -218,7 +225,10 @@ function maybeFirstContact(world: World, rng: Rng, rel: DiplomaticRelation, a: C
     importance: 5,
     civIds: [a.id, b.id],
     cause: `${initiator.name} gained ${initiator.tech.known.includes('orbital_flight') ? 'orbital flight' : 'radio astronomy'}, allowing contact across space.`,
-    causeIds: [initiator.causeLinks.contact_tech].filter(Boolean) as string[],
+    causeIds: [
+      lastCause(world, causeKey.civ(initiator.id, 'contact_tech')) ?? lastCause(world, causeKey.civ(initiator.id, 'tech_radio')) ?? lastCause(world, causeKey.civ(initiator.id, 'tech')),
+      lastCause(world, causeKey.civ(other.id, 'contact_tech')),
+    ],
     effects: [{ label: 'Relation', before: 'unknown', after: rel.status }, { label: 'Initial opinion', after: rel.opinion.toFixed(0) }],
   });
   for (const civ of [a, b]) {
@@ -234,6 +244,7 @@ function maybeFirstContact(world: World, rng: Rng, rel: DiplomaticRelation, a: C
       }
     }
   }
+  noteCause(world, causeKey.pair(a.id, b.id), ev.id);
   const la = a.government.leaderId ? world.characters[a.government.leaderId] : undefined;
   if (la) ev.characterIds.push(la.id);
 }
@@ -264,7 +275,9 @@ function stateVisit(world: World, rng: Rng, rel: DiplomaticRelation, a: Civiliza
     civIds: [a.id, b.id],
     characterIds: [la.id, lb.id],
     cause: `Leaders\u2019 chemistry (temperament compatibility ${(compat * 100).toFixed(0)}%, combined diplomacy ${(skill * 100).toFixed(0)}).`,
+    causeIds: [lastCause(world, causeKey.pair(a.id, b.id)), lastCause(world, causeKey.char(la.id)), lastCause(world, causeKey.char(lb.id))],
     effects: [{ label: 'Opinion', before: Math.round(rel.opinion - delta * 0.5), after: Math.round(rel.opinion) }],
   });
+  noteCause(world, [causeKey.pair(a.id, b.id), causeKey.char(la.id), causeKey.char(lb.id)], ev.id);
   for (const x of [la, lb]) addMemory(x, { t: world.time, text: `${good ? 'Held productive talks' : 'Clashed'} with ${x === la ? lb.givenName : la.givenName} during a state visit.`, valence: good ? 0.5 : -0.4, importance: 3, eventId: ev.id, withId: x === la ? lb.id : la.id });
 }

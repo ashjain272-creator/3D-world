@@ -36,6 +36,9 @@ export function createEmptyWorld(seed: string): World {
     customTechs: [],
     player: { discoveredLandmarkIds: [], visitedSettlementIds: [], conversations: 0, followedCharacterId: null },
     stats: { totalBirths: 0, totalDeaths: 0, ticks: 0 },
+    causes: {},
+    history: { chunks: [], redirects: {}, lateConsequences: {}, archivedCount: 0, compactedCount: 0, lastMaintenanceDay: 0 },
+    interventionLog: [],
   };
 }
 
@@ -136,7 +139,8 @@ export function generateUniverse(seed: string): { world: World; report: Generati
     }
   }
 
-  world.events.sort((a, b) => a.t - b.t);
+  // a new array (not an in-place sort) so the incremental id index is rebuilt
+  world.events = [...world.events].sort((a, b) => a.t - b.t);
   world.rngState = rng.state;
 
   const report: GenerationReport = {

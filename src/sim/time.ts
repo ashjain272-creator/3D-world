@@ -47,6 +47,15 @@ export function formatShortDate(time: number, epochYear: number): string {
   return `${MONTH_NAMES[d.month].slice(0, 3)} ${d.year}`;
 }
 
+/**
+ * Local hour on a planet, as 0..24 on that world's own clock: a 30-hour day
+ * still runs from midnight (0) through noon (12) to midnight (24).
+ */
+export function localHour(time: number, dayLengthHours = 24): number {
+  const L = dayLengthHours * 60;
+  return ((((time % L) + L) % L) / L) * 24;
+}
+
 /** Hour of day as a float 0..24. */
 export function hourOfDay(time: number): number {
   return (((time % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY) / 60;

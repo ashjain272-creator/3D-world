@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/sim/rng';
 import { characterStep, die, scoreActivities } from '../src/sim/systems/characters';
-import { MINUTES_PER_DAY } from '../src/sim/time';
 import type { World } from '../src/sim/types';
 import { freshWorld } from './helpers';
 
+/** Move the clock forward to the given local hour on the first civilisation's homeworld. */
 function atHour(w: World, hour: number) {
-  w.time = Math.floor(w.time / MINUTES_PER_DAY) * MINUTES_PER_DAY + MINUTES_PER_DAY + hour * 60;
+  const L = w.planets[Object.values(w.civs)[0].homeworldId].dayLengthHours * 60;
+  const start = Math.ceil(w.time / L) * L + L;
+  w.time = start + (hour / 24) * L;
 }
 
 function adultWorker(w: World) {
-  return Object.values(w.characters).find((c) => c.alive && c.occupation !== 'student' && c.occupation !== 'retired' && w.civs[c.civId].government.leaderId !== c.id)!;
+  const home = Object.values(w.civs)[0].homeworldId;
+  return Object.values(w.characters).find((c) => c.alive && c.occupation !== 'student' && c.occupation !== 'retired' && w.civs[c.civId].government.leaderId !== c.id && w.settlements[c.settlementId].planetId === home)!;
 }
 
 describe('utility-based characters', () => {

@@ -41,7 +41,7 @@ export interface StreetGraph {
 }
 
 export interface Layout {
-  style: ArchitectureStyle | 'wild';
+  style: ArchitectureStyle | 'wild' | 'cloud';
   radius: number;
   buildings: Building[];
   landmarks: PlacedLandmark[];
@@ -430,4 +430,38 @@ export function resolveCollisions(colliders: Collider[], x: number, z: number, r
     }
   }
   return [x, z];
+}
+
+/** Uniform grid over colliders so per-frame collision checks only touch nearby shapes. */
+export interface ColliderGrid {
+  cell: number;
+  cells: Map<number, Collider[]>;
+  count: number;
+}
+
+export function buildColliderGrid(colliders: Collider[], cell = 16): ColliderGrid {
+  const cells = new Map<number, Collider[]>();
+  for (const c of colliders) {
+    const r = Math.max(c.hw, c.hd);
+    for (let gx = Math.floor((c.x - r) / cell); gx <= Math.floor((c.x + r) / cell); gx++) {
+      for (let gz = Math.floor((c.z - r) / cell); gz <= Math.floor((c.z + r) / cell); gz++) {
+        const k = gx * 65536 + gz;
+        const list = cells.get(k);
+        if (list) list.push(c);
+        else cells.set(k, [c]);
+      }
+    }
+  }
+  return { cell, cells, count: colliders.length };
+}
+
+export function resolveCollisionsGrid(g: ColliderGrid, x: number, z: number, r: number): [number, number] {
+  const near: Collider[] = [];
+  for (let gx = Math.floor((x - r) / g.cell); gx <= Math.floor((x + r) / g.cell); gx++) {
+    for (let gz = Math.floor((z - r) / g.cell); gz <= Math.floor((z + r) / g.cell); gz++) {
+      const list = g.cells.get(gx * 65536 + gz);
+      if (list) for (const c of list) if (!near.includes(c)) near.push(c);
+    }
+  }
+  return resolveCollisions(near, x, z, r);
 }

@@ -5,6 +5,9 @@ import { SPEEDS, formatDate, toDate } from '../../sim/time';
 import { findEvent, fullName } from '../../sim/world';
 import { Icon, Logo } from '../components/Icons';
 import { Toasts } from '../components/common';
+import { sim } from '../../state/runner';
+import { ambient } from '../../audio/ambient';
+import { useAmbientAudio } from '../../audio/useAmbient';
 
 const NAV = [
   { id: 'universe', label: 'Universe', icon: Icon.Universe, key: '1' },
@@ -19,6 +22,7 @@ const NAV = [
 export function Shell({ children }: { children: ReactNode }) {
   const route = useRoute();
   const setSpeed = useApp((s) => s.setSpeed);
+  useAmbientAudio();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
@@ -62,7 +66,8 @@ export function Shell({ children }: { children: ReactNode }) {
       </nav>
       <header className="topbar">
         <Breadcrumbs />
-        <div className="topbar-spacer" />
+          <div className="topbar-spacer" />
+        <SoundToggle />
         <TimeControl />
       </header>
       <main className="main">{children}</main>
@@ -166,13 +171,31 @@ function FollowWidget() {
         className="btn sm ghost"
         onClick={(e) => {
           e.stopPropagation();
-          w.player.followedCharacterId = null;
-          useApp.getState().bump();
+          void sim.exec({ type: 'player', action: { type: 'follow', characterId: null } });
         }}
         aria-label="Stop following"
       >
         <Icon.Close style={{ width: 12, height: 12 }} />
       </button>
     </div>
+  );
+}
+
+function SoundToggle() {
+  const on = useApp((s) => s.settings.audioEnabled);
+  const update = useApp((s) => s.updateSettings);
+  return (
+    <button
+      className="btn sm ghost sound-toggle"
+      data-testid="audio-toggle"
+      aria-pressed={on}
+      title={on ? 'Mute ambient sound' : 'Turn on ambient sound'}
+      onClick={() => {
+        if (!on) ambient.enable();
+        update({ audioEnabled: !on });
+      }}
+    >
+      {on ? <Icon.Sound style={{ width: 16, height: 16 }} /> : <Icon.Muted style={{ width: 16, height: 16 }} />}
+    </button>
   );
 }

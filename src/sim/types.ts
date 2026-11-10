@@ -139,6 +139,8 @@ export interface Planet {
   seed: number;
   axialTilt: number;
   hasRings: boolean;
+  /** Length of the local solar day in standard hours (the calendar stays on standard 24 h days). */
+  dayLengthHours: number;
 }
 
 export interface PlanetPalette {
@@ -280,8 +282,6 @@ export interface Civilization {
   stats: CivStats[];
   /** Ongoing named conditions driving events (e.g. 'famine'). */
   conditions: Record<string, number>;
-  /** Most recent event id for a causal key (e.g. 'famine', 'leader'), used to link causes. */
-  causeLinks: Record<string, Id>;
   extinct: boolean;
 }
 
@@ -483,6 +483,11 @@ export interface Character {
   recent: { t: number; text: string }[];
   /** Days with persistently unmet purpose (drives career changes). */
   discontent: number;
+  /**
+   * Scheduling tier. 'background' individuals re-plan less often and keep a
+   * lighter inner life; anyone who becomes notable is promoted to foreground.
+   */
+  tier?: 'foreground' | 'background';
 }
 
 // ───────────────────────────── Diplomacy ─────────────────────────────
@@ -520,7 +525,8 @@ export type EventCategory =
   | 'exploration'
   | 'personal'
   | 'intervention'
-  | 'cosmic';
+  | 'cosmic'
+  | 'summary';
 
 export interface StateChange {
   label: string;
@@ -547,8 +553,48 @@ export interface HistoryEvent {
   effects: StateChange[];
   /** Later events that cite this one as a cause (filled in automatically). */
   consequenceIds: Id[];
-  /** Pre-history narrative vs simulated. */
+  /** Who recorded this event: the simulation, the founding chronicle, or the Creator. */
   source: 'simulation' | 'chronicle' | 'creator';
+  /**
+   * The origin of the causal chain this event belongs to. A simulated event
+   * downstream of a Creator intervention carries 'creator' here, so
+   * interventions remain visible as the root cause of their consequences.
+   */
+  rootSource?: 'simulation' | 'chronicle' | 'creator';
+  /** True for events with no prior event as cause (genesis, natural chance, creator actions). */
+  root?: boolean;
+  /** Non-event trigger: the activity, memory or threshold crossing that set this off. */
+  trigger?: { kind: 'activity' | 'memory' | 'threshold'; characterId?: Id; text: string };
+  /** For monthly summaries: how many low-importance events were folded in. */
+  compactedCount?: number;
+}
+
+export interface ArchiveChunkMeta {
+  key: string;
+  /** Inclusive numeric id range covered by the chunk. */
+  from: number;
+  to: number;
+  tFrom: number;
+  tTo: number;
+  count: number;
+}
+
+export interface HistoryMeta {
+  /** Archived chunks (full events stored outside the save, loaded lazily). */
+  chunks: ArchiveChunkMeta[];
+  /** Compacted low-importance event id → id of the monthly summary that replaced it. */
+  redirects: Record<Id, Id>;
+  /** Consequences added to an event after it was archived. */
+  lateConsequences: Record<Id, Id[]>;
+  archivedCount: number;
+  compactedCount: number;
+  lastMaintenanceDay: number;
+}
+
+export interface InterventionRecord {
+  t: number;
+  kind: string;
+  args: unknown[];
 }
 
 // ───────────────────────────── World ─────────────────────────────
@@ -594,6 +640,11 @@ export interface World {
   customTechs: TechDef[];
   player: PlayerState;
   stats: { totalBirths: number; totalDeaths: number; ticks: number };
+  /** Bounded cause registry: key → most recent event ids (oldest first). */
+  causes: Record<string, Id[]>;
+  history: HistoryMeta;
+  /** Every Creator action applied, in order, for replay and verification. */
+  interventionLog: InterventionRecord[];
 }
 
 export interface TechEffect {

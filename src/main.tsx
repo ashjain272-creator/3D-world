@@ -7,6 +7,11 @@ import './styles/global.css';
 import { App } from './ui/App';
 import { boot } from './state/boot';
 import { useApp } from './state/store';
+import * as audio from './audio/ambient';
+import { causality } from './sim/world';
+
+// Fail loudly in development when an important event is recorded without a cause.
+if (import.meta.env.DEV) causality.strict = true;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -15,11 +20,9 @@ createRoot(document.getElementById('root')!).render(
 );
 
 // Small debugging/automation surface (used by the end-to-end script).
-import('./state/store').then((store) =>
-  import('./explorer/explorerStore').then((ex) => {
-    (window as unknown as { __genesis: unknown }).__genesis = { store, player: ex.playerState, commands: ex.playerCommands, npcs: ex.npcPositions, explorer: ex.useExplorer };
-  }),
-);
+Promise.all([import('./state/store'), import('./explorer/explorerStore'), import('./state/runner'), import('./explorer/Crowd')]).then(([store, ex, runner, crowd]) => {
+  (window as unknown as { __genesis: unknown }).__genesis = { store, sim: runner.sim, crowd: crowd.crowdStats, player: ex.playerState, commands: ex.playerCommands, npcs: ex.npcPositions, explorer: ex.useExplorer, ambient: audio.ambient };
+});
 
 boot().catch((e: Error) => {
   useApp.getState().setError(e.message);

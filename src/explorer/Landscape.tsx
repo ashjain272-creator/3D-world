@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { createNoise2D } from 'simplex-noise';
 import { Rng } from '../sim/rng';
+import { TiledInstances } from './lod';
+import type { VegetationData } from './vegetation';
 import type { Layout } from './layout';
 import { mixHex, type TerrainData } from './terrain';
 
@@ -83,103 +85,47 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
   );
 }
 
-interface TreeSet {
-  trunk: THREE.Matrix4[];
-  canopy: THREE.Matrix4[];
-  canopyColors: THREE.Color[];
-}
-
-/** Instanced vegetation and rocks, scattered by noise, slope, water and settlement. */
-export function Vegetation({ t, layout, quality }: { t: TerrainData; layout: Layout; quality: 'low' | 'medium' | 'high' }) {
-  const kind = t.look.vegetation;
-  const data = useMemo(() => {
-    const rng = new Rng(t.seed + 5);
-    const max = Math.round((quality === 'high' ? 2600 : quality === 'medium' ? 1500 : 700) * Math.min(1.2, t.look.density + (layout.style === 'wild' ? 0.3 : 0)));
-    const set: TreeSet = { trunk: [], canopy: [], canopyColors: [] };
-    const rocks: THREE.Matrix4[] = [];
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const base = new THREE.Color(t.look.grassColor);
-    const tries = max * 4;
-    for (let i = 0; i < tries && set.trunk.length < max; i++) {
-      const x = rng.range(-t.size * 0.47, t.size * 0.47);
-      const z = rng.range(-t.size * 0.47, t.size * 0.47);
-      const d = Math.hypot(x, z);
-      const inCity = layout.radius > 0 && d < layout.radius + 10;
-      if (inCity && !(layout.style === 'organic' && rng.chance(0.08))) continue;
-      if (layout.colliders.some((c) => Math.hypot(c.x - x, c.z - z) < c.hw + 4)) continue;
-      if (Math.hypot(x - layout.spawn.x, z - layout.spawn.z) < 22) continue;
-      if (layout.landmarks.some((l) => Math.hypot(l.x - x, l.z - z) < l.radius + (layout.style === 'wild' ? 6 : 4))) continue;
-      const h = t.height(x, z);
-      if (t.waterLevel !== null && h < t.waterLevel + 0.8) continue;
-      if (t.slope(x, z) > 0.7) continue;
-      const clump = Math.sin(x * 0.021 + t.seed) * Math.cos(z * 0.017 - t.seed) + 0.3;
-      if (rng.next() > clump + t.look.density * 0.5) continue;
-      const s = rng.range(0.7, 1.5);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng.range(0, Math.PI * 2));
-      const trunkH = kind === 'jungle' ? 7 * s : kind === 'cactus' ? 3.2 * s : kind === 'conifer' ? 2.2 * s : 3 * s;
-      m.compose(new THREE.Vector3(x, h + trunkH / 2, z), q, new THREE.Vector3(s, trunkH, s));
-      set.trunk.push(m.clone());
-      const cy = h + trunkH + (kind === 'conifer' ? 3.2 * s : kind === 'jungle' ? 1 * s : kind === 'cactus' ? 0 : 1.6 * s);
-      const cs = kind === 'conifer' ? new THREE.Vector3(2.6 * s, 7 * s, 2.6 * s) : kind === 'jungle' ? new THREE.Vector3(5 * s, 1.8 * s, 5 * s) : kind === 'cactus' ? new THREE.Vector3(0.001, 0.001, 0.001) : new THREE.Vector3(3.4 * s, 3 * s, 3.4 * s);
-      m.compose(new THREE.Vector3(x, cy, z), q, cs);
-      set.canopy.push(m.clone());
-      const col = base.clone().offsetHSL(rng.range(-0.04, 0.04), rng.range(-0.1, 0.1), rng.range(-0.1, 0.06));
-      set.canopyColors.push(col);
-    }
-    const rockCount = quality === 'low' ? 120 : 320;
-    for (let i = 0; i < rockCount; i++) {
-      const x = rng.range(-t.size * 0.48, t.size * 0.48);
-      const z = rng.range(-t.size * 0.48, t.size * 0.48);
-      if (layout.radius > 0 && Math.hypot(x, z) < layout.radius + 6) continue;
-      const s = rng.range(0.4, 2.6) * (t.slope(x, z) > 0.4 ? 1.6 : 1);
-      q.setFromEuler(new THREE.Euler(rng.range(0, 3), rng.range(0, 3), rng.range(0, 3)));
-      m.compose(new THREE.Vector3(x, t.height(x, z) + s * 0.2, z), q, new THREE.Vector3(s, s * rng.range(0.5, 1), s));
-      rocks.push(m.clone());
-    }
-    return { set, rocks };
-  }, [t, layout, quality, kind]);
-
-  const trunkRef = useRef<THREE.InstancedMesh>(null);
-  const canopyRef = useRef<THREE.InstancedMesh>(null);
-  const rockRef = useRef<THREE.InstancedMesh>(null);
-  useEffect(() => {
-    data.set.trunk.forEach((m, i) => trunkRef.current?.setMatrixAt(i, m));
-    data.set.canopy.forEach((m, i) => {
-      canopyRef.current?.setMatrixAt(i, m);
-      canopyRef.current?.setColorAt(i, data.set.canopyColors[i]);
-    });
-    data.rocks.forEach((m, i) => rockRef.current?.setMatrixAt(i, m));
-    for (const r of [trunkRef, canopyRef, rockRef]) {
-      if (r.current) {
-        r.current.instanceMatrix.needsUpdate = true;
-        if (r.current.instanceColor) r.current.instanceColor.needsUpdate = true;
-        r.current.computeBoundingSphere();
-      }
-    }
-  }, [data]);
-  const n = data.set.trunk.length;
+/** Instanced vegetation and rocks with tiled LOD (two detail levels plus distance culling). */
+export function Vegetation({ data, kind, cliff, quality }: { data: VegetationData; kind: TerrainData['look']['vegetation']; cliff: string; quality: 'low' | 'medium' | 'high' }) {
   const shadows = quality === 'high';
+  const far = quality === 'low' ? 0.65 : 1;
+  const levels = useMemo(() => {
+    const bark = new THREE.MeshStandardMaterial({ color: kind === 'cactus' ? '#5f8a4a' : '#5a4636', roughness: 1 });
+    const leaf = new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true });
+    const stone = new THREE.MeshStandardMaterial({ color: cliff, roughness: 1, flatShading: true });
+    const trunkHi = kind === 'cactus' ? new THREE.CapsuleGeometry(0.45, 0.6, 4, 8) : new THREE.CylinderGeometry(0.18, 0.3, 1, 6);
+    const trunkLo = kind === 'cactus' ? new THREE.CapsuleGeometry(0.45, 0.6, 1, 4) : new THREE.CylinderGeometry(0.18, 0.3, 1, 3);
+    const canopyHi = kind === 'conifer' ? new THREE.ConeGeometry(1, 1, 7) : kind === 'jungle' ? new THREE.SphereGeometry(1, 8, 5) : new THREE.IcosahedronGeometry(1, 1);
+    const canopyLo = kind === 'conifer' ? new THREE.ConeGeometry(1, 1, 4) : kind === 'jungle' ? new THREE.SphereGeometry(1, 5, 3) : new THREE.IcosahedronGeometry(1, 0);
+    return {
+      trunk: [
+        { geometry: trunkHi, material: bark, maxDist: 200 * far, castShadow: shadows },
+        { geometry: trunkLo, material: bark, maxDist: 380 * far },
+      ],
+      canopy: [
+        { geometry: canopyHi, material: leaf, maxDist: 230 * far, castShadow: shadows },
+        { geometry: canopyLo, material: leaf, maxDist: 520 * far },
+      ],
+      rock: [
+        { geometry: new THREE.DodecahedronGeometry(1, 0), material: stone, maxDist: 170 * far, castShadow: shadows, receiveShadow: true },
+        { geometry: new THREE.TetrahedronGeometry(1, 0), material: stone, maxDist: 300 * far },
+      ],
+    };
+  }, [kind, cliff, shadows, far]);
+  useEffect(
+    () => () => {
+      for (const set of Object.values(levels)) for (const l of set) l.geometry.dispose();
+      levels.trunk[0].material.dispose();
+      levels.canopy[0].material.dispose();
+      levels.rock[0].material.dispose();
+    },
+    [levels],
+  );
   return (
     <group>
-      {n > 0 && (
-        <>
-          <instancedMesh ref={trunkRef} args={[undefined, undefined, n]} castShadow={shadows} key={`t${n}`}>
-            {kind === 'cactus' ? <capsuleGeometry args={[0.45, 0.6, 4, 8]} /> : <cylinderGeometry args={[0.18, 0.3, 1, 6]} />}
-            <meshStandardMaterial color={kind === 'cactus' ? '#5f8a4a' : '#5a4636'} roughness={1} />
-          </instancedMesh>
-          {kind !== 'cactus' && (
-            <instancedMesh ref={canopyRef} args={[undefined, undefined, n]} castShadow={shadows} key={`c${n}`}>
-              {kind === 'conifer' ? <coneGeometry args={[1, 1, 7]} /> : kind === 'jungle' ? <sphereGeometry args={[1, 8, 5]} /> : <icosahedronGeometry args={[1, 1]} />}
-              <meshStandardMaterial roughness={0.9} flatShading />
-            </instancedMesh>
-          )}
-        </>
-      )}
-      <instancedMesh ref={rockRef} args={[undefined, undefined, data.rocks.length]} castShadow={shadows} receiveShadow key={`r${data.rocks.length}`}>
-        <dodecahedronGeometry args={[1, 0]} />
-        <meshStandardMaterial color={t.look.cliff} roughness={1} flatShading />
-      </instancedMesh>
+      {data.trunks.length > 0 && <TiledInstances items={data.trunks} levels={levels.trunk} name="trunks" />}
+      {data.trunks.length > 0 && kind !== 'cactus' && <TiledInstances items={data.canopies} levels={levels.canopy} name="canopies" />}
+      <TiledInstances items={data.rocks} levels={levels.rock} name="rocks" />
     </group>
   );
 }

@@ -3,7 +3,7 @@ import { clamp } from '../rng';
 import { GOVERNMENTS, POLICIES } from '../data/society';
 import type { Character, Civilization, CultureValues, GovernmentType, PolicyId, World } from '../types';
 import { DAYS_PER_YEAR, MINUTES_PER_DAY, MINUTES_PER_YEAR } from '../time';
-import { addMemory, ageOf, fullName, recordEvent } from '../world';
+import { addMemory, ageOf, causeKey, fullName, gatherCauses, lastCause, noteCause, recordEvent } from '../world';
 import type { Modifiers } from './technology';
 
 function policyAlignment(civ: Civilization, pid: PolicyId): number {
@@ -88,10 +88,10 @@ export function politicsTick(world: World, rng: Rng, civ: Civilization, mods: Mo
         importance: 3,
         civIds: [civ.id],
         cause: `Stability fell to ${civ.stability.toFixed(0)} (satisfaction ${civ.satisfaction.toFixed(0)}, legitimacy ${gov.legitimacy.toFixed(0)}).`,
-        causeIds: [civ.causeLinks.shortage_food, civ.causeLinks.shortage_goods, civ.causeLinks.leader_policy].filter(Boolean).slice(0, 3) as string[],
+        causeIds: gatherCauses(world, ['th_instability', 'th_discontent', 'shortage_food', 'shortage_goods', 'plague', 'disaster', 'tax_up', 'policy'].map((t) => causeKey.civ(civ.id, t)), 4),
         effects: [{ label: 'Stability', before: prevStab.toFixed(0), after: civ.stability.toFixed(0) }],
       });
-      civ.causeLinks.unrest = ev.id;
+      noteCause(world, causeKey.civ(civ.id, 'unrest'), ev.id);
     }
     if (civ.conditions.crisis >= 2 && rng.chance(0.35 + (22 - civ.stability) / 50)) {
       revolution(world, rng, civ, leader);
@@ -188,14 +188,20 @@ export function succession(world: World, rng: Rng, civ: Civilization, reason: 't
     civIds: [civ.id],
     characterIds: [winner.id, ...(old && !reelected ? [old.id] : [])],
     cause: reasonText[reason],
-    causeIds,
+    causeIds: [
+      ...causeIds,
+      // the previous accession (a chain of rulers), what ended it, and the winner's own story
+      lastCause(world, causeKey.civ(civ.id, 'leader')),
+      reason === 'vacancy' ? lastCause(world, causeKey.civ(civ.id, 'leader_death')) : undefined,
+      lastCause(world, causeKey.char(winner.id)),
+    ].slice(0, 5),
     effects: [
       { label: gov.leaderTitle, before: old ? fullName(old) : '—', after: fullName(winner) },
       { label: 'Legitimacy', after: gov.legitimacy.toFixed(0) },
     ],
     source: reason === 'creator' ? 'creator' : 'simulation',
   });
-  civ.causeLinks.leader = ev.id;
+  noteCause(world, [causeKey.civ(civ.id, 'leader'), causeKey.char(winner.id)], ev.id);
   addMemory(winner, { t: world.time, text: reelected ? `Re-elected as ${gov.leaderTitle}.` : `Became ${gov.leaderTitle} of the ${civ.name}.`, valence: 0.9, importance: 5, eventId: ev.id });
   if (old && old.alive && !reelected) addMemory(old, { t: world.time, text: `Left the office of ${gov.leaderTitle}.`, valence: reason === 'revolution' ? -0.9 : -0.2, importance: 4, eventId: ev.id });
   // Citizens react according to their relationship with the new leader.
@@ -237,7 +243,7 @@ function revolution(world: World, rng: Rng, civ: Civilization, oldLeader: Charac
     civIds: [civ.id],
     characterIds: [oldLeader.id],
     cause: `Months of crisis: stability ${civ.stability.toFixed(0)}, satisfaction ${civ.satisfaction.toFixed(0)}, legitimacy ${gov.legitimacy.toFixed(0)}.`,
-    causeIds: [civ.causeLinks.unrest, civ.causeLinks.shortage_food].filter(Boolean) as string[],
+    causeIds: gatherCauses(world, ['unrest', 'th_instability', 'shortage_food', 'disaster', 'leader'].map((t) => causeKey.civ(civ.id, t)), 4),
     effects: [
       { label: 'Government', before: oldType, after: newType },
       ...removed.map((p) => ({ label: 'Policy repealed', after: POLICIES[p].name })),
@@ -246,6 +252,7 @@ function revolution(world: World, rng: Rng, civ: Civilization, oldLeader: Charac
   civ.stability = 40;
   civ.satisfaction = Math.max(civ.satisfaction, 45);
   delete civ.conditions.crisis;
+  noteCause(world, [causeKey.civ(civ.id, 'revolution'), causeKey.civ(civ.id, 'disaster')], ev.id);
   addMemory(oldLeader, { t: world.time, text: 'Was overthrown in the revolution.', valence: -1, importance: 5, eventId: ev.id });
   oldLeader.reputation = Math.max(0, oldLeader.reputation - 30);
   succession(world, rng, civ, 'revolution', [ev.id]);
@@ -257,27 +264,28 @@ function adjustPolicies(world: World, rng: Rng, civ: Civilization, leader: Chara
   const gov = civ.government;
   const e = civ.economy;
   const popM = civ.settlementIds.reduce((a, id) => a + (world.settlements[id]?.population ?? 0), 0) / 1e6;
-  const wants: { p: PolicyId; why: string; w: number }[] = [];
-  if (e.treasury < -popM * 20) wants.push({ p: 'austerity', why: `the treasury is in deficit (${Math.round(e.treasury)})`, w: 3 });
-  if (civ.conditions.shortage_food || e.production.food < e.consumption.food * 0.97) wants.push({ p: 'agrarian_subsidies', why: 'food output lags consumption', w: 2.5 });
+  const wants: { p: PolicyId; why: string; w: number; keys?: string[] }[] = [];
+  const K = (t: string) => causeKey.civ(civ.id, t);
+  if (e.treasury < -popM * 20) wants.push({ p: 'austerity', why: `the treasury is in deficit (${Math.round(e.treasury)})`, w: 3, keys: ['th_deficit', 'tax_up'] });
+  if (civ.conditions.shortage_food || e.production.food < e.consumption.food * 0.97) wants.push({ p: 'agrarian_subsidies', why: 'food output lags consumption', w: 2.5, keys: ['shortage_food', 'th_granaries', 'th_chronic_food', 'disturbance'] });
   if (civ.stability < 40) {
-    if (leader.personality.agreeableness < 0.4 || civ.culture.values.militarism > 0.3) wants.push({ p: 'martial_order', why: `stability has fallen to ${civ.stability.toFixed(0)}`, w: 2.2 });
-    else wants.push({ p: civ.culture.values.collectivism > 0 ? 'welfare' : 'cultural_festivals', why: `stability has fallen to ${civ.stability.toFixed(0)}`, w: 2.2 });
+    if (leader.personality.agreeableness < 0.4 || civ.culture.values.militarism > 0.3) wants.push({ p: 'martial_order', why: `stability has fallen to ${civ.stability.toFixed(0)}`, w: 2.2, keys: ['unrest', 'th_instability', 'th_discontent'] });
+    else wants.push({ p: civ.culture.values.collectivism > 0 ? 'welfare' : 'cultural_festivals', why: `stability has fallen to ${civ.stability.toFixed(0)}`, w: 2.2, keys: ['unrest', 'th_instability', 'th_discontent'] });
   }
-  if (e.production.goods < e.consumption.goods || e.production.materials < e.consumption.materials * 0.95) wants.push({ p: 'industrial_drive', why: 'materials and goods are scarce', w: 1.6 });
-  if (leader.personality.openness > 0.6) wants.push({ p: 'research_grants', why: `${leader.givenName} champions science`, w: 1.2 });
-  if (leader.personality.openness > 0.55 && civ.culture.values.openness > 0) wants.push({ p: 'exploration_charter', why: `${leader.givenName} wants to chart the unknown`, w: 1 });
-  if (e.treasury > popM * 400) wants.push({ p: 'public_works', why: 'the treasury is flush', w: 1.3 });
+  if (e.production.goods < e.consumption.goods || e.production.materials < e.consumption.materials * 0.95) wants.push({ p: 'industrial_drive', why: 'materials and goods are scarce', w: 1.6, keys: ['shortage_goods', 'shortage_materials', 'th_chronic_goods', 'th_chronic_materials'] });
+  if (leader.personality.openness > 0.6) wants.push({ p: 'research_grants', why: `${leader.givenName} champions science`, w: 1.2, keys: ['leader'] });
+  if (leader.personality.openness > 0.55 && civ.culture.values.openness > 0) wants.push({ p: 'exploration_charter', why: `${leader.givenName} wants to chart the unknown`, w: 1, keys: ['leader', 'explore'] });
+  if (e.treasury > popM * 400) wants.push({ p: 'public_works', why: 'the treasury is flush', w: 1.3, keys: ['th_surplus', 'tax_down'] });
   const candidates = wants.filter((w) => !gov.policies.includes(w.p) && !(POLICIES[w.p].excludes ?? []).some((x) => gov.policies.includes(x)));
   // remove policies that no longer make sense
-  const drop: { p: PolicyId; why: string }[] = [];
-  if (gov.policies.includes('austerity') && e.treasury > popM * 120) drop.push({ p: 'austerity', why: 'the treasury has recovered' });
-  if (gov.policies.includes('martial_order') && civ.stability > 62) drop.push({ p: 'martial_order', why: 'order has been restored' });
-  if (gov.policies.includes('public_works') && e.treasury < 0) drop.push({ p: 'public_works', why: 'the state can no longer afford it' });
+  const drop: { p: PolicyId; why: string; keys: string[] }[] = [];
+  if (gov.policies.includes('austerity') && e.treasury > popM * 120) drop.push({ p: 'austerity', why: 'the treasury has recovered', keys: ['th_deficit_end', 'th_surplus'] });
+  if (gov.policies.includes('martial_order') && civ.stability > 62) drop.push({ p: 'martial_order', why: 'order has been restored', keys: ['th_instability_end', 'th_discontent_end'] });
+  if (gov.policies.includes('public_works') && e.treasury < 0) drop.push({ p: 'public_works', why: 'the state can no longer afford it', keys: ['th_deficit'] });
   if (drop.length) {
     const d = drop[0];
     gov.policies = gov.policies.filter((p) => p !== d.p);
-    civ.causeLinks.leader_policy = recordEvent(world, {
+    const rep = recordEvent(world, {
       category: 'politics',
       title: `${civ.name} repeals ${POLICIES[d.p].name}`,
       description: `${fullName(leader)} ended the ${POLICIES[d.p].name} policy.`,
@@ -285,8 +293,10 @@ function adjustPolicies(world: World, rng: Rng, civ: Civilization, leader: Chara
       civIds: [civ.id],
       characterIds: [leader.id],
       cause: `Repealed because ${d.why}.`,
+      causeIds: [lastCause(world, K(`policy_${d.p}`)), ...gatherCauses(world, d.keys.map(K), 2), lastCause(world, K('leader'))],
       effects: [{ label: 'Policies', after: gov.policies.map((p) => POLICIES[p].name).join(', ') || 'none' }],
-    }).id;
+    });
+    noteCause(world, [K('policy'), K(`repeal_${d.p}`)], rep.id);
     return;
   }
   if (!candidates.length) return;
@@ -306,10 +316,10 @@ function adjustPolicies(world: World, rng: Rng, civ: Civilization, leader: Chara
     civIds: [civ.id],
     characterIds: [leader.id],
     cause: `Enacted because ${pick.why}.`,
-    causeIds: [pick.p === 'agrarian_subsidies' ? civ.causeLinks.shortage_food : pick.p === 'martial_order' || pick.p === 'welfare' ? civ.causeLinks.unrest : undefined].filter(Boolean) as string[],
+    causeIds: [...gatherCauses(world, (pick.keys ?? []).map(K), 3), lastCause(world, K('leader'))],
     effects: [{ label: 'Policies', after: gov.policies.map((p) => POLICIES[p].name).join(', ') }],
   });
-  civ.causeLinks.leader_policy = ev.id;
+  noteCause(world, [K('policy'), K(`policy_${pick.p}`)], ev.id);
 }
 
 export function leaderTenureYears(civ: Civilization, now: number): number {

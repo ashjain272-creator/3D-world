@@ -12,6 +12,7 @@ import { OCC_COLORS } from '../../explorer/People';
 import { Meter } from '../components/Charts';
 import { CharLink, CivLink, EventRow, SearchBox, SettlementLink, moodLabel } from '../components/common';
 import { Icon } from '../components/Icons';
+import { sim } from '../../state/runner';
 
 export function CharactersPage() {
   useWorldVersion();
@@ -139,8 +140,7 @@ function CharacterDetail({ c, w }: { c: Character; w: World }) {
             <button
               className={`btn ${following ? 'accent' : ''}`}
               onClick={() => {
-                w.player.followedCharacterId = following ? null : c.id;
-                force((x) => x + 1);
+                void sim.exec({ type: 'player', action: { type: 'follow', characterId: following ? null : c.id } }).then(() => force((x) => x + 1));
               }}
               data-testid="follow-btn"
             >
@@ -177,7 +177,7 @@ function CharacterDetail({ c, w }: { c: Character; w: World }) {
                 <div key={cd.type + i} style={{ display: 'grid', gridTemplateColumns: '90px 1fr 46px', gap: 10, alignItems: 'center', fontSize: 12 }}>
                   <span style={{ textTransform: 'capitalize', color: i === 0 ? 'var(--accent)' : 'var(--text-2)' }}>{cd.type}</span>
                   <span className="muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {cd.factors.join(' · ')}
+                    {cd.factors().join(' · ')}
                   </span>
                   <span className="mono" style={{ textAlign: 'right' }}>
                     {cd.score.toFixed(2)}

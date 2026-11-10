@@ -338,6 +338,8 @@ export function generatePlanet(
     palette: rng.pick(PALETTES[type]),
     seed: Math.floor(rng.next() * 1e9),
     axialTilt: +rng.range(0, 35).toFixed(1),
+    // giants spin fast; rocky worlds vary around a standard day
+    dayLengthHours: +(giant ? rng.range(9, 17) : opts.inhabited ? rng.range(20, 30) : rng.range(14, 40)).toFixed(1),
     hasRings: giant ? rng.chance(0.55) : rng.chance(0.05),
   };
   world.planets[planet.id] = planet;

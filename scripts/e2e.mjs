@@ -34,6 +34,13 @@ page.on('console', (m) => {
 });
 const shot = (name) => page.screenshot({ path: `${OUT}/${name}.png` });
 const world = (fn) => page.evaluate(fn);
+const advanceLocal = (hour) =>
+  page.evaluate((h) => {
+    const w = window.__genesis.store.getWorld();
+    const id = location.hash.split('/')[2];
+    const planetId = w.settlements[id]?.planetId ?? id;
+    return window.__genesis.sim.exec({ type: 'advanceToHour', hour: h, planetId });
+  }, hour);
 
 try {
   // 1. First run: cinematic intro and generation
@@ -69,6 +76,8 @@ try {
   const d2 = await page.textContent('[data-testid=sim-date]');
   check('time advances at speed 4', d1 !== d2, `${d1} → ${d2}`);
   await page.click('[data-speed="0"]');
+  // in worker mode a patch generated just before the pause may still be in flight
+  await page.waitForTimeout(800);
   const t1 = await world(() => window.__genesis.store.getWorld().time);
   await page.waitForTimeout(1200);
   const t2 = await world(() => window.__genesis.store.getWorld().time);
@@ -121,11 +130,11 @@ try {
   await page.keyboard.up('KeyW');
   await shot('09-explorer-moving');
 
-  // 5. Approach an inhabitant and talk (daytime, so people are out and about)
-  await world(() => {
-    const w = window.__genesis.store.getWorld();
-    w.time = Math.floor(w.time / 1440) * 1440 + 1440 + 13 * 60;
-  });
+  // 5. Approach an inhabitant and talk (daytime, so people are out and about).
+  // Paused: with a software renderer each step takes long enough at 1× for hours to slip by.
+  await page.click('[data-speed="0"]');
+  await page.waitForTimeout(800);
+  await advanceLocal(13);
   await page.waitForTimeout(2500);
   const npc = await world(() => {
     const w = window.__genesis.store.getWorld();
@@ -159,17 +168,31 @@ try {
     await page.waitForTimeout(400);
     const lines = await page.$$eval('.dl', (els) => els.length);
     check('inhabitant answers questions', lines >= 3, `${lines} lines`);
+    // Step 6: memory- and history-aware topics
+    for (const label of ['What do you remember most?', 'Why are things the way they are?']) {
+      await page.click(`.dialogue-options button:has-text("${label}")`);
+      await page.waitForTimeout(300);
+    }
+    const deep = await page.$$eval('.dl.them', (els) => els.slice(-2).map((e) => e.textContent ?? ''));
+    check('dialogue draws on memories and causal history', deep.length === 2 && deep.every((t) => t.length > 20), deep.map((t) => t.slice(0, 70)).join(' | '));
     await shot('10-dialogue');
     await page.keyboard.press('Escape');
   }
 
+  // Step 4 acceptance: crowd density in the capital at midday vs night.
+  await advanceLocal(13);
+  await page.waitForTimeout(3000);
+  const crowdNoon = await page.evaluate(() => ({ ...window.__genesis.crowd, named: window.__genesis.npcs.size }));
+  check('capital at midday shows >= 150 visible figures', crowdNoon.visible + crowdNoon.named >= 150, `${crowdNoon.visible} crowd + ${crowdNoon.named} simulated individuals (capacity ${crowdNoon.capacity})`);
+  await shot('10b-capital-midday');
+
   // 6. Night and wilderness
-  await world(() => {
-    const w = window.__genesis.store.getWorld();
-    w.time = Math.floor(w.time / 1440) * 1440 + 22 * 60;
-  });
+  await advanceLocal(22);
   await page.waitForTimeout(2500);
+  const crowdNight = await page.evaluate(() => ({ ...window.__genesis.crowd, named: window.__genesis.npcs.size }));
+  check('night shows visibly fewer figures', crowdNight.visible + crowdNight.named < (crowdNoon.visible + crowdNoon.named) * 0.6, `${crowdNight.visible} crowd + ${crowdNight.named} simulated at 22:00`);
   await shot('11-explorer-night');
+  await page.click('[data-speed="1"]');
   await page.click('[data-testid=locations-btn]');
   await page.waitForTimeout(500);
   await shot('12-location-picker');
@@ -177,14 +200,45 @@ try {
     const w = window.__genesis.store.getWorld();
     const p = Object.values(w.planets).find((x) => x.regions.length && !x.civIds.length && ['jungle', 'terran', 'ocean', 'desert'].includes(x.type)) ?? Object.values(w.planets).find((x) => x.regions.length && !x.civIds.length);
     const r = p.regions.find((x) => x.biome !== 'ocean');
-    w.time = Math.floor(w.time / 1440) * 1440 + 10 * 60;
     return `${p.id}/${r.index}`;
   });
+  await advanceLocal(10);
   await page.evaluate((h) => (location.hash = `#/explorer/${h}`), wild);
   await page.waitForTimeout(6000);
   await shot('13-wilderness');
   const charted = await world(() => window.__genesis.store.getWorld().events.some((e) => e.title.includes('is charted')));
   check('exploring a wild region records history', charted);
+
+  // Step 6: floating platforms on a gas or ice giant
+  const giant = await world(() => Object.values(window.__genesis.store.getWorld().planets).find((p) => p.type === 'gas_giant' || p.type === 'ice_giant')?.id ?? null);
+  if (giant) {
+    await page.evaluate((id) => (location.hash = `#/explorer/${id}`), giant);
+    await page.waitForTimeout(6000);
+    const onPlatform = await page.evaluate(() => !!document.querySelector('[data-testid=explorer-page]') && Math.abs(window.__genesis.player.y) < 2);
+    check('gas/ice giant opens a walkable cloud platform', onPlatform, `y=${(await page.evaluate(() => window.__genesis.player.y)).toFixed(2)}`);
+    await shot('13b-cloud-platform');
+    // walk straight off the hub edge: the railing must hold the player on the deck
+    await page.evaluate(() => (window.__genesis.commands.teleport = { x: -56, z: 0, yaw: -Math.PI / 2 }));
+    await page.waitForTimeout(500);
+    await page.keyboard.down('ShiftLeft');
+    await page.keyboard.down('KeyW');
+    await page.waitForTimeout(3000);
+    await page.keyboard.up('KeyW');
+    await page.keyboard.up('ShiftLeft');
+    const edge = await page.evaluate(() => ({ x: window.__genesis.player.x, y: window.__genesis.player.y, z: window.__genesis.player.z }));
+    check('platform edges cannot be walked off', edge.y > -1, `player at (${edge.x.toFixed(1)}, ${edge.y.toFixed(1)}, ${edge.z.toFixed(1)})`);
+    await page.keyboard.press('Escape').catch(() => {});
+  } else check('gas/ice giant opens a walkable cloud platform', false, 'no giant in this universe');
+
+  // Step 6: optional ambient audio, off by default, toggled from the top bar
+  const audioDefault = await page.evaluate(() => window.__genesis.store.useApp?.getState?.().settings.audioEnabled ?? null);
+  await page.click('[data-testid=audio-toggle]');
+  await page.waitForTimeout(800);
+  const audioOn = await page.evaluate(() => window.__genesis.ambient.state);
+  await page.click('[data-testid=audio-toggle]');
+  await page.waitForTimeout(1200);
+  const audioOff = await page.evaluate(() => ({ state: window.__genesis.ambient.state, enabled: window.__genesis.ambient.enabled }));
+  check('ambient audio off by default, toggles on and mutes', audioDefault !== true && audioOn === 'running' && !audioOff.enabled, `default=${audioDefault} on=${audioOn} after mute=${audioOff.state}`);
 
   // 7. Observer sections
   for (const [name, hash, sel] of [
@@ -239,10 +293,46 @@ try {
       await shot('21-creator-after');
     }
   }
+  // Step 1/2 acceptance: advance five years, then inspect causal depth in the UI.
+  await page.evaluate(() => (location.hash = '#/creator'));
+  await page.waitForSelector('[data-testid=creator-page]');
+  for (let i = 0; i < 5; i++) {
+    await page.click('button:has-text("Leap 1 year")');
+    await page.waitForSelector('.tool .spinner', { timeout: 3000 }).catch(() => null);
+    await page.waitForFunction(() => !document.querySelector('.tool .spinner'), null, { timeout: 180000 });
+  }
+  const years = await world(() => (window.__genesis.store.getWorld().time / 1440 / 360).toFixed(1));
+  const tHist = await page.evaluate(async () => {
+    const t0 = performance.now();
+    location.hash = '#/history';
+    while (!document.querySelector('[data-testid=history-page] .year-group')) await new Promise((r) => requestAnimationFrame(r));
+    return performance.now() - t0;
+  });
+  check('history page opens under 300 ms', tHist < 300, `${tHist.toFixed(0)} ms on a ${years}-year world`);
+  const depths = [];
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate(() => (location.hash = '#/history'));
+    await page.waitForSelector('[data-testid=history-page] .year-group .row');
+    const rows = await page.$$('[data-testid=history-page] .year-group .row');
+    await rows[Math.min(i * 3, rows.length - 1)].click();
+    await page.waitForSelector('[data-testid=cause-tree-back]', { timeout: 8000 }).catch(() => null);
+    await page.waitForTimeout(800);
+    depths.push(
+      await page.evaluate(() => {
+        const nodes = Array.from(document.querySelectorAll('[data-testid=cause-tree-back] .ctree-node[data-depth]'));
+        return nodes.reduce((m, n) => Math.max(m, Number(n.getAttribute('data-depth'))), 0);
+      }),
+    );
+    if (i === 0) await shot('18b-cause-chain');
+  }
+  check('important events show cause chains >= 3 levels deep', depths.every((d) => d >= 3), `depths ${depths.join(', ')}`);
+
   const followVisible = await page.$('[data-testid=follow-widget]');
   check('followed character widget visible', !!followVisible);
 
   // 8. Persistence across reload
+  await page.evaluate(() => (location.hash = '#/settings'));
+  await page.waitForSelector('[data-testid=settings-page]');
   await page.click('[data-speed="0"]');
   await page.waitForTimeout(300);
   await page.click('[data-testid=save-now]');

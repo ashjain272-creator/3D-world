@@ -4,7 +4,7 @@ import { hasSurface, isHabitableType } from '../generate/cosmos';
 import { createCharacter, createSettlement } from '../generate/society';
 import type { Civilization, Planet, Settlement, SettlementKind, World } from '../types';
 import { MINUTES_PER_YEAR } from '../time';
-import { addMemory, fullName, recordEvent } from '../world';
+import { addMemory, causeKey, fullName, gatherCauses, lastCause, noteCause, recordEvent } from '../world';
 import type { Modifiers } from './technology';
 
 const BASE_BIRTH = 0.019; // per year
@@ -52,7 +52,8 @@ function maybeUpgrade(world: World, civ: Civilization, s: Settlement): void {
   for (const u of UPGRADE) {
     if (s.kind === u.from && s.population >= u.at) {
       s.kind = u.to;
-      recordEvent(world, {
+      const K = (t: string) => causeKey.civ(civ.id, t);
+      const ev = recordEvent(world, {
         category: 'population',
         title: `${s.name} grows into a ${u.to}`,
         description: `With ${Math.round(s.population).toLocaleString()} inhabitants, ${s.name} is now counted among the ${u.to === 'city' ? 'great cities' : 'towns'} of the ${civ.name}.`,
@@ -60,8 +61,10 @@ function maybeUpgrade(world: World, civ: Civilization, s: Settlement): void {
         civIds: [civ.id],
         settlementId: s.id,
         cause: `Sustained population growth (housing capacity ${Math.round(s.capacity).toLocaleString()}, happiness ${Math.round(s.happiness)}).`,
+        causeIds: [lastCause(world, causeKey.settlement(s.id)), ...gatherCauses(world, [K('golden_age'), K('migration'), K('tech')], 2)],
         effects: [{ label: 'Status', before: u.from, after: u.to }],
       });
+      noteCause(world, [causeKey.settlement(s.id), K('growth')], ev.id);
     }
   }
 }
@@ -89,7 +92,7 @@ export function migrationTick(world: World, rng: Rng, civ: Civilization): void {
       c.settlementId = to.id;
       c.homeSettlementId = to.id;
       addMemory(c, { t: world.time, text: `Moved from ${from.name} to ${to.name} looking for a better life.`, valence: 0.3, importance: 3 });
-      recordEvent(world, {
+      const mev = recordEvent(world, {
         category: 'personal',
         title: `${fullName(c)} moves to ${to.name}`,
         description: `${c.givenName} left ${from.name} for ${to.name}, part of a wave of migrants.`,
@@ -98,7 +101,9 @@ export function migrationTick(world: World, rng: Rng, civ: Civilization): void {
         settlementId: to.id,
         characterIds: [c.id],
         cause: `${to.name} offered better prospects (attractiveness ${attract(to).toFixed(0)} vs ${attract(from).toFixed(0)}).`,
+        causeIds: [lastCause(world, causeKey.char(c.id)), lastCause(world, causeKey.settlement(to.id))],
       });
+      noteCause(world, [causeKey.char(c.id), causeKey.civ(civ.id, 'migration')], mev.id);
     }
   }
 }
@@ -170,12 +175,19 @@ export function expansionTick(world: World, rng: Rng, civ: Civilization, mods: M
     planetId: choice.planet.id,
     settlementId: s.id,
     cause: `Population pressure at ${(pressure * 100).toFixed(0)}% of housing capacity${expansionist ? ' and an Expansionism policy' : ''}, with a stable treasury.${offworld ? ' Colonisation technology made the voyage possible.' : ''}`,
-    causeIds: [civ.causeLinks.colonize_tech, civ.causeLinks.explore].filter(Boolean) as string[],
+    causeIds: [
+      lastCause(world, causeKey.civ(civ.id, 'th_housing')),
+      offworld ? lastCause(world, causeKey.civ(civ.id, 'colonize_tech')) : undefined,
+      lastCause(world, causeKey.civ(civ.id, 'explore')),
+      expansionist ? lastCause(world, causeKey.civ(civ.id, 'policy_expansionism')) : undefined,
+      lastCause(world, causeKey.settlement(source.id)),
+    ],
     effects: [
       { label: 'Settlements', before: list.length, after: list.length + 1 },
       { label: `${source.name} population`, before: Math.round(source.population + settlers), after: Math.round(source.population) },
     ],
   });
+  noteCause(world, [causeKey.settlement(s.id), causeKey.civ(civ.id, 'expansion')], ev.id);
   // A few named pioneers go with them.
   const pioneers = Object.values(world.characters)
     .filter((c) => c.alive && c.settlementId === source.id && c.id !== civ.government.leaderId && c.personality.openness > 0.5)
@@ -186,7 +198,8 @@ export function expansionTick(world: World, rng: Rng, civ: Civilization, mods: M
     addMemory(c, { t: world.time, text: `Helped found ${s.name}${offworld ? ` on ${choice.planet.name}` : ''}.`, valence: 0.7, importance: 5, eventId: ev.id });
     ev.characterIds.push(c.id);
     c.eventIds.push(ev.id);
+    noteCause(world, causeKey.char(c.id), ev.id);
   }
   // and a newcomer is born into the colony to keep it populated
-  if (pioneers.length < 2) createCharacter(world, rng, civ, s, { age: rng.int(20, 40) });
+  if (pioneers.length < 2) noteCause(world, causeKey.char(createCharacter(world, rng, civ, s, { age: rng.int(20, 40) }).id), ev.id);
 }

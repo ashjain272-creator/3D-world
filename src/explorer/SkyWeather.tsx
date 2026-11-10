@@ -1,33 +1,16 @@
 import { useFrame, useThree } from '@react-three/fiber';
-import { Sky, Stars } from '@react-three/drei';
+import { Stars } from '@react-three/drei';
+import { skyAt, skyFragment, skyPalette, skyVertex } from './skyDome';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { Rng } from '../sim/rng';
-import { hourOfDay } from '../sim/time';
+import { localHour } from '../sim/time';
 import type { Planet, StarSystem } from '../sim/types';
 import { getWorld } from '../state/store';
 import { glowSprite } from '../cosmos/planetTexture';
 import { nightUniform } from './City';
 import { playerState } from './explorerStore';
 
-function skyParams(planet: Planet) {
-  switch (planet.type) {
-    case 'desert':
-      return { turbidity: 9, rayleigh: 0.9, mie: 0.012, tint: '#f0c890' };
-    case 'arctic':
-      return { turbidity: 2.5, rayleigh: 2.6, mie: 0.004, tint: '#c8e4ff' };
-    case 'jungle':
-      return { turbidity: 11, rayleigh: 1.6, mie: 0.008, tint: '#b8e8c8' };
-    case 'ocean':
-      return { turbidity: 5, rayleigh: 2.4, mie: 0.005, tint: '#a8d8ff' };
-    case 'volcanic':
-      return { turbidity: 20, rayleigh: 0.4, mie: 0.03, tint: '#ff9a6a' };
-    case 'barren':
-      return { turbidity: 0.5, rayleigh: 0.1, mie: 0.001, tint: '#8a8a9a' };
-    default:
-      return { turbidity: 6, rayleigh: 1.8, mie: 0.005, tint: '#bcd8f4' };
-  }
-}
 
 export interface Environment {
   sunDir: THREE.Vector3;
@@ -44,12 +27,25 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
   const hemi = useRef<THREE.HemisphereLight>(null);
   const moonLight = useRef<THREE.DirectionalLight>(null);
   const flash = useRef(0);
-  const params = useMemo(() => skyParams(planet), [planet]);
   const sunPos = useRef(new THREE.Vector3(0, 1, 0));
   const fogColor = useMemo(() => new THREE.Color(), []);
   const weather = planet.environment.weather;
   const stars = useRef<THREE.Points>(null);
   const sky = useRef<THREE.Mesh>(null);
+  const palette = useMemo(() => skyPalette(planet, system.star.spectralClass), [planet, system.star.spectralClass]);
+  const skyCols = useMemo(() => ({ zenith: new THREE.Color(), horizon: new THREE.Color(), ground: new THREE.Color(), sun: new THREE.Color() }), []);
+  const skyUniforms = useMemo(
+    () => ({
+      uZenith: { value: new THREE.Color() },
+      uHorizon: { value: new THREE.Color() },
+      uGround: { value: new THREE.Color() },
+      uSun: { value: new THREE.Color() },
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uSunSize: { value: 0.0016 * Math.max(0.6, Math.min(2.2, system.star.radius / Math.max(0.3, planet.orbit))) },
+      uDay: { value: 1 },
+    }),
+    [system.star.radius, planet.orbit],
+  );
   const cityGlow = useRef<THREE.PointLight>(null);
   const tilt = (planet.axialTilt / 90) * 0.4;
 
@@ -62,13 +58,17 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
 
   useFrame((_, dt) => {
     const w = getWorld();
-    const h = hourOfDay(w.time);
+    const h = localHour(w.time, planet.dayLengthHours);
     const ang = ((h - 6) / 24) * Math.PI * 2; // sunrise at 6
     const elev = Math.sin(ang);
     sunPos.current.set(Math.cos(ang) * 0.9, elev, tilt + 0.25).normalize();
-    // R3F copies vector props once, so drive the sky shader's uniform directly.
-    const skyMat = sky.current?.material as THREE.ShaderMaterial | undefined;
-    if (skyMat?.uniforms?.sunPosition) skyMat.uniforms.sunPosition.value.copy(sunPos.current);
+    skyAt(palette, elev, skyCols);
+    skyUniforms.uZenith.value.copy(skyCols.zenith);
+    skyUniforms.uHorizon.value.copy(skyCols.horizon);
+    skyUniforms.uGround.value.copy(skyCols.ground);
+    skyUniforms.uSun.value.copy(skyCols.sun);
+    skyUniforms.uSunDir.value.copy(sunPos.current);
+    if (sky.current) sky.current.position.set(playerState.x, playerState.y, playerState.z);
     const day = THREE.MathUtils.smoothstep(elev, -0.12, 0.18);
     const night = 1 - day;
     nightUniform.value = night;
@@ -80,7 +80,7 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
       sun.current.target.position.set(playerState.x, playerState.y, playerState.z);
       sun.current.target.updateMatrixWorld();
       const warm = 1 - THREE.MathUtils.smoothstep(elev, 0.05, 0.45);
-      sun.current.color.set(system.star.color).lerp(new THREE.Color('#ff9a5a'), warm * 0.6);
+      sun.current.color.copy(skyCols.sun).lerp(new THREE.Color('#ff9a5a'), warm * 0.4);
       sun.current.intensity = day * 2.6 * (1 - overcast * 0.7);
     }
     if (cityGlow.current) {
@@ -97,11 +97,14 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
     if (wx === 'storm' && Math.random() < dt * 0.15) flash.current = 1;
     if (hemi.current) {
       hemi.current.intensity = 0.42 + day * 0.4 + flash.current * 2;
-      hemi.current.color.set(params.tint).lerp(new THREE.Color('#34466e'), night * 0.8);
+      hemi.current.color.copy(skyCols.zenith).lerp(skyCols.horizon, 0.5).lerp(new THREE.Color('#34466e'), night * 0.6);
+      hemi.current.groundColor.copy(skyCols.ground);
     }
     // fog colour follows the sky: day tint → dusk orange → night navy
     const dusk = Math.max(0, 1 - Math.abs(elev) / 0.25) * day;
-    fogColor.set(params.tint).lerp(new THREE.Color('#e89a6a'), dusk * 0.5).lerp(new THREE.Color('#05080f'), night * 0.92);
+    // fog takes the horizon colour of this world's sky
+    fogColor.copy(skyCols.horizon);
+    void dusk;
     if (overcast) fogColor.lerp(new THREE.Color(wx === 'dust' ? '#a08060' : '#7a8490'), overcast * day * 0.8);
     if (scene.fog instanceof THREE.Fog) {
       scene.fog.color.copy(fogColor);
@@ -116,7 +119,10 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
   const shadowSize = quality === 'high' ? 2048 : 1024;
   return (
     <>
-      <Sky ref={sky as never} distance={4500} sunPosition={sunPos.current} turbidity={params.turbidity} rayleigh={params.rayleigh} mieCoefficient={params.mie} mieDirectionalG={0.8} />
+      <mesh ref={sky} frustumCulled={false} renderOrder={-1}>
+        <sphereGeometry args={[3000, 32, 16]} />
+        <shaderMaterial vertexShader={skyVertex} fragmentShader={skyFragment} uniforms={skyUniforms} side={THREE.BackSide} depthWrite={false} fog={false} />
+      </mesh>
       <Stars ref={stars as never} radius={1800} depth={200} count={3000} factor={20} saturation={0.2} fade />
       <SkyMoons planet={planet} />
       <hemisphereLight ref={hemi} args={['#bcd8f4', '#3a3226', 0.6]} />
@@ -143,7 +149,7 @@ function SkyMoons({ planet }: { planet: Planet }) {
   const group = useRef<THREE.Group>(null);
   useFrame(() => {
     if (!group.current) return;
-    const h = hourOfDay(getWorld().time);
+    const h = localHour(getWorld().time, planet.dayLengthHours);
     group.current.position.set(playerState.x, playerState.y, playerState.z);
     group.current.rotation.z = ((h - 18) / 24) * Math.PI * 2;
   });

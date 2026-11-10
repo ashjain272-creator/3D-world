@@ -797,7 +797,9 @@ textarea.input {
     display: none;
   }
   .rail-item {
-    min-width: 58px;
+    min-width: 47px;
+    font-size: 9px;
+    padding: 8px 0 6px;
   }
   .rail-item.active::before {
     display: none;
@@ -1328,21 +1330,29 @@ textarea.input {
   flex: none;
 }
 .follow-widget {
-  position: fixed;
-  left: calc(var(--rail) + 16px);
-  bottom: 16px;
-  z-index: 30;
-  padding: 10px 12px;
-  width: 290px;
+  /* lives in the top bar: never overlaps page content */
+  margin-left: 12px;
+  padding: 4px 8px 4px 4px;
+  max-width: 300px;
+  min-width: 0;
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   cursor: pointer;
+  border-radius: 999px;
+  backdrop-filter: none;
+}
+.follow-widget .avatar {
+  width: 24px !important;
+  height: 24px !important;
+  font-size: 11px !important;
+}
+.follow-widget .eyebrow {
+  display: none;
 }
 @media (max-width: 760px) {
   .follow-widget {
-    bottom: 70px;
-    left: 8px;
+    max-width: 160px;
   }
 }
 
@@ -1566,4 +1576,56 @@ textarea.input {
   .sticky {
     position: static;
   }
+}
+
+/* ───────────── Cause tree ───────────── */
+.ctree {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 14px;
+  border-left: 1px solid var(--line-2);
+}
+.ctree:first-child {
+  margin-left: 2px;
+}
+.ctree-node {
+  margin: 2px 0;
+  font-size: 13px;
+}
+.ctree-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 0;
+}
+.ctree-toggle {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 4px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  color: var(--text-2);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+}
+.ctree-toggle.leaf {
+  border-color: transparent;
+  background: transparent;
+  cursor: default;
+}
+.ctree-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  min-width: 0;
+}
+.ctree-date {
+  font-size: 11px;
+  flex: none;
 }

@@ -34,8 +34,22 @@ export function validateAndMigrate(raw: unknown): World {
   w.stats ??= { totalBirths: 0, totalDeaths: 0, ticks: 0 };
   if (typeof w.rngState !== 'number') w.rngState = 12345;
   if (typeof w.nextId !== 'number') w.nextId = 100000;
-  for (const c of Object.values(w.civs) as Civilization[]) {
-    c.causeLinks ??= {};
+  w.causes ??= {};
+  w.history ??= { chunks: [], redirects: {}, lateConsequences: {}, archivedCount: 0, compactedCount: 0, lastMaintenanceDay: 0 };
+  w.history.chunks ??= [];
+  w.history.redirects ??= {};
+  w.history.lateConsequences ??= {};
+  w.interventionLog ??= [];
+  for (const p of Object.values(w.planets)) p.dayLengthHours ??= 24;
+  for (const c of Object.values(w.civs) as (Civilization & { causeLinks?: Record<string, string> })[]) {
+    // v3 → v4: single-slot cause links become the bounded cause registry
+    if (c.causeLinks) {
+      for (const [k, id] of Object.entries(c.causeLinks)) {
+        const type = k === 'leader_policy' ? 'policy' : k.startsWith('rel_') ? null : k;
+        if (type && id) (w.causes[`c:${c.id}:${type}`] ??= []).push(id);
+      }
+      delete c.causeLinks;
+    }
     c.conditions ??= {};
     c.stats ??= [];
     c.knownCivIds ??= [];

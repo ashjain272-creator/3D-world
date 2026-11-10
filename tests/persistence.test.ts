@@ -64,7 +64,7 @@ describe('IndexedDB persistence', () => {
 
   it('reports a corrupted autosave instead of crashing', async () => {
     await clearSaves();
-    const req = indexedDB.open('project-genesis', 1);
+    const req = indexedDB.open('project-genesis', 2);
     await new Promise<void>((resolve, reject) => {
       req.onsuccess = () => {
         const tx = req.result.transaction('saves', 'readwrite');

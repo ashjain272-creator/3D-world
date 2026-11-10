@@ -1,23 +1,39 @@
 import { useMemo, useState } from 'react';
 import type { EventCategory, HistoryEvent, World } from '../../sim/types';
 import { formatDate, toDate } from '../../sim/time';
-import { findEvent } from '../../sim/world';
 import { navigate, useRoute } from '../../state/router';
 import { getWorld, useWorldVersion } from '../../state/store';
-import { CATEGORY_COLORS, CharLink, CivLink, EventLink, EventRow, Importance, PlanetLink, SearchBox, SettlementLink } from '../components/common';
+import { CATEGORY_COLORS, CharLink, CivLink, EventRow, Importance, PlanetLink, SearchBox, SettlementLink } from '../components/common';
+import { CauseTree } from '../components/CauseTree';
+import { resolveEvent, useArchiveUpdates } from '../../state/historyClient';
 import { Icon } from '../components/Icons';
 
-const CATS: EventCategory[] = ['founding', 'discovery', 'economy', 'politics', 'diplomacy', 'culture', 'population', 'environment', 'exploration', 'personal', 'intervention', 'cosmic'];
+const CATS: EventCategory[] = ['founding', 'discovery', 'economy', 'politics', 'diplomacy', 'culture', 'population', 'environment', 'exploration', 'personal', 'intervention', 'cosmic', 'summary'];
 
 export function HistoryPage() {
   useWorldVersion();
   const route = useRoute();
   const w = getWorld();
-  if (route.parts[0]) {
-    const ev = findEvent(w, route.parts[0]);
-    return ev ? <EventDetail e={ev} w={w} /> : <div className="page"><div className="empty">This event has faded from the record.</div></div>;
-  }
+  if (route.parts[0]) return <EventRoute id={route.parts[0]} w={w} />;
   return <Timeline w={w} />;
+}
+
+function EventRoute({ id, w }: { id: string; w: World }) {
+  useArchiveUpdates();
+  const r = resolveEvent(id);
+  if (r === 'loading')
+    return (
+      <div className="page">
+        <div className="empty">Loading archived history…</div>
+      </div>
+    );
+  if (r === 'missing')
+    return (
+      <div className="page">
+        <div className="empty">No record of this event exists.</div>
+      </div>
+    );
+  return <EventDetail e={r} w={w} />;
 }
 
 function Timeline({ w }: { w: World }) {
@@ -149,24 +165,19 @@ function Timeline({ w }: { w: World }) {
   );
 }
 
-function chain(w: World, e: HistoryEvent, depth = 0, seen = new Set<string>()): HistoryEvent[] {
-  if (depth > 4 || seen.has(e.id)) return [];
-  seen.add(e.id);
-  const first = e.causeIds.map((id) => findEvent(w, id)).find(Boolean);
-  return first ? [...chain(w, first, depth + 1, seen), first] : [];
-}
-
 function EventDetail({ e, w }: { e: HistoryEvent; w: World }) {
-  const causes = e.causeIds.map((id) => findEvent(w, id)).filter(Boolean) as HistoryEvent[];
-  const consequences = e.consequenceIds.map((id) => findEvent(w, id)).filter(Boolean) as HistoryEvent[];
-  const lineage = chain(w, e);
+  useArchiveUpdates();
+  const lateLinks = w.history.lateConsequences[e.id] ?? [];
+  const consequences = [...new Set([...e.consequenceIds, ...lateLinks])];
+  const full = { ...e, consequenceIds: consequences };
+  const origin = e.rootSource ?? e.source;
   return (
     <div className="page" data-testid="event-detail">
       <button className="btn sm ghost" onClick={() => navigate('history')} style={{ marginBottom: 12 }}>
         <Icon.Back style={{ width: 14, height: 14 }} /> Timeline
       </button>
-      <div style={{ maxWidth: 900 }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+      <div style={{ maxWidth: 1080 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <span className="tag" style={{ color: CATEGORY_COLORS[e.category] }}>
             <span className="dot" style={{ background: CATEGORY_COLORS[e.category] }} />
             {e.category}
@@ -176,6 +187,8 @@ function EventDetail({ e, w }: { e: HistoryEvent; w: World }) {
             {formatDate(e.t, w.epochYear, true)}
           </span>
           <span className="tag">{e.source === 'simulation' ? 'emerged from simulation' : e.source === 'creator' ? 'creator intervention' : 'founding chronicle'}</span>
+          {e.source === 'simulation' && origin === 'creator' && <span className="tag accent">downstream of a creator intervention</span>}
+          {e.root && <span className="tag">root event</span>}
         </div>
         <h1 className="page-title" style={{ fontSize: 30, marginTop: 12 }}>
           {e.title}
@@ -189,32 +202,26 @@ function EventDetail({ e, w }: { e: HistoryEvent; w: World }) {
               <h3>What caused it</h3>
             </div>
             <p style={{ marginTop: 0 }}>{e.cause}</p>
-            {causes.length > 0 && (
-              <div className="list" style={{ margin: '0 -12px' }}>
-                {causes.map((c) => (
-                  <EventRow key={c.id} e={c} />
-                ))}
-              </div>
+            {e.trigger && (
+              <p className="muted" style={{ fontSize: 13 }}>
+                Trigger ({e.trigger.kind}
+                {e.trigger.characterId && w.characters[e.trigger.characterId] ? (
+                  <>
+                    , <CharLink id={e.trigger.characterId} />
+                  </>
+                ) : null}
+                ): {e.trigger.text}
+              </p>
             )}
-            {lineage.length > 1 && (
-              <div className="section">
-                <div className="section-title">
-                  <h3>Causal chain</h3>
-                </div>
-                <div className="chain">
-                  {lineage.map((c) => (
-                    <div key={c.id} className="chain-node" onClick={() => navigate(`history/${c.id}`)}>
-                      <span className="mono muted">{formatDate(c.t, w.epochYear)}</span>
-                      <span>{c.title}</span>
-                    </div>
-                  ))}
-                  <div className="chain-node here">
-                    <span className="mono muted">{formatDate(e.t, w.epochYear)}</span>
-                    <span>{e.title}</span>
-                  </div>
-                </div>
+            <div className="section">
+              <div className="section-title">
+                <h3>Cause chain</h3>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  back up to 6 levels · click + to expand
+                </span>
               </div>
-            )}
+              <CauseTree root={full} direction="back" maxDepth={6} openDepth={5} />
+            </div>
           </div>
           <div>
             <div className="section-title">
@@ -239,16 +246,11 @@ function EventDetail({ e, w }: { e: HistoryEvent; w: World }) {
             <div className="section">
               <div className="section-title">
                 <h3>What followed</h3>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  forward up to 6 levels
+                </span>
               </div>
-              {consequences.length ? (
-                <div className="list" style={{ margin: '0 -12px' }}>
-                  {consequences.map((c) => (
-                    <EventRow key={c.id} e={c} />
-                  ))}
-                </div>
-              ) : (
-                <div className="muted">No later events cite this one — yet.</div>
-              )}
+              <CauseTree root={full} direction="forward" maxDepth={6} openDepth={2} />
             </div>
           </div>
         </div>
@@ -262,17 +264,12 @@ function EventDetail({ e, w }: { e: HistoryEvent; w: World }) {
             ))}
             {e.planetId && <PlanetLink id={e.planetId} />}
             {e.settlementId && <SettlementLink id={e.settlementId} />}
-            {e.characterIds.map((id) => (
+            {e.characterIds.slice(0, 24).map((id) => (
               <CharLink key={id} id={id} />
             ))}
             {!e.civIds.length && !e.planetId && !e.characterIds.length && <span className="muted">—</span>}
           </div>
         </div>
-        {e.causeIds.length > causes.length && (
-          <p className="muted" style={{ fontSize: 12 }}>
-            Some earlier causes have been pruned from long-term memory. (<EventLink id={e.causeIds[0]} />)
-          </p>
-        )}
       </div>
     </div>
   );

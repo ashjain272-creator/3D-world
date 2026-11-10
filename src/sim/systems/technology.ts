@@ -2,7 +2,7 @@ import type { Rng } from '../rng';
 import { TECHS } from '../data/techs';
 import { CATEGORY_LABEL, OCCUPATIONS, POLICIES } from '../data/society';
 import type { Character, Civilization, Good, TechDef, World } from '../types';
-import { addMemory, fullName, recordEvent } from '../world';
+import { addMemory, causeKey, fullName, lastCause, noteCause, recordEvent } from '../world';
 
 export function allTechs(world: World): TechDef[] {
   return world.customTechs.length ? [...TECHS, ...world.customTechs] : TECHS;
@@ -147,6 +147,18 @@ export function completeResearch(world: World, rng: Rng, civ: Civilization, tech
   const first = !world.firstDiscoveries[tech.id];
   const credit = cause ? undefined : creditCharacter(world, rng, civ, tech);
   const homeworld = world.planets[civ.homeworldId];
+  const K = (t: string) => causeKey.civ(civ.id, t);
+  // Causes: prerequisite discoveries, the credited researcher's own path,
+  // research policy, boosts (ruins, allies), and earlier foreign discovery.
+  const prior = world.firstDiscoveries[tech.id];
+  const derived = [
+    ...tech.prereqs.map((p) => lastCause(world, K(`tech_${p}`))),
+    credit ? lastCause(world, causeKey.char(credit.id)) : undefined,
+    lastCause(world, K('policy_research_grants')),
+    lastCause(world, K(`boost_${tech.id}`)),
+    prior && civ.knownCivIds.includes(prior.civId) ? prior.eventId : undefined,
+  ];
+  if (!derived.some(Boolean)) derived.push(lastCause(world, K('tech')) ?? lastCause(world, K('founding')));
   const ev = recordEvent(world, {
     category: 'discovery',
     title: first ? `${civ.adjective} breakthrough: ${tech.name}` : `${civ.name} adopts ${tech.name}`,
@@ -156,13 +168,14 @@ export function completeResearch(world: World, rng: Rng, civ: Civilization, tech
     planetId: homeworld?.id,
     characterIds: credit ? [credit.id] : [],
     cause: cause?.text ?? `Accumulated ${Math.round(tech.cost)} research points in ${CATEGORY_LABEL[tech.category]} (research rate ${civ.tech.rate.toFixed(1)}/day).`,
-    causeIds: cause?.ids ?? [],
+    causeIds: [...(cause?.ids ?? []), ...derived].slice(0, 6),
     effects: describeTechEffects(tech),
   });
   if (first) world.firstDiscoveries[tech.id] = { civId: civ.id, t: world.time, eventId: ev.id, characterId: credit?.id };
-  civ.causeLinks[`tech_${tech.id}`] = ev.id;
-  if (tech.effects.unlocks?.includes('contact')) civ.causeLinks.contact_tech = ev.id;
-  if (tech.effects.unlocks?.includes('colonize')) civ.causeLinks.colonize_tech = ev.id;
+  noteCause(world, [K(`tech_${tech.id}`), K('tech')], ev.id);
+  if (credit) noteCause(world, causeKey.char(credit.id), ev.id);
+  if (tech.effects.unlocks?.includes('contact')) noteCause(world, K('contact_tech'), ev.id);
+  if (tech.effects.unlocks?.includes('colonize')) noteCause(world, K('colonize_tech'), ev.id);
   if (credit) {
     credit.contributions += tech.cost;
     credit.reputation = Math.min(100, credit.reputation + (first ? 15 : 6));

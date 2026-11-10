@@ -2,7 +2,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { navigate } from '../../state/router';
 import { getWorld, useApp } from '../../state/store';
 import { formatDate } from '../../sim/time';
-import { findEvent, fullName } from '../../sim/world';
+import { fullName } from '../../sim/world';
+import { resolveEvent, useArchiveUpdates } from '../../state/historyClient';
 import type { EventCategory, HistoryEvent } from '../../sim/types';
 import { Icon } from './Icons';
 
@@ -48,11 +49,11 @@ export function PlanetLink({ id }: { id: string }) {
 }
 
 export function EventLink({ id }: { id: string }) {
-  const e = findEvent(getWorld(), id);
-  if (!e) return <span className="muted">a forgotten event</span>;
+  useArchiveUpdates();
+  const e = resolveEvent(id);
   return (
     <button className="link" onClick={() => navigate(`history/${id}`)}>
-      {e.title}
+      {e === 'loading' ? 'Loading archived event…' : e === 'missing' ? 'an unrecorded event' : e.title}
     </button>
   );
 }
@@ -70,6 +71,7 @@ export const CATEGORY_COLORS: Record<EventCategory, string> = {
   personal: '#8a9bb8',
   intervention: '#ffffff',
   cosmic: '#b8c8ff',
+  summary: '#6c7c97',
 };
 
 export function EventRow({ e, onClick, compact }: { e: HistoryEvent; onClick?: () => void; compact?: boolean }) {

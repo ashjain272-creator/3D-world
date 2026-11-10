@@ -27,8 +27,8 @@ import {
   type Skill,
   type World,
 } from '../types';
-import { MINUTES_PER_DAY, MINUTES_PER_YEAR, hourOfDay } from '../time';
-import { addMemory, ageOf, fullName, recordEvent } from '../world';
+import { MINUTES_PER_DAY, MINUTES_PER_YEAR, localHour } from '../time';
+import { addMemory, ageOf, causeKey, characterVersion, forgetCauses, fullName, isKnownEventId, lastCause, noteCause, recordEvent } from '../world';
 import { goalActivityBias, makeGoal, skillLabel } from './goals';
 import { succession } from './politics';
 import type { DayContext } from './economy';
@@ -36,7 +36,8 @@ import type { DayContext } from './economy';
 export interface Candidate {
   type: ActivityType;
   score: number;
-  factors: string[];
+  /** Human-readable reasons, built lazily (only for the options actually shown). */
+  factors: () => string[];
   targetId?: string;
 }
 
@@ -51,13 +52,20 @@ const SECTOR_OF: Partial<Record<Occupation, string>> = {
   teacher: 'research',
 };
 
+/** Day length (standard hours) on the planet where this character currently is. */
+export function dayLengthFor(world: World, c: Character): number {
+  const s = world.settlements[c.settlementId];
+  return (s && world.planets[s.planetId]?.dayLengthHours) || 24;
+}
+
 function isChild(c: Character, now: number): boolean {
   return (now - c.birthTime) / MINUTES_PER_YEAR < 14;
 }
 
 /** Score all candidate activities for an agent at time `now`. */
 export function scoreActivities(world: World, rng: Rng, c: Character, now: number): Candidate[] {
-  const h = hourOfDay(now);
+  // schedules follow the local sun, not the galactic standard clock
+  const h = localHour(now, dayLengthFor(world, c));
   const night = h >= 22 || h < 6;
   const workHours = h >= 8 && h < 17;
   const evening = h >= 17 && h < 22;
@@ -70,47 +78,52 @@ export function scoreActivities(world: World, rng: Rng, c: Character, now: numbe
   const isLeader = civ?.government.leaderId === c.id;
   const cands: Candidate[] = [];
   const bias: Record<string, number> = {};
-  for (const g of c.goals) for (const [k, v] of Object.entries(goalActivityBias(g))) bias[k] = (bias[k] ?? 0) + (v ?? 0);
+  for (const g of c.goals) {
+    const gb = goalActivityBias(g);
+    for (const k in gb) bias[k] = (bias[k] ?? 0) + (gb[k] ?? 0);
+  }
 
-  const push = (type: ActivityType, score: number, factors: string[], targetId?: string) => cands.push({ type, score, factors, targetId });
+  const push = (type: ActivityType, score: number, factors: () => string[], targetId?: string) => cands.push({ type, score, factors, targetId });
 
-  push('sleep', (night ? 0.75 : 0.03) + Math.pow(d(n.energy), 1.5) * 1.3 - (n.energy > 90 && !night ? 1 : 0), [night ? 'night-time' : 'daytime', `energy ${n.energy.toFixed(0)}`]);
-  push('eat', Math.pow(d(n.hunger), 1.3) * 1.4 + (mealtime ? 0.3 : 0), [`hunger ${n.hunger.toFixed(0)}`, ...(mealtime ? ['mealtime'] : [])]);
+  push('sleep', (night ? 0.75 : 0.03) + Math.pow(d(n.energy), 1.5) * 1.3 - (n.energy > 90 && !night ? 1 : 0), () => [night ? 'night-time' : 'daytime', `energy ${n.energy.toFixed(0)}`]);
+  push('eat', Math.pow(d(n.hunger), 1.3) * 1.4 + (mealtime ? 0.3 : 0), () => [`hunger ${n.hunger.toFixed(0)}`, ...(mealtime ? ['mealtime'] : [])]);
 
   if (!child && c.occupation !== 'student' && c.occupation !== 'retired') {
     const base = (workHours ? 0.6 : 0.02) * (0.55 + p.conscientiousness * 0.8);
     const s = base + d(n.purpose) * 0.3 + d(n.security) * 0.35 + (bias.work ?? 0) * (workHours ? 1 : 0.2);
     const type: ActivityType = isLeader ? 'govern' : c.occupation === 'explorer' ? 'explore' : 'work';
-    push(type, s + (isLeader ? (bias.govern ?? 0) : 0), [workHours ? 'working hours' : 'off-hours', `conscientiousness ${(p.conscientiousness * 100).toFixed(0)}`, ...(n.security < 45 ? [`financial worry`] : [])]);
+    push(type, s + (isLeader ? (bias.govern ?? 0) : 0), () => [workHours ? 'working hours' : 'off-hours', `conscientiousness ${(p.conscientiousness * 100).toFixed(0)}`, ...(n.security < 45 ? [`financial worry`] : [])]);
   }
   const studyBoost = c.occupation === 'student' && workHours ? 0.75 : 0;
-  push('study', (night ? 0 : 0.08 + p.openness * 0.22 + d(n.purpose) * 0.12) + studyBoost + (bias.study ?? 0) * (night ? 0.1 : 1), [
+  push('study', (night ? 0 : 0.08 + p.openness * 0.22 + d(n.purpose) * 0.12) + studyBoost + (bias.study ?? 0) * (night ? 0.1 : 1), () => [
     c.occupation === 'student' ? 'attending school' : `curiosity ${(p.openness * 100).toFixed(0)}`,
     ...(bias.study ? ['pursuing a goal'] : []),
   ]);
   // Only look for company when it could plausibly win (keeps decisions cheap).
-  const wantsCompany = d(n.social) > 0.2 || evening || (bias.socialize ?? 0) > 0;
+  const wantsCompany = c.tier === 'background' ? d(n.social) > 0.45 : d(n.social) > 0.2 || evening || (bias.socialize ?? 0) > 0;
   const others = wantsCompany && !(night && h < 5) ? socialTargets(world, c) : [];
   if (others.length) {
     const target = rng.weighted(others, (o) => 1 + Math.max(0, (c.relationships[o.id]?.affinity ?? 0) + 20) / 20 + (c.relationships[o.id]?.kind === 'partner' ? 4 : 0));
-    push('socialize', d(n.social) * (0.35 + p.extraversion * 0.85) + (evening ? 0.28 : 0) + (bias.socialize ?? 0), [`social need ${n.social.toFixed(0)}`, `extraversion ${(p.extraversion * 100).toFixed(0)}`, ...(evening ? ['evening'] : [])], target.id);
+    push('socialize', d(n.social) * (0.35 + p.extraversion * 0.85) + (evening ? 0.28 : 0) + (bias.socialize ?? 0), () => [`social need ${n.social.toFixed(0)}`, `extraversion ${(p.extraversion * 100).toFixed(0)}`, ...(evening ? ['evening'] : [])], target.id);
   }
-  push('leisure', d(n.fun) * 0.85 + (evening ? 0.18 : 0) + (child ? 0.25 : 0), [`fun ${n.fun.toFixed(0)}`]);
+  push('leisure', d(n.fun) * 0.85 + (evening ? 0.18 : 0) + (child ? 0.25 : 0), () => [`fun ${n.fun.toFixed(0)}`]);
   if (!child && !night && (c.occupation === 'artist' || c.skills.art > 30 || bias.create)) {
-    push('create', c.skills.art / 250 + d(n.fun) * 0.2 + (bias.create ?? 0) + (c.occupation === 'artist' && workHours ? 0.45 : 0), [`artistry ${c.skills.art.toFixed(0)}`]);
+    push('create', c.skills.art / 250 + d(n.fun) * 0.2 + (bias.create ?? 0) + (c.occupation === 'artist' && workHours ? 0.45 : 0), () => [`artistry ${c.skills.art.toFixed(0)}`]);
   }
   if (!child && !night && c.occupation !== 'explorer' && (bias.explore ?? 0) > 0) {
-    push('explore', 0.1 + p.openness * 0.25 + (bias.explore ?? 0) * 0.8 - (workHours ? 0.15 : 0), ['wanderlust', `openness ${(p.openness * 100).toFixed(0)}`]);
+    push('explore', 0.1 + p.openness * 0.25 + (bias.explore ?? 0) * 0.8 - (workHours ? 0.15 : 0), () => ['wanderlust', `openness ${(p.openness * 100).toFixed(0)}`]);
   }
   // Travel: return home, or visit a goal destination.
-  if (c.travel && now >= c.travel.until && !night) push('travel', 1.4, ['visit is over; heading home'], c.travel.from);
+  if (c.travel && now >= c.travel.until && !night) push('travel', 1.4, () => ['visit is over; heading home'], c.travel.from);
   const visit = c.goals.find((g) => g.type === 'explore' && g.target.startsWith('visit:'));
-  if (!c.travel && visit && !night && !child) push('travel', 0.2 + p.openness * 0.35 + (bias.travel ?? 0) * 0.5, [`goal: ${visit.description}`], visit.target.slice(6));
+  if (!c.travel && visit && !night && !child) push('travel', 0.2 + p.openness * 0.35 + (bias.travel ?? 0) * 0.5, () => [`goal: ${visit.description}`], visit.target.slice(6));
   const recentLoss = c.memories.find((m) => m.valence <= -0.8 && now - m.t < 3 * MINUTES_PER_DAY && m.withId);
-  if (recentLoss) push('mourn', 0.55 + p.neuroticism * 0.4, ['grieving a loss']);
+  if (recentLoss) push('mourn', 0.55 + p.neuroticism * 0.4, () => ['grieving a loss']);
 
   // Personal noise: anxious personalities are less predictable.
-  for (const cd of cands) cd.score += rng.normal(0, 0.04 + p.neuroticism * 0.07);
+  // (one uniform draw per option: cheaper than a Gaussian, same spread)
+  const noise = (0.04 + p.neuroticism * 0.07) * 3.4;
+  for (const cd of cands) cd.score += (rng.next() - 0.5) * noise;
   return cands.sort((a, b) => b.score - a.score);
 }
 
@@ -119,8 +132,7 @@ let residentCache: { world: World | null; day: number; count: number; map: Map<s
 
 function residents(world: World, settlementId: string): Character[] {
   const day = Math.floor(world.time / MINUTES_PER_DAY);
-  let count = 0;
-  for (const _ in world.characters) count++;
+  const count = characterVersion(world);
   if (residentCache.world !== world || residentCache.day !== day || residentCache.count !== count) {
     const map = new Map<string, Character[]>();
     for (const id in world.characters) {
@@ -162,14 +174,16 @@ function isAvailable(o: Character, now: number): boolean {
   return o.activity.endsAt - now < 240 || t === 'leisure' || t === 'idle' || t === 'eat';
 }
 
-function durationFor(rng: Rng, type: ActivityType, now: number, c: Character): number {
-  const h = hourOfDay(now);
+function durationFor(rng: Rng, type: ActivityType, now: number, c: Character, dayLen = 24): number {
+  const h = localHour(now, dayLen);
+  // durations tied to the clock (sleep until morning, work until noon/evening) stretch with the local day
+  const k = dayLen / 24;
   switch (type) {
     case 'sleep': {
       if (h >= 20 || h < 6) {
         const wake = 5.5 + rng.range(0, 2) + (c.personality.conscientiousness < 0.4 ? 1 : 0);
         const hrs = h >= 20 ? 24 - h + wake : wake - h;
-        return Math.max(60, hrs * 60);
+        return Math.max(60, hrs * 60 * k);
       }
       return rng.range(60, 120);
     }
@@ -177,7 +191,7 @@ function durationFor(rng: Rng, type: ActivityType, now: number, c: Character): n
       return rng.range(30, 60);
     case 'work':
     case 'govern':
-      return h < 12 ? Math.max(60, (12 - h) * 60) : Math.max(60, Math.min(5, 17.5 - h) * 60);
+      return h < 12 ? Math.max(60, (12 - h) * 60 * k) : Math.max(60, Math.min(5, 17.5 - h) * 60 * k);
     case 'study':
       return rng.range(90, 180);
     case 'socialize':
@@ -359,6 +373,15 @@ function completeActivity(world: World, rng: Rng, c: Character, ctx: DayContext)
   c.mood = c.mood + (target - c.mood) * 0.35;
 }
 
+/** The latest recorded event in each character's own story. */
+function lifeCauses(world: World, ...chars: Character[]): (string | undefined)[] {
+  return chars.map((c) => lastCause(world, causeKey.char(c.id)));
+}
+
+function noteLife(world: World, eventId: string, ...chars: Character[]): void {
+  for (const c of chars) noteCause(world, causeKey.char(c.id), eventId);
+}
+
 function logRecent(c: Character, t: number, text: string): void {
   c.recent.push({ t, text });
   if (c.recent.length > 10) c.recent.shift();
@@ -419,7 +442,8 @@ function updateKind(world: World, rng: Rng, a: Character, b: Character, ra: Char
     addMemory(b, { t: now, text: wasRival ? `Reconciled with ${a.givenName}.` : `Became friends with ${a.givenName}.`, valence: 0.6, importance: 3, withId: a.id });
     const fg = [...a.goals, ...b.goals].filter((g) => g.type === 'make_friend');
     for (const g of fg) g.progress = 1;
-    if (notable) recordEvent(world, {
+    if (notable) {
+      const ev = recordEvent(world, {
       category: 'personal',
       title: wasRival ? `${a.givenName} and ${b.givenName} reconcile` : `${a.givenName} and ${b.givenName} become friends`,
       description: `${fullName(a)} and ${fullName(b)} have grown close.`,
@@ -428,7 +452,12 @@ function updateKind(world: World, rng: Rng, a: Character, b: Character, ra: Char
       settlementId: a.settlementId,
       characterIds: [a.id, b.id],
       cause: `Repeated time together; compatible temperaments and ${a.interests.filter((i) => b.interests.includes(i)).join(', ') || 'mutual respect'}.`,
-    });
+      causeIds: [lastCause(world, causeKey.pair(a.id, b.id)), ...lifeCauses(world, a, b), lastCause(world, causeKey.settlement(a.settlementId))],
+      trigger: { kind: 'activity', characterId: a.id, text: `${a.givenName} spent time with ${b.givenName} (familiarity ${ra.familiarity.toFixed(0)}, affinity ${ra.affinity.toFixed(0)})` },
+      });
+      noteCause(world, causeKey.pair(a.id, b.id), ev.id);
+      noteLife(world, ev.id, a, b);
+    }
   } else if (ra.kind === 'friend' && ra.affinity > 70 && ra.familiarity > 60) {
     setBoth('close_friend');
     addMemory(a, { t: now, text: `${b.givenName} has become one of my closest friends.`, valence: 0.7, importance: 3, withId: b.id });
@@ -436,7 +465,8 @@ function updateKind(world: World, rng: Rng, a: Character, b: Character, ra: Char
     setBoth('rival');
     addMemory(a, { t: now, text: `Fell out with ${b.givenName}.`, valence: -0.6, importance: 3, withId: b.id });
     addMemory(b, { t: now, text: `Fell out with ${a.givenName}.`, valence: -0.6, importance: 3, withId: a.id });
-    if (notable) recordEvent(world, {
+    if (notable) {
+      const ev = recordEvent(world, {
       category: 'personal',
       title: `${a.givenName} and ${b.givenName} become rivals`,
       description: `A falling-out between ${fullName(a)} and ${fullName(b)}.`,
@@ -445,7 +475,12 @@ function updateKind(world: World, rng: Rng, a: Character, b: Character, ra: Char
       settlementId: a.settlementId,
       characterIds: [a.id, b.id],
       cause: `Clashing temperaments (agreeableness ${(a.personality.agreeableness * 100).toFixed(0)} vs ${(b.personality.agreeableness * 100).toFixed(0)}) and tense encounters.`,
-    });
+      causeIds: [lastCause(world, causeKey.pair(a.id, b.id)), ...lifeCauses(world, a, b), lastCause(world, causeKey.settlement(a.settlementId))],
+      trigger: { kind: 'activity', characterId: a.id, text: `A tense encounter between ${a.givenName} and ${b.givenName} (affinity ${ra.affinity.toFixed(0)})` },
+      });
+      noteCause(world, causeKey.pair(a.id, b.id), ev.id);
+      noteLife(world, ev.id, a, b);
+    }
   }
   // Partnership
   if ((ra.kind === 'close_friend' || ra.kind === 'friend') && ra.affinity > 62 && rb.affinity > 55 && ra.familiarity > 55) {
@@ -456,7 +491,7 @@ function updateKind(world: World, rng: Rng, a: Character, b: Character, ra: Char
       setBoth('partner');
       addMemory(a, { t: now, text: `Committed to a life together with ${b.givenName}.`, valence: 0.95, importance: 5, withId: b.id });
       addMemory(b, { t: now, text: `Committed to a life together with ${a.givenName}.`, valence: 0.95, importance: 5, withId: a.id });
-      recordEvent(world, {
+      const ev = recordEvent(world, {
         category: 'personal',
         title: `${a.givenName} ${a.familyName} and ${b.givenName} ${b.familyName} are partnered`,
         description: `A union celebrated in ${world.settlements[a.settlementId]?.name ?? 'their town'}.`,
@@ -465,7 +500,11 @@ function updateKind(world: World, rng: Rng, a: Character, b: Character, ra: Char
         settlementId: a.settlementId,
         characterIds: [a.id, b.id],
         cause: `Deep affinity (${ra.affinity.toFixed(0)}) built over time.`,
+        causeIds: [lastCause(world, causeKey.pair(a.id, b.id)), ...lifeCauses(world, a, b)],
+        trigger: { kind: 'memory', characterId: a.id, text: `${a.givenName} and ${b.givenName}: “Committed to a life together.”` },
       });
+      noteCause(world, causeKey.pair(a.id, b.id), ev.id);
+      noteLife(world, ev.id, a, b);
     }
   }
 }
@@ -517,9 +556,13 @@ function exploreAttempt(world: World, rng: Rng, c: Character, hours: number): vo
     planetId: planet.id,
     characterIds: [c.id],
     cause: `${c.givenName}'s ${c.occupation === 'explorer' ? 'work as an explorer' : 'personal wanderlust'} (exploration skill ${skill.toFixed(0)}).`,
+    causeIds: [...lifeCauses(world, c), lastCause(world, causeKey.civ(c.civId, 'policy_exploration_charter')), lastCause(world, causeKey.settlement(s.id))],
+    trigger: { kind: 'activity', characterId: c.id, text: `${c.givenName} spent ${hours.toFixed(1)} hours exploring beyond ${s.name}` },
     effects,
   });
-  if (civ) civ.causeLinks.explore = ev.id;
+  noteLife(world, ev.id, c);
+  noteCause(world, [causeKey.civ(c.civId, 'explore'), causeKey.planet(planet.id, 'explore')], ev.id);
+  if (findRoll >= 0.3 && findRoll < 0.5 && civ?.tech.researching) noteCause(world, causeKey.civ(civ.id, `boost_${civ.tech.researching}`), ev.id);
 }
 
 function gainInterest(world: World, rng: Rng, c: Character, how: string): void {
@@ -536,14 +579,16 @@ export function characterStep(world: World, rng: Rng, c: Character, ctx: DayCont
   completeActivity(world, rng, c, ctx);
   const cands = scoreActivities(world, rng, c, world.time);
   const best = cands[0];
-  const dur = durationFor(rng, best.type, world.time, c);
+  let dur = durationFor(rng, best.type, world.time, c, dayLengthFor(world, c));
+  // background individuals re-plan on a slower schedule (longer activity blocks)
+  if (c.tier === 'background' && best.type !== 'sleep') dur = Math.max(240, dur * 2.5);
   const act: Activity = {
     type: best.type,
     startedAt: world.time,
     endsAt: world.time + dur,
     targetId: best.targetId,
     description: describe(world, c, best.type, best.targetId),
-    reason: `${best.factors.join(', ')} (utility ${best.score.toFixed(2)}${cands[1] ? `; next: ${cands[1].type} ${cands[1].score.toFixed(2)}` : ''})`,
+    reason: `${best.factors().join(', ')} (utility ${best.score.toFixed(2)}${cands[1] ? `; next: ${cands[1].type} ${cands[1].score.toFixed(2)}` : ''})`,
   };
   c.activity = act;
   c.nextDecisionAt = act.endsAt;
@@ -565,7 +610,7 @@ export function characterStep(world: World, rng: Rng, c: Character, ctx: DayCont
       o.nextDecisionAt = act.endsAt;
     }
   }
-  if (best.type !== 'sleep' && best.type !== 'eat' && best.type !== 'socialize') logRecent(c, world.time, act.description);
+  if (c.tier !== 'background' && best.type !== 'sleep' && best.type !== 'eat' && best.type !== 'socialize') logRecent(c, world.time, act.description);
 }
 
 const TARGET_GOALS: GoalType[] = ['master_skill', 'make_friend', 'explore', 'wealth', 'lead', 'discover', 'family', 'create_work'];
@@ -605,7 +650,10 @@ export function characterDaily(world: World, rng: Rng, c: Character, healthMod: 
       c.discontent = 0;
     }
   }
-  evaluateGoals(world, rng, c);
+  // anyone who becomes notable steps into the foreground
+  if (c.notable && c.tier === 'background') c.tier = 'foreground';
+  // background individuals review their goals weekly rather than daily
+  if (c.tier !== 'background' || (Math.floor(world.time / MINUTES_PER_DAY) + c.homeSlot) % 7 === 0) evaluateGoals(world, rng, c);
   // Births to partnered couples wanting a family.
   const partnerId = Object.keys(c.relationships).find((id) => c.relationships[id].kind === 'partner');
   if (partnerId && age < 46 && age > 21) {
@@ -628,8 +676,9 @@ function setOccupation(world: World, c: Character, occ: Occupation, text: string
   const prev = c.occupation;
   c.occupation = occ;
   c.occupationSince = world.time;
+  const resolve = [...c.memories].reverse().find((m) => m.text.startsWith('Felt unfulfilled'));
   addMemory(c, { t: world.time, text, valence: occ === 'retired' ? 0.2 : 0.5, importance: 4 });
-  recordEvent(world, {
+  const ev = recordEvent(world, {
     category: 'personal',
     title: `${fullName(c)} becomes ${occ === 'retired' ? 'retired' : `a ${OCCUPATIONS[occ].label.toLowerCase()}`}`,
     description: text,
@@ -639,7 +688,13 @@ function setOccupation(world: World, c: Character, occ: Occupation, text: string
     characterIds: [c.id],
     cause: prev === 'student' ? `Graduated at ${ageOf(c, world.time)}; strongest skill: ${skillLabel(OCCUPATIONS[occ].skill)}.` : occ === 'retired' ? `Reached ${ageOf(c, world.time)} years of age.` : `Long dissatisfaction as a ${OCCUPATIONS[prev].label.toLowerCase()} and skill in ${skillLabel(OCCUPATIONS[occ].skill)} (${c.skills[OCCUPATIONS[occ].skill].toFixed(0)}).`,
     effects: [{ label: 'Occupation', before: OCCUPATIONS[prev].label, after: OCCUPATIONS[occ].label }],
+    causeIds: [...lifeCauses(world, c), lastCause(world, causeKey.settlement(c.settlementId))],
+    trigger:
+      prev !== 'student' && occ !== 'retired' && resolve
+        ? { kind: 'memory', characterId: c.id, text: `“${resolve.text}”` }
+        : { kind: 'activity', characterId: c.id, text: prev === 'student' ? `Years of study (best skill ${skillLabel(OCCUPATIONS[occ].skill)})` : `Age ${ageOf(c, world.time)}` },
   });
+  noteLife(world, ev.id, c);
 }
 
 function evaluateGoals(world: World, rng: Rng, c: Character): void {
@@ -685,7 +740,7 @@ function evaluateGoals(world: World, rng: Rng, c: Character): void {
     c.mood = clamp(c.mood + 20, -100, 100);
     addMemory(c, { t: world.time, text: `Achieved a life goal: ${g.description.toLowerCase()}.`, valence: 0.85, importance: 4 });
     if (c.notable || g.type === 'lead' || g.type === 'discover') {
-      recordEvent(world, {
+      const gev = recordEvent(world, {
         category: 'personal',
         title: `${fullName(c)} achieves a goal`,
         description: `${c.givenName} set out to ${g.description.toLowerCase()} — and did.`,
@@ -694,7 +749,10 @@ function evaluateGoals(world: World, rng: Rng, c: Character): void {
         settlementId: c.settlementId,
         characterIds: [c.id],
         cause: `Pursued since ${Math.max(0, Math.round((world.time - g.createdAt) / MINUTES_PER_DAY))} days earlier.`,
+        causeIds: lifeCauses(world, c),
+        trigger: { kind: 'memory', characterId: c.id, text: `Goal set ${Math.max(0, Math.round((world.time - g.createdAt) / MINUTES_PER_DAY))} days earlier: ${g.description}` },
       });
+      noteLife(world, gev.id, c);
     }
   }
   c.goals = c.goals.filter((g) => g.progress < 1 && world.time - g.createdAt < 25 * MINUTES_PER_YEAR);
@@ -749,7 +807,7 @@ function completeWork(world: World, rng: Rng, c: Character): void {
     civ.conditions.renaissance = Math.max(civ.conditions.renaissance ?? 0, 60);
     effects.push({ label: 'Cultural renaissance', after: '60 days (+5 satisfaction)' });
   }
-  recordEvent(world, {
+  const wev = recordEvent(world, {
     category: 'culture',
     title: `${fullName(c)} unveils “${title}”`,
     description: quality > 70 ? 'Acclaimed as a masterpiece, it inspires a wave of creativity.' : quality > 45 ? 'It is well received by the public.' : 'It finds a small but devoted audience.',
@@ -758,8 +816,12 @@ function completeWork(world: World, rng: Rng, c: Character): void {
     settlementId: c.settlementId,
     characterIds: [c.id],
     cause: `Months of creative work (artistry ${c.skills.art.toFixed(0)}).`,
+    causeIds: [...lifeCauses(world, c), lastCause(world, causeKey.civ(c.civId, 'renaissance')), lastCause(world, causeKey.civ(c.civId, 'golden_age'))],
+    trigger: { kind: 'activity', characterId: c.id, text: `${c.givenName}'s sessions of creative work` },
     effects,
   });
+  noteLife(world, wev.id, c);
+  if (quality > 70) noteCause(world, causeKey.civ(c.civId, 'renaissance'), wev.id);
 }
 
 function birth(world: World, rng: Rng, a: Character, b: Character): void {
@@ -790,7 +852,7 @@ function birth(world: World, rng: Rng, a: Character, b: Character): void {
     const g = p.goals.find((x) => x.type === 'family');
     if (g) g.progress = 1;
   }
-  recordEvent(world, {
+  const bev = recordEvent(world, {
     category: 'personal',
     title: `${child.givenName} ${child.familyName} is born`,
     description: `Born in ${s.name} to ${fullName(a)} and ${fullName(b)}.`,
@@ -799,7 +861,9 @@ function birth(world: World, rng: Rng, a: Character, b: Character): void {
     settlementId: s.id,
     characterIds: [child.id, a.id, b.id],
     cause: `${a.givenName} and ${b.givenName} hoped to start a family.`,
+    causeIds: [lastCause(world, causeKey.pair(a.id, b.id)), ...lifeCauses(world, a, b)],
   });
+  noteLife(world, bev.id, child, a, b);
 }
 
 export function die(world: World, rng: Rng, c: Character, cause: string, causeIds: string[] = []): void {
@@ -809,7 +873,21 @@ export function die(world: World, rng: Rng, c: Character, cause: string, causeId
   const civ = world.civs[c.civId];
   const isLeader = civ?.government.leaderId === c.id;
   const age = ageOf(c, world.time);
+  const direct = causeIds.length
+    ? causeIds
+    : [
+        cause === 'the plague' ? lastCause(world, causeKey.civ(c.civId, 'plague')) : cause.includes('famine') ? lastCause(world, causeKey.civ(c.civId, 'shortage_food')) : undefined,
+        ...lifeCauses(world, c),
+      ];
+  // fall back to the most recent remembered events of this life; a natural
+  // death with nothing on record is an originating event in its own right
+  const known = direct.filter((id): id is string => !!id && isKnownEventId(world, id));
+  if (!known.length) for (let i = c.memories.length - 1; i >= 0 && known.length < 2; i--) {
+    const id = c.memories[i].eventId;
+    if (id && isKnownEventId(world, id) && !known.includes(id)) known.push(id);
+  }
   const ev = recordEvent(world, {
+    root: known.length === 0,
     category: 'population',
     title: `${fullName(c)} dies${isLeader ? ` — ${civ!.government.leaderTitle} of the ${civ!.name}` : ''}`,
     description: `${fullName(c)}, ${OCCUPATIONS[c.occupation].label.toLowerCase()} of ${world.settlements[c.settlementId]?.name ?? 'unknown'}, died at ${age} of ${cause}.`,
@@ -818,8 +896,10 @@ export function die(world: World, rng: Rng, c: Character, cause: string, causeId
     settlementId: c.settlementId,
     characterIds: [c.id],
     cause: `Died of ${cause} at age ${age} (health ${c.health.toFixed(0)}).`,
-    causeIds: causeIds.length ? causeIds : [cause === 'the plague' ? civ?.causeLinks.plague : cause.includes('famine') ? civ?.causeLinks.shortage_food : undefined].filter(Boolean) as string[],
+    causeIds: known,
   });
+  if (isLeader) noteCause(world, causeKey.civ(c.civId, 'leader_death'), ev.id);
+  forgetCauses(world, causeKey.char(c.id));
   for (const [id, r] of Object.entries(c.relationships)) {
     const o = world.characters[id];
     if (!o?.alive) continue;
@@ -837,12 +917,27 @@ export function die(world: World, rng: Rng, c: Character, cause: string, causeId
  * Keep the tracked population of individuals near its target by recording
  * young adults who come of age in each settlement.
  */
-export function replenishNotables(world: World, rng: Rng, civ: Civilization, target: number): void {
+export function replenishNotables(world: World, rng: Rng, civ: Civilization, target: number, foreground = target): void {
   const living = Object.values(world.characters).filter((c) => c.alive && c.civId === civ.id);
   if (living.length >= target) return;
-  const sid = rng.pick(civ.settlementIds);
+  const fg = living.filter((c) => c.tier !== 'background').length;
+  const tier = fg < foreground ? 'foreground' : 'background';
+  // background residents arrive roughly in proportion to settlement size
+  const sid = tier === 'foreground' ? rng.pick(civ.settlementIds) : rng.weighted(civ.settlementIds, (id) => Math.sqrt(world.settlements[id]?.population ?? 0));
   const s = world.settlements[sid];
   if (!s) return;
-  const c = createCharacter(world, rng, civ, s, { age: rng.int(18, 24) });
+  const c = createCharacter(world, rng, civ, s, { age: rng.int(18, 24), tier });
   addMemory(c, { t: world.time, text: `Came of age in ${s.name} and began an independent life.`, valence: 0.5, importance: 4 });
+  const ev = recordEvent(world, {
+    category: 'population',
+    title: `${fullName(c)} comes of age in ${s.name}`,
+    description: `A new adult enters the record of the ${civ.name}.`,
+    importance: 1,
+    civIds: [civ.id],
+    settlementId: s.id,
+    characterIds: [c.id],
+    cause: `The tracked population of ${civ.adjective} individuals fell below its target (${target}).`,
+    causeIds: [lastCause(world, causeKey.settlement(s.id))],
+  });
+  noteLife(world, ev.id, c);
 }

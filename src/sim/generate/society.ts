@@ -34,10 +34,20 @@ import {
   type World,
 } from '../types';
 import { MINUTES_PER_DAY, MINUTES_PER_YEAR } from '../time';
-import { addMemory, fullName, newId, recordEvent } from '../world';
+import { addMemory, bumpCharacterVersion, causeKey, fullName, lastCause, newId, noteCause, recordEvent } from '../world';
 import { makeGoal } from '../systems/goals';
 
 const CIV_COLORS = ['#5fd4ff', '#ffb35f', '#9d8bff', '#6fe3a5', '#ff7a8a', '#e8d36a', '#5f9dff', '#ff9f6a'];
+
+/** Background individuals a civilisation's settlements support: grows with the square root of population. */
+export function backgroundTarget(world: World, civ: Civilization): number {
+  let n = 0;
+  for (const sid of civ.settlementIds) {
+    const s = world.settlements[sid];
+    if (s) n += Math.round(Math.sqrt(s.population / 1000) * 1.4);
+  }
+  return n;
+}
 
 export interface CivOptions {
   language?: LanguageKey;
@@ -215,6 +225,7 @@ export function pickOccupation(rng: Rng, s: Settlement, age: number): Occupation
 }
 
 export interface CharacterOptions {
+  tier?: 'foreground' | 'background';
   age?: number;
   familyName?: string;
   occupation?: Occupation;
@@ -276,6 +287,7 @@ export function createCharacter(world: World, rng: Rng, civ: Civilization, s: Se
     workSlot: rng.int(0, 999),
     recent: [],
     discontent: 0,
+    tier: opts.tier ?? 'foreground',
   };
   // initial goals from personality
   const goalTypes: GoalType[] = [];
@@ -298,6 +310,7 @@ export function createCharacter(world: World, rng: Rng, civ: Civilization, s: Se
     importance: 5,
   });
   world.characters[c.id] = c;
+  bumpCharacterVersion(world);
   return c;
 }
 
@@ -389,7 +402,6 @@ export function generateCivilization(world: World, rng: Rng, planet: Planet, reg
     knownCivIds: [],
     stats: [],
     conditions: {},
-    causeLinks: {},
     extinct: false,
   };
   world.civs[civ.id] = civ;
@@ -440,6 +452,12 @@ export function generateCivilization(world: World, rng: Rng, planet: Planet, reg
     const c = createCharacter(world, rng, civ, s, { familyName: fam });
     if (!fam) families.push(c.familyName);
     chars.push(c);
+  }
+  // Background residents, distributed by settlement population
+  for (const sid of civ.settlementIds) {
+    const s = world.settlements[sid];
+    const n = Math.round(Math.sqrt(s.population / 1000) * 1.4);
+    for (let i = 0; i < n; i++) chars.push(createCharacter(world, rng, civ, s, { tier: 'background' }));
   }
   // Family ties for shared family names in the same settlement
   for (const a of chars) {
@@ -513,13 +531,17 @@ function writeChronicle(world: World, rng: Rng, civ: Civilization, planet: Plane
     settlementId: cap.id,
     cause: isCreator ? 'Introduced through the Creator Console.' : 'Recorded in the founding chronicles generated with the universe.',
     source,
+    root: true,
     effects: [{ label: 'Capital', after: cap.name }],
   });
-  civ.causeLinks.founding = founding.id;
-  if (isCreator) return;
+  noteCause(world, [causeKey.civ(civ.id, 'founding'), causeKey.settlement(cap.id)], founding.id);
   for (const sid of civ.settlementIds.slice(1)) {
     const s = world.settlements[sid];
-    recordEvent(world, {
+    if (isCreator) {
+      noteCause(world, causeKey.settlement(s.id), founding.id);
+      continue;
+    }
+    const ev = recordEvent(world, {
       t: s.foundedAt,
       category: 'founding',
       title: `${s.name} founded`,
@@ -532,12 +554,14 @@ function writeChronicle(world: World, rng: Rng, civ: Civilization, planet: Plane
       causeIds: [founding.id],
       source: 'chronicle',
     });
+    noteCause(world, causeKey.settlement(s.id), ev.id);
   }
-  // Starting technologies recorded in plausible order
+  // Starting technologies recorded in plausible order, each citing its prerequisites
   const known = civ.tech.known;
   known.forEach((tid, i) => {
     const t = TECHS.find((x) => x.id === tid)!;
-    recordEvent(world, {
+    const prereqCauses = t.prereqs.map((p) => lastCause(world, causeKey.civ(civ.id, `tech_${p}`)));
+    const ev = recordEvent(world, {
       t: t0 + ((i + 1) / (known.length + 1)) * years * MINUTES_PER_YEAR * rng.range(0.85, 1),
       category: 'discovery',
       title: `${civ.adjective} scholars develop ${t.name}`,
@@ -545,14 +569,17 @@ function writeChronicle(world: World, rng: Rng, civ: Civilization, planet: Plane
       importance: 2,
       civIds: [civ.id],
       planetId: planet.id,
-      cause: 'Chronicled achievement from before the simulation began.',
-      causeIds: [founding.id],
-      source: 'chronicle',
+      cause: t.prereqs.length ? `Built on earlier work: ${t.prereqs.join(', ')}. Chronicled before the simulation began.` : 'Chronicled achievement from before the simulation began.',
+      causeIds: prereqCauses.some(Boolean) ? prereqCauses : [founding.id],
+      source: isCreator ? 'creator' : 'chronicle',
     });
+    noteCause(world, [causeKey.civ(civ.id, `tech_${tid}`), causeKey.civ(civ.id, 'tech')], ev.id);
+    if (t.effects.unlocks?.includes('contact')) noteCause(world, causeKey.civ(civ.id, 'contact_tech'), ev.id);
+    if (t.effects.unlocks?.includes('colonize')) noteCause(world, causeKey.civ(civ.id, 'colonize_tech'), ev.id);
   });
   const leader = civ.government.leaderId ? world.characters[civ.government.leaderId] : null;
   if (leader) {
-    recordEvent(world, {
+    const ev = recordEvent(world, {
       t: civ.government.termStart,
       category: 'politics',
       title: `${fullName(leader)} becomes ${civ.government.leaderTitle}`,
@@ -561,7 +588,15 @@ function writeChronicle(world: World, rng: Rng, civ: Civilization, planet: Plane
       civIds: [civ.id],
       characterIds: [leader.id],
       cause: `Selected by ${civ.government.type === 'Republic' || civ.government.type === 'Commune' ? 'popular vote' : civ.government.type === 'Monarchy' ? 'hereditary succession' : 'appointment by peers'}.`,
-      source: 'chronicle',
+      causeIds: [founding.id],
+      source: isCreator ? 'creator' : 'chronicle',
     });
+    noteCause(world, [causeKey.civ(civ.id, 'leader'), causeKey.char(leader.id)], ev.id);
+  }
+  // Every inhabitant's story begins with the founding of their home.
+  for (const ch of Object.values(world.characters)) {
+    if (ch.civId !== civ.id || world.causes[causeKey.char(ch.id)]) continue;
+    const origin = lastCause(world, causeKey.settlement(ch.settlementId));
+    if (origin) noteCause(world, causeKey.char(ch.id), origin);
   }
 }

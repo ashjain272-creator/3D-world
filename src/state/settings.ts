@@ -10,6 +10,9 @@ export interface Settings {
   mouseSensitivity: number;
   invertY: boolean;
   uiRefreshHz: number;
+  /** Procedural ambient sound (WebAudio). Off by default. */
+  audioEnabled: boolean;
+  audioVolume: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -22,6 +25,8 @@ export const DEFAULT_SETTINGS: Settings = {
   mouseSensitivity: 1,
   invertY: false,
   uiRefreshHz: 4,
+  audioEnabled: false,
+  audioVolume: 0.6,
 };
 
 const KEY = 'genesis.settings.v1';

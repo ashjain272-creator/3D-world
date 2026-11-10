@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateLayout, resolveCollisions, routeBetween, settlementRadius, wildLayout } from '../src/explorer/layout';
 import { generateTerrain } from '../src/explorer/terrain';
+import { generateCloudCity } from '../src/explorer/cloudCity';
 import { TOPICS, recordConversation, respond } from '../src/explorer/dialogue';
 import { freshWorld } from './helpers';
 
@@ -20,6 +21,29 @@ describe('explorer generation', () => {
       expect(JSON.stringify(generateLayout(s).buildings)).toBe(JSON.stringify(l.buildings));
     }
     expect(styles).toEqual(new Set(['futuristic', 'organic', 'frontier']));
+  });
+
+  it('builds a walkable floating platform outpost on gas and ice giants', () => {
+    const giants = Object.values(w.planets).filter((p) => p.type === 'gas_giant' || p.type === 'ice_giant');
+    expect(giants.length).toBeGreaterThan(0);
+    for (const g of giants) {
+      const c = generateCloudCity(g);
+      const walk = c.terrain.walkable!;
+      expect(JSON.stringify(generateCloudCity(g).layout.buildings)).toBe(JSON.stringify(c.layout.buildings));
+      expect(c.decks.length).toBeGreaterThanOrEqual(5);
+      expect(walk(c.layout.spawn.x, c.layout.spawn.z)).toBe(true);
+      // every deck is reachable from the hub across sky-bridges
+      const seen = new Set([0]);
+      const stack = [0];
+      while (stack.length) for (const n of c.layout.graph.adj[stack.pop()!]) if (!seen.has(n)) seen.add(n), stack.push(n);
+      expect(seen.size).toBe(c.decks.length);
+      // the midpoint of each bridge is walkable, open sky beside it is not
+      for (const b of c.bridges) expect(walk((b.a[0] + b.b[0]) / 2, (b.a[1] + b.b[1]) / 2)).toBe(true);
+      expect(walk(390, 390)).toBe(false);
+      expect(c.terrain.height(390, 390)).toBeLessThan(-50);
+      for (const b of c.layout.buildings) expect(walk(b.x, b.z)).toBe(true);
+      expect(c.layout.landmarks.length).toBe(3);
+    }
   });
 
   it('routes inhabitants through the street network', () => {

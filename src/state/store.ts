@@ -89,7 +89,8 @@ export const useApp = create<AppState>((set, get) => ({
   },
   toast: (t) => {
     const id = ++toastId;
-    set({ toasts: [...get().toasts.slice(-3), { ...t, id }] });
+    // at most two toasts on screen so they never bury the page
+    set({ toasts: [...get().toasts.slice(-1), { ...t, id }] });
     setTimeout(() => get().dismissToast(id), t.kind === 'error' ? 9000 : 6500);
   },
   dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),

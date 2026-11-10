@@ -4,8 +4,9 @@ import { randomSeed } from './seed';
 import { MINUTES_PER_DAY, SPEEDS } from '../sim/time';
 import type { World } from '../sim/types';
 import { clearSaves, loadWorld, saveWorld } from '../persistence/db';
-import { resetRunnerWatermark, startRunner } from './runner';
+import { sim, startRunner } from './runner';
 import { setWorldRef, useApp } from './store';
+import { clearHistoryCache } from './historyClient';
 
 export const WARMUP_DAYS = 45;
 
@@ -16,9 +17,8 @@ export async function boot(): Promise<void> {
     setWorldRef(res.world);
     if (res.recoveredFromBackup) app.toast({ kind: 'info', title: 'Recovered from backup', body: 'The latest save was damaged; an earlier backup was restored.' });
     await offlineCatchup(res.world);
-    resetRunnerWatermark(res.world);
+    await startRunner();
     app.setPhase('ready');
-    startRunner();
     return;
   }
   if (res.status === 'corrupt') {
@@ -46,7 +46,7 @@ export async function createUniverse(seed: string, onStage?: (stage: string, rep
   }
   onStage?.('warmed', report);
   setWorldRef(world);
-  resetRunnerWatermark(world);
+  clearHistoryCache();
   await saveWorld(world).catch(() => undefined);
   return world;
 }
@@ -56,16 +56,15 @@ export async function replaceUniverse(seed: string): Promise<void> {
   app.setPhase('generating');
   await clearSaves().catch(() => undefined);
   await createUniverse(seed);
+  await startRunner();
   app.setPhase('ready');
-  startRunner();
 }
 
-export function adoptWorld(world: World): void {
-  setWorldRef(world);
-  resetRunnerWatermark(world);
-  void saveWorld(world);
+export async function adoptWorld(world: World): Promise<void> {
+  clearHistoryCache();
+  await sim.start(world);
+  await sim.save();
   useApp.getState().setPhase('ready');
-  startRunner();
 }
 
 /** Capped offline progression at real-time speed while the app was closed. */

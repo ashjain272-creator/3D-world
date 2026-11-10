@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { useApp } from '../state/store';
 import { playerCommands, playerState, useExplorer } from './explorerStore';
-import { resolveCollisions, type Layout } from './layout';
+import { resolveCollisionsGrid, type ColliderGrid, type Layout } from './layout';
 import type { TerrainData } from './terrain';
 
 const WALK = 7;
@@ -16,7 +16,7 @@ const JUMP = 11;
  * Space to jump. Mouse: pointer-lock look (click the view) or drag to orbit.
  * Ground following samples the heightfield; buildings push the player out.
  */
-export function Player({ t, layout, onInteract, spawnKey }: { t: TerrainData; layout: Layout; onInteract: () => void; spawnKey: string }) {
+export function Player({ t, layout, colliders, onInteract, spawnKey }: { t: TerrainData; layout: Layout; colliders: ColliderGrid; onInteract: () => void; spawnKey: string }) {
   const { camera, gl } = useThree();
   const body = useRef<THREE.Group>(null);
   const keys = useRef<Record<string, boolean>>({});
@@ -137,7 +137,16 @@ export function Player({ t, layout, onInteract, spawnKey }: { t: TerrainData; la
         nx = s.x + vx * dt * 0.2;
         nz = s.z + vz * dt * 0.2;
       }
-      [nx, nz] = resolveCollisions(layout.colliders, nx, nz, 0.7);
+      [nx, nz] = resolveCollisionsGrid(colliders, nx, nz, 0.7);
+      // floating platforms: refuse steps over the edge, sliding along it instead
+      if (t.walkable && !t.walkable(nx, nz)) {
+        if (t.walkable(nx, s.z)) nz = s.z;
+        else if (t.walkable(s.x, nz)) nx = s.x;
+        else {
+          nx = s.x;
+          nz = s.z;
+        }
+      }
       const lim = t.size * 0.48;
       s.x = THREE.MathUtils.clamp(nx, -lim, lim);
       s.z = THREE.MathUtils.clamp(nz, -lim, lim);

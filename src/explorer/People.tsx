@@ -1,14 +1,15 @@
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Rng, hashString } from '../sim/rng';
 import type { Character, Occupation, World } from '../sim/types';
 import { getWorld } from '../state/store';
+import { explorerFeed } from '../state/runner';
+import type { ActivityType } from '../sim/types';
 import { npcPositions, playerState, useExplorer } from './explorerStore';
 import { routeBetween, type Layout } from './layout';
 import type { TerrainData } from './terrain';
-import { nightUniform } from './City';
 
 export const OCC_COLORS: Record<Occupation, string> = {
   farmer: '#8fbf5a',
@@ -90,6 +91,8 @@ function pointFor(_world: World, c: Character, layout: Layout, rng: Rng): { targ
 
 const bodyGeo = new THREE.CapsuleGeometry(0.42, 1.0, 4, 10);
 const headGeo = new THREE.SphereGeometry(0.34, 14, 12);
+const ringGeo = new THREE.RingGeometry(0.62, 0.78, 28);
+const ringMat = new THREE.MeshBasicMaterial({ color: '#6fd6ff', transparent: true, opacity: 0.55, depthWrite: false });
 
 export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId: string; layout: Layout; t: TerrainData; onPick: (id: string) => void }) {
   const world = getWorld();
@@ -100,6 +103,7 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
   const talking = useExplorer((s) => s.talkingId);
   const setNearby = useExplorer((s) => s.setNearby);
   const lastScan = useRef(0);
+  const { camera } = useThree();
 
   // Refresh who is present (people travel in and out).
   useEffect(() => {
@@ -141,10 +145,13 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
       const c = w.characters[npc.id];
       const g = refs.current.get(npc.id);
       if (!c || !g) continue;
-      const key = `${c.activity.type}:${c.activity.startedAt}`;
+      // the simulation's per-settlement feed is fresher than the snapshot
+      const fe = explorerFeed.get(npc.id);
+      const key = fe ? `${fe.type}:${fe.startedAt}` : `${c.activity.type}:${c.activity.startedAt}`;
       if (key !== npc.activityKey) {
         npc.activityKey = key;
-        const p = pointFor(w, c, layout, rng);
+        const live = fe ? { ...c, activity: { ...c.activity, type: fe.type as ActivityType, startedAt: fe.startedAt, endsAt: fe.endsAt, targetId: fe.targetId, description: fe.description } } : c;
+        const p = pointFor(w, live, layout, rng);
         npc.path = routeBetween(layout.graph, [npc.pos.x, npc.pos.z], p.target);
         npc.hidden = false;
         npc.hideOnArrive = p.hidden;
@@ -173,7 +180,8 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
       }
       if (isTalking) npc.facing = Math.atan2(playerState.x - npc.pos.x, playerState.z - npc.pos.z);
       npc.pos.y = t.height(npc.pos.x, npc.pos.z);
-      g.visible = !npc.hidden;
+      // named figures beyond 150 m are culled (their labels already are)
+      g.visible = !npc.hidden && (npc.pos.x - camera.position.x) ** 2 + (npc.pos.z - camera.position.z) ** 2 < 150 * 150;
       g.position.copy(npc.pos);
       g.position.y += npc.moving ? Math.abs(Math.sin(now * 9 + npc.pos.x)) * 0.08 : 0;
       g.rotation.y = npc.facing;
@@ -193,7 +201,7 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
       const next = dists
         .filter((x) => x.d < 30)
         .sort((a, b) => a.d - b.d)
-        .slice(0, 4)
+        .slice(0, 2)
         .map((x) => x.id);
       setLabelIds((prev) => (prev.join() === next.join() ? prev : next));
     }
@@ -220,6 +228,8 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
             <mesh geometry={bodyGeo} position={[0, 0.95, 0]} castShadow>
               <meshStandardMaterial color={color} roughness={0.7} />
             </mesh>
+            {/* simulated individuals are marked so they read apart from the ambient crowd */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} geometry={ringGeo} material={ringMat} />
             <mesh geometry={headGeo} position={[0, 2.0, 0]} castShadow>
               <meshStandardMaterial color="#e8d4bc" roughness={0.8} />
             </mesh>
@@ -233,7 +243,7 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
               <Html center position={[0, 2.9, 0]} distanceFactor={14} style={{ pointerEvents: 'none' }} zIndexRange={[6, 0]}>
                 <div className="npc-label">
                   <b>{c.givenName}</b>
-                  <span>{c.activity.description}</span>
+                  <span>{explorerFeed.get(id)?.description ?? c.activity.description}</span>
                 </div>
               </Html>
             )}
@@ -241,60 +251,5 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
         );
       })}
     </group>
-  );
-}
-
-/** Anonymous residents representing the wider population (non-interactive). */
-export function Crowd({ layout, t, population, quality }: { layout: Layout; t: TerrainData; population: number; quality: 'low' | 'medium' | 'high' }) {
-  const count = Math.min(quality === 'low' ? 40 : 110, Math.round(12 + Math.log10(Math.max(10, population)) * 14));
-  const ref = useRef<THREE.InstancedMesh>(null);
-  const agents = useMemo(() => {
-    const rng = new Rng(layout.radius * 13 + count);
-    return Array.from({ length: count }, () => {
-      const n = layout.graph.nodes[Math.floor(rng.next() * layout.graph.nodes.length)] ?? [0, 0];
-      return { x: n[0], z: n[1], path: [] as [number, number][], speed: rng.range(1.6, 2.6), color: new THREE.Color().setHSL(rng.range(0, 1), rng.range(0.15, 0.4), rng.range(0.35, 0.6)), night: rng.chance(0.3) };
-    });
-  }, [layout, count]);
-  useEffect(() => {
-    agents.forEach((a, i) => ref.current?.setColorAt(i, a.color));
-    if (ref.current?.instanceColor) ref.current.instanceColor.needsUpdate = true;
-  }, [agents]);
-  const m = useMemo(() => new THREE.Matrix4(), []);
-  const rng = useMemo(() => new Rng(99), []);
-  useFrame((_, dt) => {
-    const mesh = ref.current;
-    if (!mesh || !layout.graph.nodes.length) return;
-    const night = nightUniform.value > 0.6;
-    agents.forEach((a, i) => {
-      if (!a.path.length) {
-        const target = layout.graph.nodes[Math.floor(rng.next() * layout.graph.nodes.length)];
-        a.path = routeBetween(layout.graph, [a.x, a.z], target).slice(0, 8);
-      }
-      const [tx, tz] = a.path[0];
-      const dx = tx - a.x;
-      const dz = tz - a.z;
-      const d = Math.hypot(dx, dz);
-      if (d < 0.5) a.path.shift();
-      else {
-        a.x += (dx / d) * Math.min(d, a.speed * dt);
-        a.z += (dz / d) * Math.min(d, a.speed * dt);
-      }
-      const visible = !night || a.night;
-      // offset to the side of the street so crowds don't walk on the centre line
-      const off = 2.4;
-      const px = a.x + (d > 0 ? (-dz / d) * off : 0);
-      const pz = a.z + (d > 0 ? (dx / d) * off : 0);
-      m.makeScale(visible ? 1 : 0.0001, visible ? 1 : 0.0001, visible ? 1 : 0.0001);
-      m.setPosition(px, t.height(px, pz) + 0.85, pz);
-      mesh.setMatrixAt(i, m);
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-  });
-  if (!layout.graph.nodes.length) return null;
-  return (
-    <instancedMesh ref={ref} args={[undefined, undefined, count]} frustumCulled={false}>
-      <capsuleGeometry args={[0.36, 0.95, 3, 8]} />
-      <meshStandardMaterial roughness={0.8} />
-    </instancedMesh>
   );
 }

@@ -118,8 +118,8 @@ export function Intro() {
       await push(`The first ${WARMUP_DAYS} days unfold…`, 900);
       setStage('done');
       if (!skip) await new Promise((r) => setTimeout(r, 900));
+      await startRunner();
       setPhase('ready');
-      startRunner();
     } catch (e) {
       toast({ kind: 'error', title: 'Generation failed', body: (e as Error).message });
       setStage('title');

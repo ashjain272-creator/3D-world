@@ -1,0 +1,38 @@
+{
+  "seed": "soak-smoke",
+  "years": 2,
+  "wallSeconds": 18,
+  "msPerSimYear": {
+    "mean": 8958,
+    "max": 10266
+  },
+  "peakHeapMB": 99.72,
+  "peakRssMB": 315.84,
+  "saveMB": 4.65,
+  "archiveMB": 0.02,
+  "reloadStatus": "ok",
+  "events": {
+    "recordedTotal": 1211,
+    "hot": 1174,
+    "archived": 37,
+    "compactedIntoSummaries": 0,
+    "chunks": 1,
+    "milestonesHot": 16
+  },
+  "danglingLinks": 0,
+  "danglingSample": [],
+  "missingChunks": [],
+  "important": {
+    "total": 766,
+    "withCause": 761,
+    "withCauseOrRoot": 766,
+    "shareWithCause": 0.9935,
+    "shareWithCauseOrRoot": 1
+  },
+  "population": {
+    "civs": 3,
+    "settlements": 12,
+    "individualsAlive": 520,
+    "individualsEver": 521
+  }
+}

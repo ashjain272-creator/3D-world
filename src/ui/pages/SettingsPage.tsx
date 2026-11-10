@@ -1,11 +1,12 @@
 import { useRef, useState, type ReactNode } from 'react';
-import { exportWorld, importWorld } from '../../persistence/db';
+import { importWorld } from '../../persistence/db';
 import { randomSeed } from '../../state/seed';
 import { formatDate } from '../../sim/time';
 import { adoptWorld, replaceUniverse } from '../../state/boot';
-import { saveNow } from '../../state/runner';
+import { saveNow, sim } from '../../state/runner';
 import { getWorld, useApp, useWorldVersion } from '../../state/store';
 import type { Quality } from '../../state/settings';
+import { ambient } from '../../audio/ambient';
 import { Confirm } from '../components/common';
 
 function Row({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
@@ -60,6 +61,23 @@ export function SettingsPage() {
               </option>
             ))}
           </select>
+        </Row>
+        <div className="section-title" style={{ marginTop: 28 }}>
+          <h3>Sound</h3>
+        </div>
+        <Row label="Ambient sound" help="Procedural soundscape: space drone, wind, rain, crowds and night insects. Generated live, off by default.">
+          <input
+            type="checkbox"
+            data-testid="audio-setting"
+            checked={s.audioEnabled}
+            onChange={(e) => {
+              if (e.target.checked) ambient.enable();
+              update({ audioEnabled: e.target.checked });
+            }}
+          />
+        </Row>
+        <Row label="Volume">
+          <input type="range" min={0} max={1} step={0.05} value={s.audioVolume} disabled={!s.audioEnabled} onChange={(e) => update({ audioVolume: Number(e.target.value) })} style={{ width: '100%' }} />
         </Row>
         <div className="section-title" style={{ marginTop: 28 }}>
           <h3>Explorer controls</h3>
@@ -142,8 +160,8 @@ export function SettingsPage() {
         <Row label="Export universe" help="Download the complete state as a JSON file.">
           <button
             className="btn"
-            onClick={() => {
-              const url = URL.createObjectURL(exportWorld(w));
+            onClick={async () => {
+              const url = URL.createObjectURL(await sim.export());
               const a = document.createElement('a');
               a.href = url;
               a.download = `genesis-${w.seed}.json`;

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Building, BuildingKind, Layout, PlacedLandmark } from './layout';
+import { TiledInstances } from './lod';
 import type { TerrainData } from './terrain';
 
 /** Shared 0..1 night factor, driven by the sky each frame. */
@@ -114,6 +115,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       futuristic: windowMaterial({ floor: 3.4, col: 1.7, lit: [0.85, 0.92, 1.0], density: 0.5, glass: [0.16, 0.24, 0.34], metalness: 0.12, roughness: 0.42, accent: new THREE.Color(civColor), ribbon: true }),
       frontier: windowMaterial({ floor: 3.0, col: 3.2, lit: [1.0, 0.72, 0.38], density: 0.5, glass: [0.12, 0.1, 0.08], roughness: 0.95, metalness: 0 }),
       plain: new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.05 }),
+      far: new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.05, emissive: new THREE.Color('#9fb4d8'), emissiveIntensity: 0.1 }),
       roof: new THREE.MeshStandardMaterial({ roughness: 0.9 }),
       dome: new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05 }),
       leaf: new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }),
@@ -123,8 +125,17 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
     }),
     [civColor],
   );
+  // Building LOD: lit-window shader up close, a flat material far away, culled beyond.
+  const boxLevels = useMemo(
+    () => [
+      { geometry: unitBox, material: layout.style === 'frontier' ? mats.frontier : mats.futuristic, maxDist: quality === 'low' ? 260 : 420, castShadow: shadows, receiveShadow: true },
+      { geometry: unitBox, material: mats.far, maxDist: quality === 'low' ? 700 : 1400 },
+    ],
+    [layout.style, mats, quality, shadows],
+  );
   useFrame(() => {
-    mats.glow.emissiveIntensity = 0.4 + nightUniform.value * 2.2;
+    mats.far.emissiveIntensity = 0.04 + nightUniform.value * 0.35;
+    mats.glow.emissiveIntensity = 0.3 + nightUniform.value * 1.1;
     mats.warm.emissiveIntensity = 0.15 + nightUniform.value * 2.4;
   });
   useEffect(() => () => Object.values(mats).forEach((m) => m.dispose()), [mats]);
@@ -189,7 +200,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       )}
       {lineGeo && <mesh geometry={lineGeo} material={mats.glow} />}
       {/* Futuristic */}
-      <Instanced items={groups.box} geometry={unitBox} material={layout.style === 'frontier' ? mats.frontier : mats.futuristic} castShadow={shadows} receiveShadow />
+      <TiledInstances items={groups.box} levels={boxLevels} tileSize={90} name="buildings" />
       <Instanced items={groups.caps} geometry={unitBox} material={mats.glow} />
       <Instanced items={groups.antenna} geometry={unitCyl} material={mats.plain} />
       {/* Frontier */}
@@ -219,7 +230,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
 
 function buildGroups(buildings: Building[], y0: number, style: Layout['style']) {
   const g = {
-    box: [] as { m: THREE.Matrix4; c?: THREE.Color }[],
+    box: [] as { m: THREE.Matrix4; c?: THREE.Color; x: number; z: number }[],
     caps: [] as { m: THREE.Matrix4 }[],
     antenna: [] as { m: THREE.Matrix4 }[],
     roofs: [] as { m: THREE.Matrix4; c?: THREE.Color }[],
@@ -245,12 +256,12 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
       case 'tower':
       case 'block':
       case 'slab': {
-        g.box.push({ m: mat(b.x, y0, b.z, b.w, b.h, b.d), c: tone(futTones) });
+        g.box.push({ m: mat(b.x, y0, b.z, b.w, b.h, b.d), c: tone(futTones), x: b.x, z: b.z });
         if (b.kind === 'tower') {
           g.caps.push({ m: mat(b.x, y0 + b.h, b.z, b.w * 0.7, 0.6, b.d * 0.7) });
           if (b.h > 80) g.antenna.push({ m: mat(b.x, y0 + b.h, b.z, 0.5, 12, 0.5) });
         } else if (b.kind === 'slab') {
-          g.box.push({ m: mat(b.x, y0 + b.h, b.z, b.w * 0.6, b.h * 0.35, b.d * 0.6), c: tone(futTones) });
+          g.box.push({ m: mat(b.x, y0 + b.h, b.z, b.w * 0.6, b.h * 0.35, b.d * 0.6), c: tone(futTones), x: b.x, z: b.z });
         }
         break;
       }
@@ -258,7 +269,7 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
       case 'hall': {
         const w = b.rot ? b.d : b.w;
         const d = b.rot ? b.w : b.d;
-        g.box.push({ m: mat(b.x, y0, b.z, w, b.h, d), c: tone(stone) });
+        g.box.push({ m: mat(b.x, y0, b.z, w, b.h, d), c: tone(stone), x: b.x, z: b.z });
         g.roofs.push({ m: mat(b.x, y0 + b.h, b.z, b.w * 1.08, b.h * 0.55, b.d, b.rot), c: tone(roofs) });
         break;
       }

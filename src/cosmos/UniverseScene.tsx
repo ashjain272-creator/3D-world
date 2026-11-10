@@ -8,6 +8,7 @@ import { MINUTES_PER_DAY } from '../sim/time';
 import type { Planet, StarSystem, World } from '../sim/types';
 import { getWorld, useApp } from '../state/store';
 import { glowSprite, planetTextures, regionDir } from './planetTexture';
+import { PostFX } from '../ui/components/PostFX';
 
 export type UniverseView = { kind: 'galaxy' } | { kind: 'system'; id: string } | { kind: 'planet'; id: string; settlementId?: string };
 
@@ -23,6 +24,14 @@ interface Props {
 
 export function UniverseScene(props: Props) {
   const quality = useApp((s) => s.settings.quality);
+  // Selecting a star first flies the camera to it, then opens the system.
+  const [fly, setFly] = useState<{ id: string; pos: THREE.Vector3 } | null>(null);
+  useEffect(() => setFly(null), [props.view.kind]);
+  const startFly = (id: string) => {
+    const sys = getWorld().systems[id];
+    if (!sys) return props.onSelectSystem(id);
+    setFly({ id, pos: new THREE.Vector3(...sys.position) });
+  };
   return (
     <Canvas
       camera={{ position: [0, 420, 640], fov: 50, near: 0.1, far: 8000 }}
@@ -33,8 +42,8 @@ export function UniverseScene(props: Props) {
       <color attach="background" args={['#020409']} />
       <Suspense fallback={null}>
         <Stars radius={2400} depth={600} count={quality === 'low' ? 2500 : 6000} factor={18} saturation={0.15} fade speed={0.3} />
-        <Rig view={props.view} />
-        {props.view.kind === 'galaxy' && <Galaxy onSelect={props.onSelectSystem} version={props.version} />}
+        <Rig view={props.view} fly={fly} onArrive={(id) => props.onSelectSystem(id)} />
+        {props.view.kind === 'galaxy' && <Galaxy onSelect={startFly} version={props.version} />}
         {props.view.kind === 'system' && <SystemView id={props.view.id} onSelect={props.onSelectPlanet} />}
         {props.view.kind === 'planet' && (
           <PlanetView
@@ -46,13 +55,14 @@ export function UniverseScene(props: Props) {
             onSettlement={props.onSelectSettlement}
           />
         )}
+        <PostFX quality={quality} bloom={props.view.kind === 'galaxy' ? 1.1 : 0.8} threshold={props.view.kind === 'galaxy' ? 0.35 : 0.6} dofTarget={quality === 'high' && fly ? fly.pos : null} />
       </Suspense>
     </Canvas>
   );
 }
 
 /** Animated camera transitions between views; user orbit control otherwise. */
-function Rig({ view }: { view: UniverseView }) {
+function Rig({ view, fly, onArrive }: { view: UniverseView; fly: { id: string; pos: THREE.Vector3 } | null; onArrive: (id: string) => void }) {
   const controls = useRef<OrbitControlsImpl>(null);
   const { camera } = useThree();
   const anim = useRef<{ from: THREE.Vector3; to: THREE.Vector3; tFrom: THREE.Vector3; tTo: THREE.Vector3; t: number } | null>(null);
@@ -68,7 +78,39 @@ function Rig({ view }: { view: UniverseView }) {
     };
     if (view.kind !== 'galaxy') camera.position.multiplyScalar(view.kind === 'system' ? 0.15 : 0.4);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const flight = useRef<{ id: string; from: THREE.Vector3; to: THREE.Vector3; tFrom: THREE.Vector3; tTo: THREE.Vector3; t: number; done: boolean } | null>(null);
+  useEffect(() => {
+    if (!fly) {
+      flight.current = null;
+      return;
+    }
+    // approach along the current viewing direction, ending close to the star
+    const dir = camera.position.clone().sub(fly.pos).normalize();
+    flight.current = {
+      id: fly.id,
+      from: camera.position.clone(),
+      to: fly.pos.clone().add(dir.multiplyScalar(26)).add(new THREE.Vector3(0, 6, 0)),
+      tFrom: controls.current?.target.clone() ?? new THREE.Vector3(),
+      tTo: fly.pos.clone(),
+      t: 0,
+      done: false,
+    };
+  }, [fly, camera]);
   useFrame((_, dt) => {
+    const f = flight.current;
+    if (f && controls.current) {
+      f.t = Math.min(1, f.t + dt / 1.25);
+      // ease in-out (smootherstep) for a cinematic approach
+      const e = f.t * f.t * f.t * (f.t * (f.t * 6 - 15) + 10);
+      camera.position.lerpVectors(f.from, f.to, e);
+      controls.current.target.lerpVectors(f.tFrom, f.tTo, e);
+      controls.current.update();
+      if (f.t >= 1 && !f.done) {
+        f.done = true;
+        onArrive(f.id);
+      }
+      return;
+    }
     const a = anim.current;
     if (!a || !controls.current) return;
     a.t = Math.min(1, a.t + dt / 1.4);
@@ -103,7 +145,7 @@ function useGalaxyGeometry(world: World) {
   return useMemo(() => {
     const g = world.galaxy;
     const rng = new Rng(g.seed);
-    const N = quality === 'low' ? 14000 : quality === 'medium' ? 26000 : 42000;
+    const N = quality === 'low' ? 18000 : quality === 'medium' ? 42000 : 70000;
     const pos = new Float32Array(N * 3);
     const col = new Float32Array(N * 3);
     const core = new THREE.Color(g.coreColor);
@@ -162,18 +204,59 @@ function useGalaxyGeometry(world: World) {
     const neb = new THREE.BufferGeometry();
     neb.setAttribute('position', new THREE.BufferAttribute(npos, 3));
     neb.setAttribute('color', new THREE.BufferAttribute(ncol, 3));
-    return { geo, neb };
+    // dust lanes: dark, softly blended clouds hugging the inner edge of each arm
+    const D = quality === 'low' ? 900 : 2400;
+    const dpos = new Float32Array(D * 3);
+    const dcol = new Float32Array(D * 3);
+    const dust = new THREE.Color('#1a0f0a');
+    for (let i = 0; i < D; i++) {
+      const armI = rng.int(0, g.arms - 1);
+      const r = 70 + Math.pow(rng.next(), 0.9) * g.radius * 0.85;
+      const th = (armI / g.arms) * Math.PI * 2 + (r / g.radius) * g.twist - 0.16 + rng.normal(0, 0.06);
+      dpos[i * 3] = Math.cos(th) * r + rng.normal(0, 4);
+      dpos[i * 3 + 1] = rng.normal(0, 2);
+      dpos[i * 3 + 2] = Math.sin(th) * r + rng.normal(0, 4);
+      dcol[i * 3] = dust.r;
+      dcol[i * 3 + 1] = dust.g;
+      dcol[i * 3 + 2] = dust.b;
+    }
+    const lanes = new THREE.BufferGeometry();
+    lanes.setAttribute('position', new THREE.BufferAttribute(dpos, 3));
+    lanes.setAttribute('color', new THREE.BufferAttribute(dcol, 3));
+    // a handful of bright emission nebulae (star-forming regions)
+    const H = 26;
+    const hpos = new Float32Array(H * 3);
+    const hcol = new Float32Array(H * 3);
+    const hii = [new THREE.Color('#ff6fa8'), new THREE.Color('#6fa8ff'), new THREE.Color('#ff9a6f'), new THREE.Color('#9d7bff')];
+    for (let i = 0; i < H; i++) {
+      const armI = rng.int(0, g.arms - 1);
+      const r = 120 + rng.next() * g.radius * 0.75;
+      const th = (armI / g.arms) * Math.PI * 2 + (r / g.radius) * g.twist + rng.normal(0, 0.08);
+      hpos[i * 3] = Math.cos(th) * r;
+      hpos[i * 3 + 1] = rng.normal(0, 3);
+      hpos[i * 3 + 2] = Math.sin(th) * r;
+      c.copy(hii[i % hii.length]);
+      hcol[i * 3] = c.r;
+      hcol[i * 3 + 1] = c.g;
+      hcol[i * 3 + 2] = c.b;
+    }
+    const glow = new THREE.BufferGeometry();
+    glow.setAttribute('position', new THREE.BufferAttribute(hpos, 3));
+    glow.setAttribute('color', new THREE.BufferAttribute(hcol, 3));
+    return { geo, neb, lanes, glow };
   }, [world.galaxy, quality]);
 }
 
 function Galaxy({ onSelect, version }: { onSelect: (id: string) => void; version: number }) {
   const world = getWorld();
-  const { geo, neb } = useGalaxyGeometry(world);
+  const { geo, neb, lanes, glow } = useGalaxyGeometry(world);
   const group = useRef<THREE.Group>(null);
   useEffect(() => () => {
     geo.dispose();
     neb.dispose();
-  }, [geo, neb]);
+    lanes.dispose();
+    glow.dispose();
+  }, [geo, neb, lanes, glow]);
   const systems = Object.values(world.systems);
   void version;
   return (
@@ -182,10 +265,19 @@ function Galaxy({ onSelect, version }: { onSelect: (id: string) => void; version
         <pointsMaterial size={3.2} sizeAttenuation vertexColors map={glowSprite()} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.95} />
       </points>
       <points geometry={neb}>
-        <pointsMaterial size={70} sizeAttenuation vertexColors map={glowSprite()} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.06} />
+        <pointsMaterial size={80} sizeAttenuation vertexColors map={glowSprite()} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.075} />
       </points>
-      <sprite scale={[260, 260, 1]}>
-        <spriteMaterial map={glowSprite()} color={world.galaxy.coreColor} transparent opacity={0.55} blending={THREE.AdditiveBlending} depthWrite={false} />
+      <points geometry={glow}>
+        <pointsMaterial size={150} sizeAttenuation vertexColors map={glowSprite()} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.16} />
+      </points>
+      <points geometry={lanes} renderOrder={2}>
+        <pointsMaterial size={34} sizeAttenuation vertexColors map={glowSprite()} transparent depthWrite={false} blending={THREE.NormalBlending} opacity={0.32} />
+      </points>
+      <sprite scale={[230, 230, 1]}>
+        <spriteMaterial map={glowSprite()} color={world.galaxy.coreColor} transparent opacity={0.32} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </sprite>
+      <sprite scale={[520, 520, 1]}>
+        <spriteMaterial map={glowSprite()} color={world.galaxy.armColor} transparent opacity={0.07} blending={THREE.AdditiveBlending} depthWrite={false} />
       </sprite>
       {systems.map((s) => (
         <SystemMarker key={s.id} sys={s} world={world} onSelect={onSelect} />
@@ -233,9 +325,11 @@ function SystemMarker({ sys, world, onSelect }: { sys: StarSystem; world: World;
       <Html center position={[0, 16, 0]} style={{ pointerEvents: 'none' }} zIndexRange={[10, 0]}>
         <div className={`map-label ${hover ? 'on' : ''}`}>
           <span>{sys.name}</span>
-          <small>
-            {sys.star.spectralClass}-class · {sys.planetIds.length} worlds
-          </small>
+          {hover && (
+            <small>
+              {sys.star.spectralClass}-class · {sys.planetIds.length} worlds
+            </small>
+          )}
         </div>
       </Html>
     </group>
@@ -266,7 +360,7 @@ function SystemView({ id, onSelect }: { id: string; onSelect: (id: string) => vo
         <spriteMaterial map={glowSprite()} color={sys.star.color} transparent opacity={0.9} blending={THREE.AdditiveBlending} depthWrite={false} />
       </sprite>
       <sprite scale={[starSize * 22, starSize * 22, 1]}>
-        <spriteMaterial map={glowSprite()} color={sys.star.color} transparent opacity={0.18} blending={THREE.AdditiveBlending} depthWrite={false} />
+        <spriteMaterial map={glowSprite()} color={sys.star.color} transparent opacity={0.09} blending={THREE.AdditiveBlending} depthWrite={false} />
       </sprite>
       {planets.map((p, i) => (
         <OrbitingPlanet key={p.id} planet={p} radius={displayOrbit(i)} world={world} onSelect={onSelect} />
@@ -336,7 +430,7 @@ function OrbitingPlanet({ planet, radius, world, onSelect }: { planet: Planet; r
         <Html center position={[0, size + 1.6, 0]} style={{ pointerEvents: 'none' }} zIndexRange={[10, 0]}>
           <div className={`map-label ${hover ? 'on' : ''}`}>
             <span>{planet.name}</span>
-            {civ.length > 0 && <small style={{ color: civ[0].color }}>{civ.map((c) => c.adjective).join(' · ')}</small>}
+            {hover && civ.length > 0 && <small style={{ color: civ[0].color }}>{civ.map((c) => c.adjective).join(' · ')}</small>}
           </div>
         </Html>
       </group>

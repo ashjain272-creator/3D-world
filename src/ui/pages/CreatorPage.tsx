@@ -2,44 +2,27 @@ import { useState, type ReactNode } from 'react';
 import { DISTURBANCE_LIST } from '../../sim/systems/environment';
 import { GOVERNMENTS } from '../../sim/data/society';
 import { hasSurface } from '../../sim/generate/cosmos';
-import { advance } from '../../sim/engine';
-import {
-  HISTORICAL_EVENTS,
-  changeEnvironment,
-  createPlanet,
-  diplomaticIntervention,
-  discoverStarSystem,
-  foundSettlement,
-  grantTechnology,
-  historicalIntervention,
-  introduceCivilization,
-  introduceDiscovery,
-  setGovernment,
-  techOptionsFor,
-  type DiplomaticAction,
-  type HistoricalEventKind,
-  type InterventionResult,
-} from '../../sim/interventions';
+import { HISTORICAL_EVENTS, techOptionsFor, type DiplomaticAction, type HistoricalEventKind, type InterventionKind, type InterventionResult } from '../../sim/interventions';
 import type { ArchitectureStyle, GovernmentType, Planet, PlanetType, StarSystem, TechCategory } from '../../sim/types';
 import { MINUTES_PER_DAY, SPEEDS } from '../../sim/time';
 import { fullName } from '../../sim/world';
 import { navigate } from '../../state/router';
 import { getWorld, useApp, useWorldVersion } from '../../state/store';
-import { saveNow } from '../../state/runner';
+import { sim } from '../../state/runner';
 import { Confirm, EventRow } from '../components/common';
 
 function useResult() {
   const [r, setR] = useState<InterventionResult | null>(null);
   const bump = useApp((s) => s.bump);
   const toast = useApp((s) => s.toast);
-  const run = (fn: () => InterventionResult) => {
+  const run = async (kind: InterventionKind, ...args: unknown[]) => {
     try {
-      const res = fn();
+      const res = (await sim.exec({ type: 'intervene', kind, args })) as InterventionResult;
       setR(res);
       bump();
       if (res.ok) {
         toast({ kind: 'success', title: 'Intervention applied', body: res.message, eventId: res.eventId });
-        void saveNow();
+        void sim.save();
       }
     } catch (e) {
       setR({ ok: false, message: (e as Error).message });
@@ -121,7 +104,7 @@ export function CreatorPage() {
               defaultValue=""
               onChange={(e) => {
                 if (!e.target.value) return;
-                w.player.followedCharacterId = e.target.value;
+                void sim.exec({ type: 'player', action: { type: 'follow', characterId: e.target.value } });
                 navigate(`characters/${e.target.value}`);
               }}
             >
@@ -174,7 +157,7 @@ function SystemTool() {
   const { r, run } = useResult();
   return (
     <Tool title="Discover a star system" desc="Chart a new star with its own planets somewhere along the spiral arms.">
-      <button className="btn primary" onClick={() => run(() => discoverStarSystem(getWorld()))} data-testid="discover-system">
+      <button className="btn primary" onClick={() => run('discoverStarSystem')} data-testid="discover-system">
         Chart new system
       </button>
       <Result r={r} />
@@ -205,7 +188,7 @@ function PlanetTool({ systems }: { systems: StarSystem[] }) {
           ))}
         </select>
       </div>
-      <button className="btn primary" onClick={() => run(() => createPlanet(getWorld(), sys, type === 'auto' ? undefined : type))} data-testid="create-planet">
+      <button className="btn primary" onClick={() => run('createPlanet', sys, type === 'auto' ? undefined : type)} data-testid="create-planet">
         Create planet
       </button>
       <Result r={r} />
@@ -244,7 +227,7 @@ function CivTool({ planets }: { planets: Planet[] }) {
           ))}
         </select>
       </div>
-      <button className="btn primary" disabled={!pid} onClick={() => run(() => introduceCivilization(getWorld(), pid, { architecture: arch === 'auto' ? undefined : arch, government: gov === 'auto' ? undefined : gov }))} data-testid="introduce-civ">
+      <button className="btn primary" disabled={!pid} onClick={() => run('introduceCivilization', pid, { architecture: arch === 'auto' ? undefined : arch, government: gov === 'auto' ? undefined : gov })} data-testid="introduce-civ">
         Introduce civilisation
       </button>
       <Result r={r} />
@@ -294,7 +277,7 @@ function SettlementTool() {
           {!options.length && <option value={-1}>No free regions</option>}
         </select>
       </div>
-      <button className="btn primary" disabled={!region} onClick={() => region && run(() => foundSettlement(getWorld(), civ, pid, region.index))}>
+      <button className="btn primary" disabled={!region} onClick={() => region && run('foundSettlement', civ, pid, region.index)}>
         Found settlement
       </button>
       <Result r={r} />
@@ -325,7 +308,7 @@ function EnvironmentTool({ planets }: { planets: Planet[] }) {
             {delta > 0 ? '+' : ''}
             {delta}°C
           </span>
-          <button className="btn sm" disabled={!delta} onClick={() => run(() => changeEnvironment(getWorld(), pid, { kind: 'temperature', delta }))}>
+          <button className="btn sm" disabled={!delta} onClick={() => run('changeEnvironment', pid, { kind: 'temperature', delta })}>
             Shift climate
           </button>
         </div>
@@ -336,7 +319,7 @@ function EnvironmentTool({ planets }: { planets: Planet[] }) {
             </option>
           ))}
         </select>
-        <button className="btn" onClick={() => run(() => changeEnvironment(getWorld(), pid, { kind: 'disturbance', name: dist }))}>
+        <button className="btn" onClick={() => run('changeEnvironment', pid, { kind: 'disturbance', name: dist })}>
           Unleash
         </button>
         <select className="input" value={res} onChange={(e) => setRes(e.target.value as typeof res)}>
@@ -346,10 +329,10 @@ function EnvironmentTool({ planets }: { planets: Planet[] }) {
             </option>
           ))}
         </select>
-        <button className="btn" onClick={() => run(() => changeEnvironment(getWorld(), pid, { kind: 'enrich', resource: res }))}>
+        <button className="btn" onClick={() => run('changeEnvironment', pid, { kind: 'enrich', resource: res })}>
           Enrich
         </button>
-        <button className="btn ghost full" onClick={() => run(() => changeEnvironment(getWorld(), pid, { kind: 'restore' }))}>
+        <button className="btn ghost full" onClick={() => run('changeEnvironment', pid, { kind: 'restore' })}>
           Restore natural climate
         </button>
       </div>
@@ -385,7 +368,7 @@ function TechTool() {
           ))}
         </select>
       </div>
-      <button className="btn primary" disabled={!t} onClick={() => t && run(() => grantTechnology(getWorld(), civ, t.id))}>
+      <button className="btn primary" disabled={!t} onClick={() => t && run('grantTechnology', civ, t.id)}>
         Grant technology
       </button>
       <Result r={r} />
@@ -426,7 +409,7 @@ function DiscoveryTool() {
           <span className="mono">{mag.toFixed(1)}×</span>
         </div>
       </div>
-      <button className="btn primary" onClick={() => run(() => introduceDiscovery(getWorld(), civ, { name, category: cat, magnitude: mag }))} data-testid="introduce-discovery">
+      <button className="btn primary" onClick={() => run('introduceDiscovery', civ, { name, category: cat, magnitude: mag })} data-testid="introduce-discovery">
         Reveal discovery
       </button>
       <Result r={r} />
@@ -465,7 +448,7 @@ function DiplomacyTool() {
           <option value="sever">Sever all treaties</option>
         </select>
       </div>
-      <button className="btn primary" disabled={a === b} onClick={() => run(() => diplomaticIntervention(getWorld(), a, b, act))}>
+      <button className="btn primary" disabled={a === b} onClick={() => run('diplomaticIntervention', a, b, act)}>
         Initiate
       </button>
       <Result r={r} />
@@ -480,7 +463,7 @@ function HistoryTool({ onConfirm }: { onConfirm: (c: { title: string; body: stri
   const [kind, setKind] = useState<HistoricalEventKind>('golden_age');
   const def = HISTORICAL_EVENTS.find((h) => h.kind === kind)!;
   const go = () => {
-    const action = () => run(() => historicalIntervention(getWorld(), civ, kind));
+    const action = () => run('historicalIntervention', civ, kind);
     if (def.destructive) onConfirm({ title: `${def.label}?`, body: `${def.description} This will harm the ${getWorld().civs[civ]?.name} and cannot be undone.`, action });
     else action();
   };
@@ -537,7 +520,7 @@ function GovernmentTool({ onConfirm }: { onConfirm: (c: { title: string; body: s
           ))}
         </select>
       </div>
-      <button className="btn" onClick={() => onConfirm({ title: 'Reform government?', body: `The ${getWorld().civs[civ]?.name} will become a ${type}. Legitimacy will fall and a new leader will be installed.`, action: () => run(() => setGovernment(getWorld(), civ, type)) })}>
+      <button className="btn" onClick={() => onConfirm({ title: 'Reform government?', body: `The ${getWorld().civs[civ]?.name} will become a ${type}. Legitimacy will fall and a new leader will be installed.`, action: () => run('setGovernment', civ, type) })}>
         Reform…
       </button>
       <Result r={r} />
@@ -553,18 +536,16 @@ function TimeTool() {
   const [msg, setMsg] = useState<string | null>(null);
   const skip = async (days: number) => {
     setBusy(true);
-    const w = getWorld();
-    const before = w.events.length;
-    let left = days * MINUTES_PER_DAY;
-    while (left > 0) {
-      const r = advance(w, Math.min(left, 5 * MINUTES_PER_DAY));
-      left -= r.advanced;
+    let added = 0;
+    // a year at a time, so the snapshot (and this panel) updates as it goes
+    for (let left = days; left > 0; left -= 360) {
+      const r = (await sim.exec({ type: 'leap', days: Math.min(360, left) })) as { eventsAdded: number };
+      added += r.eventsAdded;
       bump();
-      await new Promise((res) => setTimeout(res, 0));
     }
-    setMsg(`${days} days passed; ${w.events.length - before} events recorded.`);
+    setMsg(`${days} days passed; ${added} events recorded.`);
     setBusy(false);
-    void saveNow();
+    void sim.save();
   };
   return (
     <Tool title="Simulation speed" desc="Time flows on its own. Adjust its pace, or leap forward instantly.">

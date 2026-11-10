@@ -13,6 +13,7 @@
  * runs (offline progress, fast-forward) from blocking the UI.
  */
 import { Rng, clamp } from './rng';
+import { characterVersion } from './world';
 import type { Character, Civilization, World } from './types';
 import { DAYS_PER_MONTH, MINUTES_PER_DAY, dayIndex } from './time';
 import { civModifiers, researchTick, type Modifiers } from './systems/technology';
@@ -22,6 +23,9 @@ import { politicsTick, satisfactionTick } from './systems/politics';
 import { diplomacyTick } from './systems/diplomacy';
 import { characterDaily, characterStep, replenishNotables } from './systems/characters';
 import { environmentTick, societalConditionsTick } from './systems/environment';
+import { backgroundTarget } from './generate/society';
+import { thresholdTick } from './systems/thresholds';
+import { maintainHistory } from './history';
 
 interface EngineState {
   ctx: DayContext;
@@ -47,7 +51,7 @@ function stateFor(world: World): EngineState {
  * do not depend on how a span of time is split across advance() calls.
  */
 function refreshLiving(world: World, st: EngineState): void {
-  const count = Object.keys(world.characters).length;
+  const count = characterVersion(world);
   const day = dayIndex(world.time);
   if (st.livingCount === count && st.livingDay === day) return;
   st.living = Object.values(world.characters).filter((c) => c.alive);
@@ -65,8 +69,13 @@ export function activeCivs(world: World): Civilization[] {
   return Object.values(world.civs).filter((c) => !c.extinct);
 }
 
-export function characterTarget(civ: Civilization): number {
+/** Tracked foreground individuals per civilisation (the rest are background). */
+export function foregroundTarget(civ: Civilization): number {
   return clamp(20 + civ.settlementIds.length * 6, 24, 70);
+}
+
+export function characterTarget(world: World, civ: Civilization): number {
+  return foregroundTarget(civ) + backgroundTarget(world, civ);
 }
 
 const STEP = 30; // minutes
@@ -92,7 +101,15 @@ export function advance(world: World, minutes: number, budgetMs = Infinity): Adv
   refreshLiving(world, st);
   while (world.time < target) {
     const prevDay = dayIndex(world.time);
-    world.time = Math.min(target, world.time + STEP);
+    // Steps land on an absolute 30-minute grid, so results never depend on
+    // how a span of time is split across calls. A partial step just moves the
+    // clock; everything due is processed at the next grid point.
+    const nextGrid = (Math.floor(world.time / STEP) + 1) * STEP;
+    if (nextGrid > target) {
+      world.time = target;
+      break;
+    }
+    world.time = nextGrid;
     refreshLiving(world, st);
     for (const c of st.living) if (c.alive && world.time >= c.nextDecisionAt) characterStep(world, rng, c, st.ctx);
     const day = dayIndex(world.time);
@@ -126,6 +143,7 @@ function dailyTick(world: World, rng: Rng, st: EngineState, day: number): void {
     populationTick(world, civ, m);
     researchTick(world, rng, civ, research, m);
     satisfactionTick(world, civ, m);
+    thresholdTick(world, civ);
   }
   tradeTick(world, civs, mods, st.ctx);
   for (const c of st.living) {
@@ -145,10 +163,11 @@ function monthlyTick(world: World, rng: Rng, civs: Civilization[], mods: Map<str
     expansionTick(world, rng, civ, m);
     structuralTick(world, rng, civ);
     societalConditionsTick(world, rng, civ, m.health);
-    replenishNotables(world, rng, civ, characterTarget(civ));
+    replenishNotables(world, rng, civ, characterTarget(world, civ), foregroundTarget(civ));
     snapshot(world, civ);
   }
   diplomacyTick(world, rng, mods);
+  maintainHistory(world);
 }
 
 export function snapshot(world: World, civ: Civilization): void {

@@ -44,3 +44,15 @@ describe('Rng', () => {
     expect(hashString('genesis')).not.toBe(hashString('Genesis'));
   });
 });
+
+describe('determinism guard', () => {
+  it('never uses Math.random inside src/sim', async () => {
+    const { readdirSync, readFileSync, statSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const walk = (d: string): string[] => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
+    const offenders = walk('src/sim')
+      .filter((f) => f.endsWith('.ts'))
+      .filter((f) => /Math\.random\s*\(/.test(readFileSync(f, 'utf8')));
+    expect(offenders).toEqual([]);
+  });
+});

@@ -149,9 +149,3 @@ export function generateUniverse(seed: string): { world: World; report: Generati
   };
   return { world, report };
 }
-
-export function randomSeed(): string {
-  const words = ['aurora', 'ember', 'tide', 'quartz', 'lumen', 'cinder', 'halo', 'nova', 'drift', 'vesper', 'onyx', 'solace', 'zephyr', 'atlas', 'echo'];
-  const w = words[Math.floor(Math.random() * words.length)];
-  return `${w}-${Math.floor(Math.random() * 90000 + 10000)}`;
-}

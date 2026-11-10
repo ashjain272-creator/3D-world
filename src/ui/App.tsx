@@ -3,7 +3,7 @@ import { useRoute, navigate } from '../state/router';
 import { useApp } from '../state/store';
 import { replaceUniverse, adoptWorld } from '../state/boot';
 import { importWorld } from '../persistence/db';
-import { randomSeed } from '../sim/generate/universe';
+import { randomSeed } from '../state/seed';
 import { formatDuration } from '../sim/time';
 import { Shell } from './layout/Shell';
 import { Intro } from './Intro';

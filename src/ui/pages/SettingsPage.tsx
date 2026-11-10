@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { exportWorld, importWorld } from '../../persistence/db';
-import { randomSeed } from '../../sim/generate/universe';
+import { randomSeed } from '../../state/seed';
 import { formatDate } from '../../sim/time';
 import { adoptWorld, replaceUniverse } from '../../state/boot';
 import { saveNow } from '../../state/runner';

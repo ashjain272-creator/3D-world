@@ -1,5 +1,6 @@
 import { advance, snapshot } from '../sim/engine';
-import { generateUniverse, randomSeed, type GenerationReport } from '../sim/generate/universe';
+import { generateUniverse, type GenerationReport } from '../sim/generate/universe';
+import { randomSeed } from './seed';
 import { MINUTES_PER_DAY, SPEEDS } from '../sim/time';
 import type { World } from '../sim/types';
 import { clearSaves, loadWorld, saveWorld } from '../persistence/db';

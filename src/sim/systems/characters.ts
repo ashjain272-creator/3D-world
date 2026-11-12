@@ -127,24 +127,35 @@ export function scoreActivities(world: World, rng: Rng, c: Character, now: numbe
   return cands.sort((a, b) => b.score - a.score);
 }
 
+/** Upper bound on individuals simulated in full across the whole universe. */
+export const MAX_TRACKED_INDIVIDUALS = 800;
+
 /** Living residents grouped by settlement, rebuilt daily or when the roster changes. */
-let residentCache: { world: World | null; day: number; count: number; map: Map<string, Character[]> } = { world: null, day: -1, count: -1, map: new Map() };
+let residentCache: { world: World | null; day: number; count: number; living: number; map: Map<string, Character[]> } = { world: null, day: -1, count: -1, living: 0, map: new Map() };
 
 function residents(world: World, settlementId: string): Character[] {
   const day = Math.floor(world.time / MINUTES_PER_DAY);
   const count = characterVersion(world);
   if (residentCache.world !== world || residentCache.day !== day || residentCache.count !== count) {
     const map = new Map<string, Character[]>();
+    let living = 0;
     for (const id in world.characters) {
       const ch = world.characters[id];
       if (!ch.alive) continue;
+      living++;
       const list = map.get(ch.settlementId);
       if (list) list.push(ch);
       else map.set(ch.settlementId, [ch]);
     }
-    residentCache = { world, day, count, map };
+    residentCache = { world, day, count, living, map };
   }
   return residentCache.map.get(settlementId) ?? [];
+}
+
+/** Living tracked individuals (cached per day / roster change). */
+export function livingTracked(world: World): number {
+  residents(world, '');
+  return residentCache.living;
 }
 
 function socialTargets(world: World, c: Character): Character[] {
@@ -660,7 +671,8 @@ export function characterDaily(world: World, rng: Rng, c: Character, healthMod: 
     const partner = world.characters[partnerId];
     const wants = c.goals.some((g) => g.type === 'family') || partner?.goals.some((g) => g.type === 'family');
     const kids = c.childIds.filter((id) => world.characters[id]?.alive).length;
-    if (partner?.alive && c.id < partner.id && kids < 3 && rng.chance((wants ? 0.0016 : 0.0003) / (1 + kids))) birth(world, rng, c, partner);
+    // at the universe-wide cap, new children join the aggregate population instead of the tracked roster
+    if (partner?.alive && c.id < partner.id && kids < 3 && rng.chance((wants ? 0.0016 : 0.0003) / (1 + kids)) && livingTracked(world) < MAX_TRACKED_INDIVIDUALS) birth(world, rng, c, partner);
   }
   // Cost of living scales with local prices; lifestyles creep up with wealth.
   if (civ) {
@@ -908,8 +920,36 @@ export function die(world: World, rng: Rng, c: Character, cause: string, causeId
       o.mood = clamp(o.mood - 25, -100, 100);
     }
   }
+  compactDeceased(world, c);
   if (isLeader && civ) {
     succession(world, rng, civ, 'vacancy', [ev.id]);
+  }
+}
+
+/**
+ * Keep the record of the dead small: their life story stays (first memory
+ * plus the most important ones, close ties, events), day-to-day detail goes.
+ * Without this, decades of deaths dominate the save.
+ */
+export function compactDeceased(world: World, c: Character): void {
+  for (const [id, r] of Object.entries(c.relationships)) {
+    if (r.kind !== 'acquaintance') continue;
+    delete c.relationships[id];
+    const o = world.characters[id];
+    if (o?.relationships[c.id]?.kind === 'acquaintance') delete o.relationships[c.id];
+  }
+  c.recent = [];
+  c.goals = [];
+  const KEEP = 12;
+  if (c.memories.length > KEEP) {
+    const ranked = c.memories
+      .map((m, i) => ({ m, i }))
+      .slice(1)
+      .sort((a, b) => b.m.importance - a.m.importance || b.i - a.i)
+      .slice(0, KEEP - 1)
+      .sort((a, b) => a.i - b.i)
+      .map((x) => x.m);
+    c.memories = [c.memories[0], ...ranked];
   }
 }
 

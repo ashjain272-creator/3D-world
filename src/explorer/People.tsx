@@ -198,11 +198,15 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
     setNearby(nearest);
     if (now - lastScan.current > 0.5) {
       lastScan.current = now;
-      const next = dists
-        .filter((x) => x.d < 30)
-        .sort((a, b) => a.d - b.d)
-        .slice(0, 2)
-        .map((x) => x.id);
+      const close = dists.filter((x) => x.d < 30).sort((a, b) => a.d - b.d);
+      const next = close.slice(0, 1).map((x) => x.id);
+      // a second label only when it cannot overlap the first on screen
+      const first = close[0] && npcs.current.get(close[0].id);
+      const second = close.slice(1).find((x) => {
+        const o = npcs.current.get(x.id);
+        return first && o && Math.hypot(o.pos.x - first.pos.x, o.pos.z - first.pos.z) > 3.5 && Math.abs(x.d - close[0].d) < 12;
+      });
+      if (second) next.push(second.id);
       setLabelIds((prev) => (prev.join() === next.join() ? prev : next));
     }
   });

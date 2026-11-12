@@ -66,12 +66,12 @@ export function Shell({ children }: { children: ReactNode }) {
       </nav>
       <header className="topbar">
         <Breadcrumbs />
-          <div className="topbar-spacer" />
+        <FollowWidget />
+        <div className="topbar-spacer" />
         <SoundToggle />
         <TimeControl />
       </header>
       <main className="main">{children}</main>
-      <FollowWidget />
       <Toasts />
     </div>
   );
@@ -101,7 +101,7 @@ function Breadcrumbs() {
     if (sec === 'explorer' && p[0]) {
       const s = w.settlements[p[0]];
       if (s) items.push({ label: s.name });
-      else if (w.planets[p[0]]) items.push({ label: `${w.planets[p[0]].name} · ${w.planets[p[0]].regions[Number(p[1])]?.name ?? 'wilds'}` });
+      else if (w.planets[p[0]]) items.push({ label: `${w.planets[p[0]].name} · ${w.planets[p[0]].regions[Number(p[1])]?.name ?? (w.planets[p[0]].regions.length ? 'wilds' : 'cloud platforms')}` });
     }
   }
   return (

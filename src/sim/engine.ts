@@ -21,7 +21,7 @@ import { economyTick, structuralTick, tradeTick, type DayContext } from './syste
 import { expansionTick, migrationTick, populationTick } from './systems/population';
 import { politicsTick, satisfactionTick } from './systems/politics';
 import { diplomacyTick } from './systems/diplomacy';
-import { characterDaily, characterStep, replenishNotables } from './systems/characters';
+import { MAX_TRACKED_INDIVIDUALS, characterDaily, characterStep, replenishNotables } from './systems/characters';
 import { environmentTick, societalConditionsTick } from './systems/environment';
 import { backgroundTarget } from './generate/society';
 import { thresholdTick } from './systems/thresholds';
@@ -75,7 +75,11 @@ export function foregroundTarget(civ: Civilization): number {
 }
 
 export function characterTarget(world: World, civ: Civilization): number {
-  return foregroundTarget(civ) + backgroundTarget(world, civ);
+  const own = foregroundTarget(civ) + backgroundTarget(world, civ);
+  let total = 0;
+  for (const c of activeCivs(world)) total += foregroundTarget(c) + backgroundTarget(world, c);
+  // growth spreads the same budget over more settlements instead of adding agents without limit
+  return total > MAX_TRACKED_INDIVIDUALS ? Math.floor((own * MAX_TRACKED_INDIVIDUALS) / total) : own;
 }
 
 const STEP = 30; // minutes

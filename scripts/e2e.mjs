@@ -34,6 +34,13 @@ page.on('console', (m) => {
 });
 const shot = (name) => page.screenshot({ path: `${OUT}/${name}.png` });
 const world = (fn) => page.evaluate(fn);
+const veilGone = () =>
+  page
+    .waitForFunction(() => {
+      const v = document.querySelector('.loading-veil');
+      return !v || getComputedStyle(v).opacity === '0';
+    }, null, { timeout: 20000 })
+    .catch(() => {});
 const advanceLocal = (hour) =>
   page.evaluate((h) => {
     const w = window.__genesis.store.getWorld();
@@ -104,7 +111,9 @@ try {
   await shot('07-settlement-panel');
   await page.click('[data-testid=enter-explorer]');
   await page.waitForSelector('[data-testid=explorer-page]');
-  await page.waitForTimeout(6000);
+  await page.waitForTimeout(3000);
+  await veilGone();
+  await page.waitForTimeout(1500);
   check('Observer → Explorer transition', (await page.url()).includes(`explorer/${ids.settlement}`));
   await shot('08-explorer-arrival');
 
@@ -204,7 +213,9 @@ try {
   });
   await advanceLocal(10);
   await page.evaluate((h) => (location.hash = `#/explorer/${h}`), wild);
-  await page.waitForTimeout(6000);
+  await page.waitForTimeout(3000);
+  await veilGone();
+  await page.waitForTimeout(1500);
   await shot('13-wilderness');
   const charted = await world(() => window.__genesis.store.getWorld().events.some((e) => e.title.includes('is charted')));
   check('exploring a wild region records history', charted);
@@ -213,9 +224,12 @@ try {
   const giant = await world(() => Object.values(window.__genesis.store.getWorld().planets).find((p) => p.type === 'gas_giant' || p.type === 'ice_giant')?.id ?? null);
   if (giant) {
     await page.evaluate((id) => (location.hash = `#/explorer/${id}`), giant);
-    await page.waitForTimeout(6000);
+    await page.waitForTimeout(3000);
+    await veilGone();
+    await page.waitForTimeout(1500);
     const onPlatform = await page.evaluate(() => !!document.querySelector('[data-testid=explorer-page]') && Math.abs(window.__genesis.player.y) < 2);
-    check('gas/ice giant opens a walkable cloud platform', onPlatform, `y=${(await page.evaluate(() => window.__genesis.player.y)).toFixed(2)}`);
+    const cloudInfo = await page.evaluate(() => ({ y: window.__genesis.player.y, crowd: window.__genesis.crowd.visible, label: document.querySelector('.hud-tl .eyebrow')?.textContent }));
+    check('gas/ice giant opens a walkable cloud platform', onPlatform, `y=${cloudInfo.y.toFixed(2)}, ${cloudInfo.crowd} crew visible, "${cloudInfo.label}"`);
     await shot('13b-cloud-platform');
     // walk straight off the hub edge: the railing must hold the player on the deck
     await page.evaluate(() => (window.__genesis.commands.teleport = { x: -56, z: 0, yaw: -Math.PI / 2 }));

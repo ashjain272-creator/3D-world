@@ -217,7 +217,7 @@ function LocationCard({ planet, settlement, regionName, civName, civColor }: { p
   return (
     <div className="hud-tl panel">
       <div className="eyebrow" style={{ color: civColor }}>
-        {settlement ? `${settlement.kind} · ${civName}` : civName ? `Territory of the ${civName}` : 'Unclaimed wilderness'}
+        {settlement ? `${settlement.kind} · ${civName}` : !planet.regions.length ? `Floating outpost · ${planet.type === 'ice_giant' ? 'ice giant' : 'gas giant'}` : civName ? `Territory of the ${civName}` : 'Unclaimed wilderness'}
       </div>
       <div className="hud-title">{settlement?.name ?? regionName}</div>
       <div className="muted" style={{ fontSize: 12 }}>

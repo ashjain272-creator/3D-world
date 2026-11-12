@@ -90,4 +90,22 @@ describe('utility-based characters', () => {
     expect(w.events.some((e) => e.title.includes('dies') && e.characterIds.includes(leader.id))).toBe(true);
     if (friend && w.characters[friend].alive) expect(w.characters[friend].memories.some((m) => m.text.includes('Mourned'))).toBe(true);
   });
+
+  it('compacts the record of the dead but keeps their life story and close ties', () => {
+    const w = freshWorld();
+    const c = adultWorker(w);
+    const first = c.memories[0];
+    for (let k = 0; k < 30; k++) c.memories.push({ t: w.time + k, text: `Thing ${k}.`, valence: 0, importance: k === 7 ? 5 : 1 });
+    const acquaintance = Object.entries(c.relationships).find(([, r]) => r.kind === 'acquaintance')?.[0];
+    const close = Object.entries(c.relationships).filter(([, r]) => r.kind !== 'acquaintance').map(([id]) => id);
+    die(w, new Rng(1), c, 'old age');
+    expect(c.alive).toBe(false);
+    expect(c.memories.length).toBeLessThanOrEqual(12);
+    expect(c.memories[0]).toEqual(first);
+    expect(c.memories.some((m) => m.text === 'Thing 7.')).toBe(true);
+    expect(c.recent).toEqual([]);
+    for (const id of close) expect(c.relationships[id]).toBeTruthy();
+    if (acquaintance) expect(c.relationships[acquaintance]).toBeUndefined();
+    expect(Object.values(c.relationships).every((r) => r.kind !== 'acquaintance')).toBe(true);
+  });
 });

@@ -107,7 +107,7 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
     }
   }
   if (green && quality !== 'low') {
-    const grassN = Math.round((quality === 'high' ? 42000 : 20000) * Math.min(1, t.look.density + 0.45));
+    const grassN = Math.round((quality === 'high' ? 30000 : 9000) * Math.min(1, t.look.density + 0.45));
     const petals = ['#f4e36a', '#f2f2f2', '#e88ab0', '#b79af2', '#f0a05a'];
     for (let i = 0; i < grassN; i++) {
       const x = rng.range(-t.size * 0.46, t.size * 0.46);

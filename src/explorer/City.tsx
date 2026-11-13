@@ -7,7 +7,7 @@ import type { Building, BuildingKind, Layout, PlacedLandmark } from './layout';
 import { TiledInstances } from './lod';
 import { Rng } from '../sim/rng';
 import type { TerrainData } from './terrain';
-import { BUMP_GLSL, NOISE_GLSL, env, foliageMaterial, texturedMaterial } from './env';
+import { BUMP_GLSL, NOISE_GLSL, detail, env, foliageMaterial, texturedMaterial } from './env';
 
 /** Shared 0..1 night factor, driven by the sky each frame. */
 export const nightUniform = { value: 0 };
@@ -180,8 +180,11 @@ function surfaceMaterial(color: string, roughness: number, cobbles: boolean) {
         diffuseColor.rgb *= 0.8 + 0.4 * n;
         float fw = max(length(fwidth(vWPos.xz)), 1e-4);
         float e = max(0.015, fw);
-        float sh0 = streetH(vWPos.xz);
-        vec2 sg = vec2(streetH(vWPos.xz + vec2(e, 0.0)) - sh0, streetH(vWPos.xz + vec2(0.0, e)) - sh0) / e;
+        vec2 sg = vec2(0.0);
+        if (${detail.level >= 2 ? 'efade(fw) > 0.02' : 'false'}) {
+          float sh0 = streetH(vWPos.xz);
+          sg = vec2(streetH(vWPos.xz + vec2(e, 0.0)) - sh0, streetH(vWPos.xz + vec2(0.0, e)) - sh0) / e;
+        }
         ${
           cobbles
             ? `vec2 c = vWPos.xz / 0.55; c.x += 0.5 * mod(floor(c.y), 2.0);
@@ -244,7 +247,7 @@ const roofGeo = (() => {
 
 export function City({ layout, t, quality, civColor }: { layout: Layout; t: TerrainData; quality: 'low' | 'medium' | 'high'; civColor: string }) {
   const y0 = t.flatHeight;
-  const shadows = quality !== 'low';
+  const shadows = quality === 'high';
   const mats = useMemo(
     () => ({
       futuristic: windowMaterial({ style: 'glass', floor: 3.4, col: 1.7, lit: [0.85, 0.92, 1.0], density: 0.55, glass: [0.1, 0.17, 0.26], metalness: 0.12, roughness: 0.5, accent: new THREE.Color(civColor) }),

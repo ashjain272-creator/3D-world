@@ -14,6 +14,7 @@ import type { CloudCity } from './cloudCity';
 import { Player } from './Player';
 import { SkyWeather } from './SkyWeather';
 import { PostFX } from '../ui/components/PostFX';
+import { setDetail } from './env';
 import type { TerrainData } from './terrain';
 
 interface Props {
@@ -35,8 +36,11 @@ interface Props {
 
 export function ExplorerScene(p: Props) {
   const quality = useApp((s) => s.settings.quality);
+  // shader detail is baked into materials when they are built; remount the scene when quality changes
+  setDetail(quality);
   return (
     <Canvas
+      key={quality}
       shadows={quality !== 'low' ? { type: THREE.PCFSoftShadowMap } : false}
       camera={{ fov: 62, near: 0.3, far: 6000, position: [0, 40, 260] }}
       dpr={quality === 'low' ? 1 : quality === 'medium' ? [1, 1.5] : [1, 2]}

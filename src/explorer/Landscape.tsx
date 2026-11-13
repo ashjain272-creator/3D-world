@@ -7,7 +7,7 @@ import { TiledInstances } from './lod';
 import type { VegetationData } from './vegetation';
 import type { Layout } from './layout';
 import { mixHex, type TerrainData } from './terrain';
-import { BUMP_GLSL, NOISE_GLSL, env, foliageMaterial, texturedMaterial } from './env';
+import { BUMP_GLSL, NOISE_GLSL, detail, env, foliageMaterial, texturedMaterial } from './env';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout: Layout; waterColor: string }) {
@@ -68,7 +68,7 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
     m.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vGN;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvGN = normal;');
-      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vGN;\n${NOISE_GLSL}\n${BUMP_GLSL}\nfloat groundH(vec3 P, float steep) { return mix(efbm(P.xz * 0.9) * 0.7 + evn(P.xz * 4.0) * 0.3, efbm(P.xz * 1.1) * 1.4, steep); }`).replace(
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vGN;\n${NOISE_GLSL}\n${BUMP_GLSL}\nfloat groundH(vec3 P, float steep) { return mix(evn(P.xz * 0.9) * 0.7 + evn(P.xz * 4.0) * 0.3, evn(P.xz * 1.1) + evn(P.xz * 2.7) * 0.5, steep); }`).replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
         {
@@ -81,11 +81,15 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
           float steep = 1.0 - smoothstep(0.55, 0.85, abs(normalize(vGN).y));
           float fw = max(length(fwidth(vWPos.xz)), 1e-4);
           float e = max(0.03, fw);
-          float h0 = groundH(vWPos, steep);
-          vec2 gg = vec2(groundH(vWPos + vec3(e, 0.0, 0.0), steep) - h0, groundH(vWPos + vec3(0.0, 0.0, e), steep) - h0) / e;
+          float gf = efade(fw * 0.5);
+          vec2 gg = vec2(0.0);
+          if (${detail.level >= 2 ? 'gf > 0.02' : 'false'}) {
+            float h0 = groundH(vWPos, steep);
+            gg = vec2(groundH(vWPos + vec3(e, 0.0, 0.0), steep) - h0, groundH(vWPos + vec3(0.0, 0.0, e), steep) - h0) / e;
+          }
           float strata = evn(vec2(vWPos.y * 1.6 + efbm(vWPos.xz * 0.15) * 3.0, 1.0));
           diffuseColor.rgb *= mix(1.0, 0.78 + 0.34 * strata, steep);
-          normal = ebumpW(normal, gg, vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), mix(0.05, 0.11, steep) * efade(fw * 0.5));
+          normal = ebumpW(normal, gg, vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), mix(0.05, 0.11, steep) * gf);
         }`,
       );
     };
@@ -174,7 +178,7 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
 
 /** Instanced vegetation and rocks with tiled LOD (two detail levels plus distance culling). */
 export function Vegetation({ data, kind, cliff, quality }: { data: VegetationData; kind: TerrainData['look']['vegetation']; cliff: string; quality: 'low' | 'medium' | 'high' }) {
-  const shadows = quality !== 'low';
+  const shadows = quality === 'high';
   const far = quality === 'low' ? 0.65 : 1;
   const levels = useMemo(() => {
     const bark = texturedMaterial('bark', { color: kind === 'cactus' ? '#6f9a56' : '#6e5644', roughness: 1 });
@@ -204,7 +208,7 @@ export function Vegetation({ data, kind, cliff, quality }: { data: VegetationDat
         { geometry: new THREE.IcosahedronGeometry(1, 1), material: leaf, maxDist: 110 * far, castShadow: shadows },
         { geometry: new THREE.IcosahedronGeometry(1, 0), material: leaf, maxDist: 240 * far },
       ],
-      grass: [{ geometry: tuft, material: blade, maxDist: 85 }],
+      grass: [{ geometry: tuft, material: blade, maxDist: 70 }],
       flower: [{ geometry: new THREE.IcosahedronGeometry(1, 0), material: petal, maxDist: 70 }],
       trunk: [
         { geometry: trunkHi, material: bark, maxDist: 200 * far, castShadow: shadows },

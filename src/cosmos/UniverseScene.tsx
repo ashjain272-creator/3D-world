@@ -42,6 +42,7 @@ export function UniverseScene(props: Props) {
       <color attach="background" args={['#020409']} />
       <Suspense fallback={null}>
         <Stars radius={2400} depth={600} count={quality === 'low' ? 2500 : 6000} factor={18} saturation={0.15} fade speed={0.3} />
+        <ViewShift />
         <Rig view={props.view} fly={fly} onArrive={(id) => props.onSelectSystem(id)} />
         {props.view.kind === 'galaxy' && <Galaxy onSelect={startFly} version={props.version} />}
         {props.view.kind === 'system' && <SystemView id={props.view.id} onSelect={props.onSelectPlanet} />}
@@ -672,4 +673,24 @@ function Moon({ index, radius, orbit, color, name }: { index: number; radius: nu
       </group>
     </>
   );
+}
+
+/**
+ * The info panel covers the right 376 px of the canvas on wide screens, so the
+ * projection is shifted to centre the scene in the visible part.
+ */
+function ViewShift() {
+  const { camera, size } = useThree();
+  useEffect(() => {
+    const cam = camera as THREE.PerspectiveCamera;
+    const shift = size.width > 1024 ? 188 : 0;
+    if (shift) cam.setViewOffset(size.width, size.height, shift, 0, size.width, size.height);
+    else cam.clearViewOffset();
+    cam.updateProjectionMatrix();
+    return () => {
+      cam.clearViewOffset();
+      cam.updateProjectionMatrix();
+    };
+  }, [camera, size.width, size.height]);
+  return null;
 }

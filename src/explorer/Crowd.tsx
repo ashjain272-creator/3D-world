@@ -234,7 +234,7 @@ export function Crowd({ layout, t, population, quality, planetId }: { layout: La
   if (!layout.graph.nodes.length) return null;
   return (
     <group>
-      <instancedMesh ref={body} args={[bodyGeo, undefined, count]} frustumCulled={false} raycast={noRaycast} castShadow={quality !== 'low'} key={`b${count}`} material={clothMat} />
+      <instancedMesh ref={body} args={[bodyGeo, undefined, count]} frustumCulled={false} raycast={noRaycast} castShadow={quality === 'high'} key={`b${count}`} material={clothMat} />
       <instancedMesh ref={head} args={[headGeo, undefined, count]} frustumCulled={false} raycast={noRaycast} key={`h${count}`} material={skinMat} />
     </group>
   );

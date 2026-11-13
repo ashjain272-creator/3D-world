@@ -49,6 +49,15 @@ const advanceLocal = (hour) =>
     return window.__genesis.sim.exec({ type: 'advanceToHour', hour: h, planetId });
   }, hour);
 
+// Software WebGL cannot hold a usable frame rate at high quality, so journeys run at medium by default.
+const QUALITY = process.env.E2E_QUALITY ?? 'medium';
+await page.addInitScript((q) => {
+  try {
+    if (!localStorage.getItem('genesis.settings.v1')) localStorage.setItem('genesis.settings.v1', JSON.stringify({ quality: q }));
+  } catch {
+    /* storage unavailable */
+  }
+}, QUALITY);
 try {
   // 1. First run: cinematic intro and generation
   await page.goto(BASE);

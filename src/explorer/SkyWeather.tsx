@@ -25,6 +25,7 @@ export interface Environment {
 export function SkyWeather({ planet, system, quality }: { planet: Planet; system: StarSystem; quality: 'low' | 'medium' | 'high' }) {
   const { scene, gl } = useThree();
   const envTimer = useRef(0);
+  const envElev = useRef(99);
   const envRT = useRef<THREE.WebGLRenderTarget | null>(null);
   const sun = useRef<THREE.DirectionalLight>(null);
   const hemi = useRef<THREE.HemisphereLight>(null);
@@ -95,10 +96,12 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
     const day = THREE.MathUtils.smoothstep(elev, -0.12, 0.18);
     const night = 1 - day;
     nightUniform.value = night;
-    if (quality !== 'low') {
+    if (quality === 'high') {
       envTimer.current -= dt;
-      if (envTimer.current <= 0) {
-        envTimer.current = 6;
+      // refresh only when the light has actually changed (and never more than every 4 s)
+      if (envTimer.current <= 0 && Math.abs(elev - envElev.current) > 0.03) {
+        envTimer.current = 4;
+        envElev.current = elev;
         const rt = envRig.pmrem.fromScene(envRig.scene, 0, 0.1, 200);
         envRT.current?.dispose();
         envRT.current = rt;
@@ -137,7 +140,7 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
     if (flash.current > 0) flash.current = Math.max(0, flash.current - dt * 3);
     if (wx === 'storm' && Math.random() < dt * 0.15) flash.current = 1;
     if (hemi.current) {
-      hemi.current.intensity = (quality === 'low' ? 0.42 + day * 0.4 : 0.26 + day * 0.24) + flash.current * 2;
+      hemi.current.intensity = (quality !== 'high' ? 0.42 + day * 0.4 : 0.26 + day * 0.24) + flash.current * 2;
       hemi.current.color.copy(skyCols.zenith).lerp(skyCols.horizon, 0.5).lerp(new THREE.Color('#34466e'), night * 0.6);
       hemi.current.groundColor.copy(skyCols.ground);
     }

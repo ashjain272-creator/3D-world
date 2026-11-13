@@ -13,6 +13,12 @@ export const env = {
   uWind: { value: 1 },
 };
 
+/** Shader detail tier: 2 = relief near the camera (high), 1 = texture only (medium), 0 = texture only (low). */
+export const detail = { level: 2 };
+export function setDetail(quality: 'low' | 'medium' | 'high'): void {
+  detail.level = quality === 'high' ? 2 : quality === 'medium' ? 1 : 0;
+}
+
 const NOISE_GLSL = /* glsl */ `
 float eh21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float evn(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); vec2 u = f*f*(3.0-2.0*f);
@@ -100,6 +106,7 @@ const SURFACES: Record<Surface, { code: string; bump: number }> = {
 export function texturedMaterial(surface: Surface, params: THREE.MeshStandardMaterialParameters = {}, space: 'world' | 'object' = 'world'): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial(params);
   const def = SURFACES[surface];
+  const relief = detail.level >= 2 || space === 'object';
   const k = (def.bump * (space === 'object' ? 0.012 : 0.05)).toFixed(4);
   m.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
@@ -135,10 +142,12 @@ export function texturedMaterial(surface: Surface, params: THREE.MeshStandardMat
           float fade = efade(fw * ${space === 'object' ? '6.0' : '1.0'});
           float e = max(${space === 'object' ? '0.004' : '0.012'}, fw);
           vec3 s0 = esurf(p);
-          vec2 g = vec2(esurf(p + vec2(e, 0.0)).x - s0.x, esurf(p + vec2(0.0, e)).x - s0.x) / e;
           diffuseColor.rgb *= mix(1.0, s0.y, 0.35 + 0.65 * fade);
           roughnessFactor = clamp(roughnessFactor + s0.z * fade, 0.04, 1.0);
+          ${relief ? 'if (fade > 0.02) {' : 'if (false) {'}
+          vec2 g = vec2(esurf(p + vec2(e, 0.0)).x - s0.x, esurf(p + vec2(0.0, e)).x - s0.x) / e;
           ${space === 'object' ? `normal = normalize(normal - ${k} * fade * (mat3(vNX, vNY, vNZ) * (g.x * T + g.y * B)));` : `normal = ebumpW(normal, g, T, B, ${k} * fade);`}
+          }
         }`,
       );
   };

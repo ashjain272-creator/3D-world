@@ -10,6 +10,7 @@ import { getWorld } from '../state/store';
 import { glowSprite } from '../cosmos/planetTexture';
 import { nightUniform } from './City';
 import { playerState } from './explorerStore';
+import { NOISE_GLSL, env as envU } from './env';
 
 
 export interface Environment {
@@ -32,6 +33,9 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
   const weather = planet.environment.weather;
   const stars = useRef<THREE.Points>(null);
   const sky = useRef<THREE.Mesh>(null);
+  const clouds = useRef<THREE.Mesh>(null);
+  const cloudMat = useMemo(() => cloudMaterial(), []);
+  useEffect(() => () => cloudMat.dispose(), [cloudMat]);
   const palette = useMemo(() => skyPalette(planet, system.star.spectralClass), [planet, system.star.spectralClass]);
   const skyCols = useMemo(() => ({ zenith: new THREE.Color(), horizon: new THREE.Color(), ground: new THREE.Color(), sun: new THREE.Color() }), []);
   const skyUniforms = useMemo(
@@ -72,9 +76,16 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
     const day = THREE.MathUtils.smoothstep(elev, -0.12, 0.18);
     const night = 1 - day;
     nightUniform.value = night;
+    envU.uTime.value += dt;
+    envU.uDay.value = day;
+    envU.uSky.value.copy(skyCols.horizon).lerp(skyCols.zenith, 0.45);
+    envU.uSun.value.copy(skyCols.sun);
     const env = getWorld().planets[planet.id]?.environment ?? planet.environment;
     const wx = env.weather;
     const overcast = wx === 'storm' ? 0.65 : wx === 'rain' ? 0.45 : wx === 'cloudy' ? 0.3 : wx === 'fog' ? 0.35 : wx === 'dust' ? 0.4 : wx === 'snow' ? 0.35 : 0;
+    envU.uCover.value += ((wx === 'storm' ? 0.95 : wx === 'rain' ? 0.82 : wx === 'snow' ? 0.78 : wx === 'fog' ? 0.7 : wx === 'cloudy' ? 0.66 : wx === 'dust' ? 0.25 : 0.38) - envU.uCover.value) * Math.min(1, dt * 0.5);
+    envU.uWind.value = wx === 'storm' ? 3 : wx === 'rain' || wx === 'dust' || wx === 'snow' ? 1.8 : 1;
+    if (clouds.current) clouds.current.position.set(playerState.x, 0, playerState.z);
     if (sun.current) {
       sun.current.position.set(playerState.x + sunPos.current.x * 300, playerState.y + Math.max(0.05, sunPos.current.y) * 300, playerState.z + sunPos.current.z * 300);
       sun.current.target.position.set(playerState.x, playerState.y, playerState.z);
@@ -140,6 +151,11 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
       />
       <directionalLight ref={moonLight} color="#8aa8ff" />
       <pointLight ref={cityGlow} color="#bcd0ff" distance={60} decay={1.4} intensity={0} />
+      {planet.atmosphere.pressure > 0.15 && (
+        <mesh ref={clouds} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} material={cloudMat} renderOrder={-1} frustumCulled={false}>
+          <planeGeometry args={[9000, 9000, 1, 1]} />
+        </mesh>
+      )}
       <Weather kind={weather} planetId={planet.id} quality={quality} />
     </>
   );
@@ -216,4 +232,44 @@ function Weather({ kind, planetId, quality }: { kind: Planet['environment']['wea
       <pointsMaterial transparent depthWrite={false} sizeAttenuation map={glowSprite()} />
     </points>
   );
+}
+
+/**
+ * A drifting cloud deck: fbm coverage driven by the weather, lit by the sun
+ * colour, fading into the horizon. Drawn on a plane 420 m up that follows
+ * the player.
+ */
+function cloudMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+    side: THREE.DoubleSide,
+    uniforms: { uTime: envU.uTime, uCover: envU.uCover, uSky: envU.uSky, uSun: envU.uSun, uDay: envU.uDay },
+    vertexShader: /* glsl */ `
+      varying vec3 vW;
+      void main() {
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        w.y += 420.0;
+        vW = w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform float uTime; uniform float uCover; uniform float uDay; uniform vec3 uSky; uniform vec3 uSun;
+      varying vec3 vW;
+      ${NOISE_GLSL}
+      void main() {
+        vec2 p = vW.xz * 0.0011 + vec2(uTime * 0.004, uTime * 0.0015);
+        float n = efbm(p) * 0.65 + efbm(p * 2.7 + 5.0) * 0.35;
+        float edge = 0.74 - uCover * 0.52;
+        float a = smoothstep(edge, edge + 0.22, n);
+        float thick = smoothstep(edge, edge + 0.5, n);
+        float dist = length(vW.xz - cameraPosition.xz);
+        a *= 1.0 - smoothstep(1800.0, 4200.0, dist);
+        vec3 lit = mix(uSky, vec3(1.0), 0.75) * mix(vec3(1.0), uSun, 0.35);
+        vec3 shade = mix(uSky * 0.55, vec3(0.42, 0.45, 0.5), uCover);
+        vec3 col = mix(lit, shade, thick * (0.45 + 0.5 * uCover)) * (0.1 + 0.9 * uDay);
+        gl_FragColor = vec4(col, a * 0.92);
+      }`,
+  });
 }

@@ -32,7 +32,7 @@ page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => {
   if (m.type() === 'error' && !/WebGL|GPU stall|swiftshader/i.test(m.text())) errors.push(m.text());
 });
-const shot = (name) => page.screenshot({ path: `${OUT}/${name}.png` });
+const shot = (name) => page.screenshot({ path: `${OUT}/${name}.png`, timeout: 180000 });
 const world = (fn) => page.evaluate(fn);
 const veilGone = () =>
   page

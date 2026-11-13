@@ -5,7 +5,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Building, BuildingKind, Layout, PlacedLandmark } from './layout';
 import { TiledInstances } from './lod';
+import { Rng } from '../sim/rng';
 import type { TerrainData } from './terrain';
+import { NOISE_GLSL, env, foliageMaterial } from './env';
 
 /** Shared 0..1 night factor, driven by the sky each frame. */
 export const nightUniform = { value: 0 };
@@ -14,22 +16,108 @@ export const nightUniform = { value: 0 };
  * A standard material whose vertical faces show procedurally lit windows,
  * computed in world space so any instance scale gets correctly sized floors.
  */
-function windowMaterial(opts: { floor: number; col: number; lit: [number, number, number]; density: number; glass: [number, number, number]; roughness?: number; metalness?: number; accent?: THREE.Color; ribbon?: boolean }) {
+function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: number; lit: [number, number, number]; density: number; glass: [number, number, number]; roughness?: number; metalness?: number; accent?: THREE.Color }) {
   const m = new THREE.MeshStandardMaterial({ roughness: opts.roughness ?? 0.6, metalness: opts.metalness ?? 0.2 });
+  const F = opts.floor.toFixed(2);
+  const C = opts.col.toFixed(2);
+  const v3 = (v: [number, number, number]) => `vec3(${v.map((x) => x.toFixed(3)).join(',')})`;
+  const glassBody = /* glsl */ `
+    float variant = floor(bh * 3.0);
+    float colW = ${C} * (variant < 0.5 ? 2.6 : variant < 1.5 ? 1.0 : 0.78);
+    float base = 4.4;
+    vec2 cell = vec2(hc / colW + 0.5, (hy - base) / ${F});
+    vec2 f = fract(cell);
+    vec2 id = floor(cell);
+    float mx = variant < 0.5 ? 0.025 : variant < 1.5 ? 0.13 : 0.2;
+    float body = step(base, hy) * step(hy, topH - 1.1);
+    float win = step(mx, f.x) * step(f.x, 1.0 - mx) * step(0.3, f.y) * step(f.y, 0.93) * body;
+    // ground floor: plinth, tall shopfront glazing, luminous canopy line
+    vec2 sc = vec2(hc / 3.6 + 0.5, hy);
+    float shop = step(0.05, fract(sc.x)) * step(fract(sc.x), 0.95) * step(0.75, hy) * step(hy, 3.5);
+    float r = eh21(id + bh * 91.0);
+    float lit = step(1.0 - ${opts.density.toFixed(2)} * (0.3 + 0.7 * uNight), r);
+    float blind = step(0.62, fract(r * 5.3)) * step(0.58, f.y);
+    float fr = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 2.5);
+    vec3 tint = mix(${v3(opts.glass)}, ${v3(opts.glass)} * vec3(1.25, 1.05, 0.8), step(0.66, fract(bh * 7.7)));
+    vec3 skyRef = mix(uSky * 0.55, uSky * 1.1, f.y) * (0.15 + 0.85 * uDay);
+    vec3 glassCol = mix(tint, skyRef, 0.22 + 0.55 * fr);
+    // wall: floor slabs, piers, parapet, plinth, soft grime towards the street
+    diffuseColor.rgb *= 1.0 - 0.2 * step(f.y, 0.07) * body;
+    if (variant > 1.5) diffuseColor.rgb *= 0.86 + 0.14 * step(0.5, fract(cell.x * 0.5));
+    diffuseColor.rgb *= 0.9 + 0.1 * evn(vec2(hc * 0.7, hy * 0.25) + bh * 40.0);
+    diffuseColor.rgb *= mix(0.74, 1.0, smoothstep(0.0, 14.0, hy));
+    diffuseColor.rgb *= 1.0 - 0.25 * step(topH - 0.55, hy);
+    diffuseColor.rgb *= 1.0 - 0.5 * step(hy, 0.7);
+    diffuseColor.rgb = mix(diffuseColor.rgb, glassCol, win);
+    diffuseColor.rgb = mix(diffuseColor.rgb, mix(tint * 1.3, skyRef, 0.2 + 0.4 * fr), shop);
+    roughnessFactor = mix(roughnessFactor, 0.1, max(win, shop));
+    vec3 litCol = mix(${v3(opts.lit)}, vec3(1.0, 0.8, 0.55), step(0.7, fract(r * 7.13)));
+    totalEmissiveRadiance += litCol * win * lit * (0.04 + uNight * 0.9) * (1.0 - 0.65 * blind) * (0.55 + 0.45 * fract(r * 3.7));
+    float open = step(0.3, eh21(vec2(floor(sc.x), bh * 13.0)));
+    totalEmissiveRadiance += vec3(1.0, 0.86, 0.66) * shop * open * (0.06 + uNight * 1.1);
+    // civic accent: a light line above the shopfronts and one under the parapet
+    float line = step(3.75, hy) * step(hy, 4.0) + step(topH - 1.0, hy) * step(hy, topH - 0.72) * step(20.0, topH);
+    totalEmissiveRadiance += uAccent * line * (0.25 + uNight * 1.5);
+  `;
+  const timberBody = /* glsl */ `
+    float base = 0.9;
+    vec2 cell = vec2(hc / ${C} + 0.5, (hy - base) / ${F});
+    vec2 f = fract(cell);
+    vec2 id = floor(cell);
+    float fits = step(base, hy) * step((id.y + 1.0) * ${F} + base, topH - 0.2);
+    float timbered = step(0.45, bh);
+    // plaster speckle, or stone courses on masonry buildings
+    float sp = evn(vec2(hc, hy) * 3.0 + bh * 50.0);
+    float course = step(fract(hy / 0.55), 0.09);
+    float joint = step(fract(hc / 1.15 + 0.5 * mod(floor(hy / 0.55), 2.0)), 0.07);
+    diffuseColor.rgb *= mix(1.0 - 0.22 * max(course, joint), 1.0, timbered) * (0.9 + 0.14 * sp);
+    // half-timber frame
+    float frame = max(step(f.y, 0.06), max(step(f.x, 0.035), step(0.965, f.x))) * step(base, hy);
+    float brace = step(abs(f.x - f.y * 0.9 - 0.02), 0.03) * step(f.x, 0.3) * step(0.5, eh21(id + bh));
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.14, 0.1), max(frame, brace) * timbered * 0.92);
+    // windows with frames, a cross bar and painted shutters
+    float inX = step(0.32, f.x) * step(f.x, 0.68);
+    float inY = step(0.36, f.y) * step(f.y, 0.8);
+    float hasWin = step(0.22, eh21(id * 1.7 + bh * 17.0)) * fits;
+    float outer = step(0.29, f.x) * step(f.x, 0.71) * step(0.33, f.y) * step(f.y, 0.83) * hasWin;
+    float win = inX * inY * hasWin;
+    float bar = max(step(abs(f.x - 0.5), 0.012), step(abs(f.y - 0.6), 0.014));
+    float shut = (step(0.18, f.x) * step(f.x, 0.29) + step(0.71, f.x) * step(f.x, 0.82)) * step(0.34, f.y) * step(f.y, 0.82) * hasWin;
+    vec3 paint = mix(vec3(0.2, 0.34, 0.42), mix(vec3(0.45, 0.2, 0.16), vec3(0.24, 0.38, 0.24), step(0.5, fract(bh * 9.1))), step(0.33, fract(bh * 5.3)));
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.27, 0.19), outer);
+    diffuseColor.rgb = mix(diffuseColor.rgb, paint * (0.85 + 0.3 * step(0.5, fract(f.y * 14.0))), shut);
+    float fr = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 2.5);
+    diffuseColor.rgb = mix(diffuseColor.rgb, mix(${v3(opts.glass)}, uSky * 0.7 * (0.15 + 0.85 * uDay), 0.2 + 0.5 * fr), win * (1.0 - bar));
+    roughnessFactor = mix(roughnessFactor, 0.2, win * (1.0 - bar));
+    // stone footing and a dark eave line
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.42, 0.4, 0.37) * (0.8 + 0.3 * sp) * (1.0 - 0.3 * max(course, joint)), step(hy, base));
+    diffuseColor.rgb *= 1.0 - 0.35 * step(topH - 0.3, hy);
+    diffuseColor.rgb *= mix(0.9, 1.12, smoothstep(0.0, 5.0, hy));
+    float r = eh21(id + bh * 91.0);
+    float lit = step(1.0 - ${opts.density.toFixed(2)} * (0.2 + 0.8 * uNight), r);
+    totalEmissiveRadiance += ${v3(opts.lit)} * win * (1.0 - bar) * lit * (0.03 + uNight * 1.0) * (0.6 + 0.4 * fract(r * 3.7));
+  `;
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uNight = nightUniform;
+    shader.uniforms.uSky = env.uSky;
+    shader.uniforms.uDay = env.uDay;
     shader.uniforms.uAccent = { value: opts.accent ?? new THREE.Color(0, 0, 0) };
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNorm;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nvarying vec4 vInst;')
       .replace(
         '#include <worldpos_vertex>',
         `#include <worldpos_vertex>
         vec4 wp = vec4(transformed, 1.0);
+        vec4 org = vec4(0.0, 0.0, 0.0, 1.0);
+        float sy = 1.0;
         #ifdef USE_INSTANCING
           wp = instanceMatrix * wp;
+          org = instanceMatrix * org;
+          sy = length(instanceMatrix[1].xyz);
         #endif
         wp = modelMatrix * wp;
         vWPos = wp.xyz;
+        vInst = vec4((modelMatrix * org).xyz, sy);
         vec3 n = objectNormal;
         #ifdef USE_INSTANCING
           n = mat3(instanceMatrix) * n;
@@ -37,27 +125,48 @@ function windowMaterial(opts: { floor: number; col: number; lit: [number, number
         vWNorm = normalize(mat3(modelMatrix) * n);`,
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uNight;\nuniform vec3 uAccent;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nfloat h21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }')
+      .replace('#include <common>', `#include <common>\nuniform float uNight;\nuniform float uDay;\nuniform vec3 uSky;\nuniform vec3 uAccent;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nvarying vec4 vInst;\n${NOISE_GLSL}`)
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
-        if (abs(vWNorm.y) < 0.5) {
-          float hc = abs(vWNorm.x) > 0.5 ? vWPos.z : vWPos.x;
-          vec2 cell = vec2(hc / ${opts.col.toFixed(2)}, (vWPos.y - 0.6) / ${opts.floor.toFixed(2)});
-          vec2 f = fract(cell);
-          float win = step(${opts.ribbon ? '0.07' : '0.18'}, f.x) * step(f.x, ${opts.ribbon ? '0.93' : '0.82'}) * step(${opts.ribbon ? '0.22' : '0.28'}, f.y) * step(f.y, ${opts.ribbon ? '0.86' : '0.78'}) * step(1.0, cell.y);
-          float r = h21(vec2(floor(cell.x / ${opts.ribbon ? '3.0' : '1.0'}), floor(cell.y)) + floor(vWPos.xz / 40.0));
-          float lit = step(1.0 - ${opts.density.toFixed(2)} * (0.35 + 0.65 * uNight), r);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${opts.glass.map((v) => v.toFixed(3)).join(',')}), win * 0.65);
-          vec3 litCol = mix(vec3(${opts.lit.map((v) => v.toFixed(3)).join(',')}), vec3(1.0, 0.78, 0.52), step(0.72, fract(r * 7.13)));
-          totalEmissiveRadiance += litCol * win * lit * (0.06 + uNight * 0.85) * (0.6 + 0.4 * fract(r * 3.7));
-          // thin luminous accent bands every few storeys (only when an accent colour is set)
-          float band = smoothstep(13.15, 13.5, abs(mod(vWPos.y - 0.6, 27.2) - 13.6));
-          totalEmissiveRadiance += uAccent * band * step(8.0, vWPos.y) * (0.35 + uNight * 1.6);
-          // subtle vertical shading: darker at street level, brighter at the top
-          diffuseColor.rgb *= 0.82 + 0.18 * clamp(vWPos.y / 80.0, 0.0, 1.0);
+        {
+          float hy = vWPos.y - vInst.y;
+          float topH = vInst.w;
+          float bh = eh21(floor(vInst.xz * 0.37) + 3.1);
+          if (abs(vWNorm.y) < 0.5) {
+            float hc = abs(vWNorm.x) > 0.5 ? vWPos.z - vInst.z : vWPos.x - vInst.x;
+            ${opts.style === 'glass' ? glassBody : timberBody}
+          } else {
+            // roofs: dark membrane with gravel speckle
+            diffuseColor.rgb = diffuseColor.rgb * 0.42 * (0.85 + 0.3 * evn(vWPos.xz * 2.5));
+          }
         }`,
       );
+  };
+  return m;
+}
+
+/** Ground surface with procedural wear: asphalt mottling, or cobbles for old towns. */
+function surfaceMaterial(color: string, roughness: number, cobbles: boolean) {
+  const m = new THREE.MeshStandardMaterial({ color, roughness, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2 });
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\n${NOISE_GLSL}`).replace(
+      '#include <emissivemap_fragment>',
+      `#include <emissivemap_fragment>
+      {
+        float n = efbm(vWPos.xz * 0.35) * 0.6 + evn(vWPos.xz * 6.0) * 0.25;
+        diffuseColor.rgb *= 0.8 + 0.4 * n;
+        ${
+          cobbles
+            ? `vec2 c = vWPos.xz / 0.55; c.x += 0.5 * mod(floor(c.y), 2.0);
+        vec2 cf = fract(c);
+        float gap = max(step(cf.x, 0.1), step(cf.y, 0.12));
+        diffuseColor.rgb *= (1.0 - 0.3 * gap) * (0.88 + 0.24 * eh21(floor(c)));`
+            : `roughnessFactor = mix(roughnessFactor, 0.25, smoothstep(0.62, 0.75, efbm(vWPos.xz * 0.08 + 9.0)));`
+        }
+      }`,
+    );
   };
   return m;
 }
@@ -112,18 +221,19 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
   const shadows = quality === 'high';
   const mats = useMemo(
     () => ({
-      futuristic: windowMaterial({ floor: 3.4, col: 1.7, lit: [0.85, 0.92, 1.0], density: 0.5, glass: [0.16, 0.24, 0.34], metalness: 0.12, roughness: 0.42, accent: new THREE.Color(civColor), ribbon: true }),
-      frontier: windowMaterial({ floor: 3.0, col: 3.2, lit: [1.0, 0.72, 0.38], density: 0.5, glass: [0.12, 0.1, 0.08], roughness: 0.95, metalness: 0 }),
+      futuristic: windowMaterial({ style: 'glass', floor: 3.4, col: 1.7, lit: [0.85, 0.92, 1.0], density: 0.55, glass: [0.1, 0.17, 0.26], metalness: 0.12, roughness: 0.5, accent: new THREE.Color(civColor) }),
+      frontier: windowMaterial({ style: 'timber', floor: 3.0, col: 3.2, lit: [1.0, 0.72, 0.38], density: 0.6, glass: [0.1, 0.11, 0.13], roughness: 0.95, metalness: 0 }),
       plain: new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.05 }),
       far: new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.05, emissive: new THREE.Color('#9fb4d8'), emissiveIntensity: 0.1 }),
       roof: new THREE.MeshStandardMaterial({ roughness: 0.9 }),
       dome: new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05 }),
-      leaf: new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }),
+      leaf: foliageMaterial(),
       bark: new THREE.MeshStandardMaterial({ color: '#6a5242', roughness: 1 }),
+      street: surfaceMaterial(layout.style === 'futuristic' ? '#454b54' : layout.style === 'cloud' ? '#4a525e' : layout.style === 'organic' ? '#8a7a5a' : '#8f7c60', layout.style === 'futuristic' || layout.style === 'cloud' ? 0.55 : 1, layout.style === 'frontier' || layout.style === 'organic'),
       glow: new THREE.MeshStandardMaterial({ color: '#000000', emissive: new THREE.Color(civColor), emissiveIntensity: 1 }),
       warm: new THREE.MeshStandardMaterial({ color: '#2a1a0a', emissive: new THREE.Color('#ffb060'), emissiveIntensity: 1 }),
     }),
-    [civColor],
+    [civColor, layout.style],
   );
   // Building LOD: lit-window shader up close, a flat material far away, culled beyond.
   const boxLevels = useMemo(
@@ -132,6 +242,13 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       { geometry: unitBox, material: mats.far, maxDist: quality === 'low' ? 700 : 1400 },
     ],
     [layout.style, mats, quality, shadows],
+  );
+  const detailLevels = useMemo(
+    () => ({
+      box: [{ geometry: unitBox, material: mats.plain, maxDist: quality === 'low' ? 140 : 260, castShadow: shadows, receiveShadow: true }],
+      round: [{ geometry: unitCyl, material: mats.plain, maxDist: quality === 'low' ? 140 : 260, castShadow: shadows }],
+    }),
+    [mats, quality, shadows],
   );
   useFrame(() => {
     mats.far.emissiveIntensity = 0.04 + nightUniform.value * 0.35;
@@ -161,6 +278,99 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
     }
     return parts.length ? mergeGeometries(parts) : null;
   }, [layout, y0]);
+  // Pavements either side of each street, and painted centre dashes.
+  const paveGeo = useMemo(() => {
+    if (layout.style === 'cloud' || layout.style === 'wild' || !layout.streets.length) return null;
+    const parts: THREE.BufferGeometry[] = [];
+    for (const s of layout.streets) {
+      const dx = s.b[0] - s.a[0];
+      const dz = s.b[1] - s.a[1];
+      const g = new THREE.PlaneGeometry(Math.hypot(dx, dz) + s.w * 0.5 + 4, s.w + (layout.style === 'organic' ? 2.4 : 5));
+      g.rotateX(-Math.PI / 2);
+      g.rotateY(-Math.atan2(dz, dx));
+      g.translate((s.a[0] + s.b[0]) / 2, y0 + 0.03, (s.a[1] + s.b[1]) / 2);
+      parts.push(g);
+    }
+    return mergeGeometries(parts);
+  }, [layout, y0]);
+  const dashGeo = useMemo(() => {
+    if (layout.style !== 'futuristic') return null;
+    const parts: THREE.BufferGeometry[] = [];
+    for (const s of layout.streets) {
+      if (s.w < 7) continue;
+      const dx = s.b[0] - s.a[0];
+      const dz = s.b[1] - s.a[1];
+      const len = Math.hypot(dx, dz);
+      const ang = -Math.atan2(dz, dx);
+      for (let t0 = 6; t0 < len - 6; t0 += 7) {
+        const g = new THREE.PlaneGeometry(2.6, 0.2);
+        g.rotateX(-Math.PI / 2);
+        g.rotateY(ang);
+        const k = t0 / len;
+        g.translate(s.a[0] + dx * k, y0 + 0.09, s.a[1] + dz * k);
+        parts.push(g);
+      }
+    }
+    return parts.length ? mergeGeometries(parts) : null;
+  }, [layout, y0]);
+  // Street furniture: trees in planters, benches, bollards.
+  const furniture = useMemo(() => {
+    const out = {
+      trunks: [] as { m: THREE.Matrix4 }[],
+      leaves: [] as { m: THREE.Matrix4; c: THREE.Color }[],
+      boxes: [] as { m: THREE.Matrix4; c: THREE.Color; x: number; z: number }[],
+    };
+    if (layout.style === 'cloud' || layout.style === 'wild') return out;
+    const rng = new Rng(Math.round(layout.radius * 31) + layout.buildings.length * 7 + 3);
+    const blocked = (x: number, z: number) => layout.colliders.some((c) => Math.abs(c.x - x) < c.hw + 1.4 && Math.abs(c.z - z) < (c.type === 'circle' ? c.hw : c.hd) + 1.4) || layout.landmarks.some((l) => Math.hypot(l.x - x, l.z - z) < l.radius + 2);
+    const green = layout.style === 'futuristic' ? '#4f8f4a' : layout.style === 'organic' ? '#3f7a3a' : '#5a8a3e';
+    for (const s of layout.streets) {
+      const dx = s.b[0] - s.a[0];
+      const dz = s.b[1] - s.a[1];
+      const len = Math.hypot(dx, dz);
+      if (len < 24) continue;
+      const nx = -dz / len;
+      const nz = dx / len;
+      const ang = -Math.atan2(dz, dx);
+      const off = s.w / 2 + (layout.style === 'organic' ? 0.9 : 1.7);
+      let side = rng.chance(0.5) ? 1 : -1;
+      for (let d = 9 + rng.range(0, 6); d < len - 8; d += layout.style === 'frontier' ? 26 : 15) {
+        side = -side;
+        const x = s.a[0] + (dx / len) * d + nx * off * side;
+        const z = s.a[1] + (dz / len) * d + nz * off * side;
+        if (blocked(x, z)) continue;
+        const roll = rng.next();
+        if (roll < 0.62) {
+          const h = rng.range(3.2, 5);
+          out.trunks.push({ m: mat(x, y0, z, 0.5, h, 0.5) });
+          const base = new THREE.Color(green);
+          for (let k = 0; k < 3; k++) {
+            const a = rng.range(0, 6.28);
+            const r = k === 0 ? 0 : rng.range(0.7, 1.2);
+            const sz = k === 0 ? rng.range(3, 3.8) : rng.range(2, 2.7);
+            out.leaves.push({ m: mat(x + Math.cos(a) * r, y0 + h + (k === 0 ? 0.6 : rng.range(-0.4, 1.2)), z + Math.sin(a) * r, sz, sz * 0.85, sz), c: base.clone().offsetHSL(rng.range(-0.03, 0.03), rng.range(-0.08, 0.08), rng.range(-0.07, 0.07)) });
+          }
+          if (layout.style === 'futuristic') out.boxes.push({ m: mat(x, y0, z, 1.9, 0.45, 1.9), c: new THREE.Color('#aab2bc'), x, z });
+        } else if (roll < 0.82) {
+          // bench: seat, back and two legs
+          const wood = new THREE.Color(layout.style === 'futuristic' ? '#c8d0d8' : '#7a5a3c');
+          const bx = x - nx * side * 0.5;
+          const bz = z - nz * side * 0.5;
+          out.boxes.push({ m: mat(bx, y0 + 0.42, bz, 2, 0.1, 0.55, ang), c: wood, x: bx, z: bz });
+          out.boxes.push({ m: mat(bx + nx * side * 0.28, y0 + 0.5, bz + nz * side * 0.28, 2, 0.5, 0.08, ang), c: wood, x: bx, z: bz });
+          out.boxes.push({ m: mat(bx, y0, bz, 1.7, 0.42, 0.12, ang), c: new THREE.Color('#3a4048'), x: bx, z: bz });
+        } else if (layout.style === 'futuristic') {
+          out.boxes.push({ m: mat(x - nx * side * 1.2, y0, z - nz * side * 1.2, 0.28, 0.9, 0.28), c: new THREE.Color('#d4dbe4'), x, z });
+        } else {
+          // planter tub with a shrub
+          out.boxes.push({ m: mat(x, y0, z, 1.1, 0.7, 1.1, rng.range(0, 1)), c: new THREE.Color('#8a6a44'), x, z });
+          out.leaves.push({ m: mat(x, y0 + 1.15, z, 1.5, 1.2, 1.5), c: new THREE.Color(green).offsetHSL(0, 0, rng.range(-0.05, 0.08)) });
+        }
+      }
+    }
+    return out;
+  }, [layout, y0]);
+  const furnitureLevels = useMemo(() => [{ geometry: unitBox, material: mats.plain, maxDist: 170, castShadow: shadows, receiveShadow: true }], [mats, shadows]);
   const lineGeo = useMemo(() => {
     if (layout.style !== 'futuristic') return null;
     const parts: THREE.BufferGeometry[] = [];
@@ -168,7 +378,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       const dx = s.b[0] - s.a[0];
       const dz = s.b[1] - s.a[1];
       for (const off of [-s.w / 2 + 0.4, s.w / 2 - 0.4]) {
-        const g = new THREE.PlaneGeometry(Math.hypot(dx, dz), 0.25);
+        const g = new THREE.PlaneGeometry(Math.hypot(dx, dz), 0.12);
         g.rotateX(-Math.PI / 2);
         g.translate(0, 0, off);
         g.rotateY(-Math.atan2(dz, dx));
@@ -181,7 +391,9 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
   useEffect(() => () => {
     streetGeo?.dispose();
     lineGeo?.dispose();
-  }, [streetGeo, lineGeo]);
+    paveGeo?.dispose();
+    dashGeo?.dispose();
+  }, [streetGeo, lineGeo, paveGeo, dashGeo]);
 
   const lamps = useMemo(() => {
     const poles = layout.lights.map(([x, z]) => ({ m: mat(x + 3, y0, z + 3, 0.18, layout.style === 'futuristic' ? 7 : 4.5, 0.18) }));
@@ -189,20 +401,35 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
     return { poles, bulbs };
   }, [layout, y0]);
 
-  const streetColor = layout.style === 'futuristic' ? '#2a2f38' : layout.style === 'organic' ? '#8a7a5a' : '#9a8566';
+  const paveColor = layout.style === 'futuristic' ? '#7d858f' : layout.style === 'organic' ? '#6f7f4c' : '#a39478';
 
   return (
     <group>
-      {streetGeo && (
-        <mesh geometry={streetGeo} receiveShadow>
-          <meshStandardMaterial color={streetColor} roughness={layout.style === 'futuristic' ? 0.5 : 1} metalness={layout.style === 'futuristic' ? 0.3 : 0} polygonOffset polygonOffsetFactor={-2} />
+      {paveGeo && (
+        <mesh geometry={paveGeo} receiveShadow>
+          <meshStandardMaterial color={paveColor} roughness={0.95} polygonOffset polygonOffsetFactor={-1} />
         </mesh>
       )}
+      {streetGeo && (
+        <mesh geometry={streetGeo} receiveShadow material={mats.street}>
+        </mesh>
+      )}
+      {dashGeo && (
+        <mesh geometry={dashGeo}>
+          <meshStandardMaterial color="#d9dee4" roughness={0.8} polygonOffset polygonOffsetFactor={-4} />
+        </mesh>
+      )}
+      <Instanced items={furniture.trunks} geometry={taperCyl} material={mats.bark} castShadow={shadows} />
+      <Instanced items={furniture.leaves} geometry={ico} material={mats.leaf} castShadow={shadows} />
+      <TiledInstances items={furniture.boxes} levels={furnitureLevels} tileSize={90} name="furniture" />
       {lineGeo && <mesh geometry={lineGeo} material={mats.glow} />}
       {/* Futuristic */}
       <TiledInstances items={groups.box} levels={boxLevels} tileSize={90} name="buildings" />
       <Instanced items={groups.caps} geometry={unitBox} material={mats.glow} />
       <Instanced items={groups.antenna} geometry={unitCyl} material={mats.plain} />
+      <Instanced items={groups.glowBits} geometry={unitBox} material={mats.glow} />
+      <TiledInstances items={groups.details} levels={detailLevels.box} tileSize={90} name="details" />
+      <TiledInstances items={groups.rounds} levels={detailLevels.round} tileSize={90} name="rounds" />
       {/* Frontier */}
       <Instanced items={groups.roofs} geometry={roofGeo} material={mats.roof} castShadow={shadows} />
       <Instanced items={groups.towers} geometry={taperCyl} material={mats.plain} castShadow={shadows} />
@@ -244,6 +471,22 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
     canopies: [] as { m: THREE.Matrix4; c?: THREE.Color }[],
     pods: [] as { m: THREE.Matrix4; c?: THREE.Color }[],
     lanterns: [] as { m: THREE.Matrix4 }[],
+    /** Small coloured boxes: rooftop plant, cornices, doors, canopies, chimneys, crates. */
+    details: [] as { m: THREE.Matrix4; c?: THREE.Color; x: number; z: number }[],
+    /** Small cylinders: water tanks, vents, dome plinths. */
+    rounds: [] as { m: THREE.Matrix4; c?: THREE.Color; x: number; z: number }[],
+    glowBits: [] as { m: THREE.Matrix4 }[],
+  };
+  const det = (x: number, y: number, z: number, sx: number, sy: number, sz: number, c: string, rot = 0) => g.details.push({ m: mat(x, y, z, sx, sy, sz, rot), c: new THREE.Color(c), x, z });
+  const rnd = (x: number, y: number, z: number, sx: number, sy: number, sz: number, c: string) => g.rounds.push({ m: mat(x, y, z, sx, sy, sz), c: new THREE.Color(c), x, z });
+  /** Point on the facade nearest the building's door, and that facade's outward axis. */
+  const front = (b: Building, w: number, d: number) => {
+    const dx = b.door[0] - b.x;
+    const dz = b.door[1] - b.z;
+    const alongX = Math.abs(dx) > Math.abs(dz);
+    const sx = alongX ? Math.sign(dx) || 1 : 0;
+    const sz = alongX ? 0 : Math.sign(dz) || 1;
+    return { x: b.x + (sx * w) / 2, z: b.z + (sz * d) / 2, sx, sz, alongX };
   };
   const futTones = ['#a9b6c8', '#d4dbe4', '#8794a8', '#e8edf2', '#9aa9bc', '#b8c4d4', '#6f7c90'];
   const stone = ['#b8a88c', '#a8987a', '#c8b89a', '#9a8a70', '#8a6a4a'];
@@ -256,13 +499,54 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
       case 'tower':
       case 'block':
       case 'slab': {
-        g.box.push({ m: mat(b.x, y0, b.z, b.w, b.h, b.d), c: tone(futTones), x: b.x, z: b.z });
+        const col = tone(futTones);
+        const u = (k: number) => (((b.tone * 9973 + k * 137.7) % 1) + 1) % 1; // stable per-building variation
+        let roofY = y0 + b.h;
+        let rw = b.w;
+        let rd = b.d;
         if (b.kind === 'tower') {
-          g.caps.push({ m: mat(b.x, y0 + b.h, b.z, b.w * 0.7, 0.6, b.d * 0.7) });
-          if (b.h > 80) g.antenna.push({ m: mat(b.x, y0 + b.h, b.z, 0.5, 12, 0.5) });
-        } else if (b.kind === 'slab') {
-          g.box.push({ m: mat(b.x, y0 + b.h, b.z, b.w * 0.6, b.h * 0.35, b.d * 0.6), c: tone(futTones), x: b.x, z: b.z });
+          // stepped silhouette: podium, shaft, one or two set-backs, crown
+          const h1 = b.h * (b.h > 60 ? 0.62 : 0.74);
+          g.box.push({ m: mat(b.x, y0, b.z, b.w, h1, b.d), c: col, x: b.x, z: b.z });
+          g.box.push({ m: mat(b.x, y0, b.z, b.w * 1.12, 7.5, b.d * 1.12), c: col.clone().multiplyScalar(0.82), x: b.x, z: b.z });
+          const h2 = b.h > 60 ? b.h * 0.24 : b.h - h1;
+          g.box.push({ m: mat(b.x, y0 + h1, b.z, b.w * 0.78, h2, b.d * 0.78), c: col, x: b.x, z: b.z });
+          rw = b.w * 0.78;
+          rd = b.d * 0.78;
+          if (b.h > 60) {
+            g.box.push({ m: mat(b.x, y0 + h1 + h2, b.z, b.w * 0.52, b.h - h1 - h2, b.d * 0.52), c: col, x: b.x, z: b.z });
+            rw = b.w * 0.52;
+            rd = b.d * 0.52;
+          }
+          g.caps.push({ m: mat(b.x, roofY, b.z, rw * 0.8, 0.5, rd * 0.8) });
+          if (b.h > 80) {
+            g.antenna.push({ m: mat(b.x, roofY, b.z, 0.5, 14, 0.5) });
+            g.glowBits.push({ m: mat(b.x, roofY + 14, b.z, 0.9, 0.9, 0.9) });
+          }
+        } else {
+          g.box.push({ m: mat(b.x, y0, b.z, b.w, b.h, b.d), c: col, x: b.x, z: b.z });
+          if (b.kind === 'slab') {
+            g.box.push({ m: mat(b.x, y0 + b.h, b.z, b.w * 0.6, b.h * 0.35, b.d * 0.6), c: col, x: b.x, z: b.z });
+            roofY = y0 + b.h * 1.35;
+            rw = b.w * 0.6;
+            rd = b.d * 0.6;
+          }
+          // cornice
+          det(b.x, y0 + b.h - 0.35, b.z, b.w + 0.5, 0.45, b.d + 0.5, '#59616d');
         }
+        // rooftop plant: units, a tank or a vent stack
+        const units = b.kind === 'tower' ? 1 : 2 + Math.floor(u(1) * 2);
+        for (let k = 0; k < units; k++) {
+          const ux = b.x + (u(k + 2) - 0.5) * rw * 0.55;
+          const uz = b.z + (u(k + 5) - 0.5) * rd * 0.55;
+          if (u(k + 8) < 0.3) rnd(ux, roofY, uz, 2.2, 2.6, 2.2, '#8d949c');
+          else det(ux, roofY, uz, 2 + u(k + 3) * 2.5, 1.2 + u(k + 4) * 1.4, 1.8 + u(k + 6) * 2, u(k) < 0.5 ? '#767e88' : '#9aa1a9');
+        }
+        // entrance: recessed doors under a lit canopy
+        const fr = front(b, b.kind === 'tower' ? b.w * 1.12 : b.w, b.kind === 'tower' ? b.d * 1.12 : b.d);
+        det(fr.x + fr.sx * 0.05, y0, fr.z + fr.sz * 0.05, fr.alongX ? 0.2 : 3.2, 3.1, fr.alongX ? 3.2 : 0.2, '#11161d');
+        det(fr.x + fr.sx * 1.3, y0 + 3.5, fr.z + fr.sz * 1.3, fr.alongX ? 2.8 : 5, 0.22, fr.alongX ? 5 : 2.8, '#c9d2dc');
+        g.glowBits.push({ m: mat(fr.x + fr.sx * 1.3, y0 + 3.38, fr.z + fr.sz * 1.3, fr.alongX ? 2.4 : 4.4, 0.1, fr.alongX ? 4.4 : 2.4) });
         break;
       }
       case 'house':
@@ -271,6 +555,21 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
         const d = b.rot ? b.w : b.d;
         g.box.push({ m: mat(b.x, y0, b.z, w, b.h, d), c: tone(stone), x: b.x, z: b.z });
         g.roofs.push({ m: mat(b.x, y0 + b.h, b.z, b.w * 1.08, b.h * 0.55, b.d, b.rot), c: tone(roofs) });
+        // chimney, door with lintel and step, and a few crates by the wall
+        const u = (k: number) => (((b.tone * 9973 + k * 137.7) % 1) + 1) % 1;
+        det(b.x + (u(1) - 0.5) * w * 0.5, y0 + b.h, b.z + (u(2) - 0.5) * d * 0.4, 0.9, b.h * 0.55 + 0.9, 0.9, '#6a4a3c');
+        const fr = front(b, w, d);
+        det(fr.x + fr.sx * 0.06, y0, fr.z + fr.sz * 0.06, fr.alongX ? 0.18 : 1.3, 2.2, fr.alongX ? 1.3 : 0.18, '#4a3222');
+        det(fr.x + fr.sx * 0.12, y0 + 2.2, fr.z + fr.sz * 0.12, fr.alongX ? 0.3 : 1.8, 0.22, fr.alongX ? 1.8 : 0.3, '#2e2018');
+        det(fr.x + fr.sx * 0.5, y0, fr.z + fr.sz * 0.5, fr.alongX ? 1 : 1.9, 0.18, fr.alongX ? 1.9 : 1, '#8a8478');
+        if (b.kind === 'hall') det(fr.x + fr.sx * 1.4, y0 + 2.7, fr.z + fr.sz * 1.4, fr.alongX ? 2.8 : w * 0.7, 0.16, fr.alongX ? d * 0.7 : 2.8, '#7a4a32');
+        if (u(3) > 0.45) {
+          const cx = fr.x + fr.sx * 0.8 + (fr.alongX ? 0 : 2.2);
+          const cz = fr.z + fr.sz * 0.8 + (fr.alongX ? 2.2 : 0);
+          det(cx, y0, cz, 0.9, 0.9, 0.9, '#8a6a44', u(4));
+          if (u(5) > 0.5) det(cx + 0.2, y0 + 0.9, cz - 0.1, 0.7, 0.7, 0.7, '#9a7a50', u(6) * 2);
+          else rnd(cx + (fr.alongX ? 0 : 1.1), y0, cz + (fr.alongX ? 1.1 : 0), 0.8, 1.1, 0.8, '#6e5236');
+        }
         break;
       }
       case 'windmill':
@@ -283,6 +582,18 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
         break;
       case 'dome':
         g.domes.push({ m: mat(b.x, y0, b.z, b.w, b.h * 2, b.w), c: tone(domeTones) });
+        {
+          // stone plinth, an oculus light at the crown and a wooden door facing the path
+          rnd(b.x, y0, b.z, b.w * 1.05, 0.55, b.w * 1.05, '#9c9484');
+          rnd(b.x, y0 + b.h - 0.15, b.z, b.w * 0.22, 0.5, b.w * 0.22, '#7a6a52');
+          g.lanterns.push({ m: mat(b.x, y0 + b.h + 0.3, b.z, 0.9, 0.5, 0.9) });
+          const dx = b.door[0] - b.x;
+          const dz = b.door[1] - b.z;
+          const dl = Math.hypot(dx, dz) || 1;
+          const ang = Math.atan2(dx, dz);
+          det(b.x + (dx / dl) * b.w * 0.47, y0, b.z + (dz / dl) * b.w * 0.47, 1.5, 2.3, 0.9, '#5a3e28', ang);
+          det(b.x + (dx / dl) * b.w * 0.5, y0 + 2.3, b.z + (dz / dl) * b.w * 0.5, 2, 0.3, 1.1, '#7a6a52', ang);
+        }
         g.lanterns.push({ m: mat(b.door[0] + (b.x - b.door[0]) * 0.55, y0 + 1.2, b.door[1] + (b.z - b.door[1]) * 0.55, 0.5, 0.5, 0.5) });
         break;
       case 'treehouse': {
@@ -290,7 +601,13 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
         g.platforms.push({ m: mat(b.x, y0 + b.h * 0.55, b.z, b.w, 0.6, b.w), c: new THREE.Color('#8a6a4a') });
         g.pods.push({ m: mat(b.x, y0 + b.h * 0.55 + 2.2, b.z, b.w * 0.55, 4, b.w * 0.55), c: tone(domeTones) });
         g.canopies.push({ m: mat(b.x, y0 + b.h + 2, b.z, b.w * 1.9, b.w * 1.2, b.w * 1.9), c: new THREE.Color('#3f7a3a').offsetHSL(b.tone * 0.06 - 0.03, 0, b.tone * 0.08 - 0.04) });
+        for (let k = 0; k < 4; k++) {
+          const a = k * 1.6 + b.tone * 6;
+          const leafC = new THREE.Color('#3f7a3a').offsetHSL(((b.tone * 7 + k * 0.37) % 1) * 0.08 - 0.04, 0, ((b.tone * 3 + k * 0.61) % 1) * 0.14 - 0.07);
+          g.canopies.push({ m: mat(b.x + Math.cos(a) * b.w * 0.75, y0 + b.h + 0.5 + (k % 2) * 2.2, b.z + Math.sin(a) * b.w * 0.75, b.w * 1.15, b.w * 0.85, b.w * 1.15), c: leafC });
+        }
         g.lanterns.push({ m: mat(b.x + 2, y0 + b.h * 0.55 + 0.8, b.z, 0.45, 0.45, 0.45) });
+        g.lanterns.push({ m: mat(b.x - 1.6, y0 + b.h * 0.55 + 0.8, b.z + 1.4, 0.4, 0.4, 0.4) });
         break;
       }
       case 'pod':

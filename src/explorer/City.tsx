@@ -7,7 +7,7 @@ import type { Building, BuildingKind, Layout, PlacedLandmark } from './layout';
 import { TiledInstances } from './lod';
 import { Rng } from '../sim/rng';
 import type { TerrainData } from './terrain';
-import { NOISE_GLSL, env, foliageMaterial } from './env';
+import { BUMP_GLSL, NOISE_GLSL, env, foliageMaterial, texturedMaterial } from './env';
 
 /** Shared 0..1 night factor, driven by the sky each frame. */
 export const nightUniform = { value: 0 };
@@ -51,6 +51,12 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
     diffuseColor.rgb = mix(diffuseColor.rgb, glassCol, win);
     diffuseColor.rgb = mix(diffuseColor.rgb, mix(tint * 1.3, skyRef, 0.2 + 0.4 * fr), shop);
     roughnessFactor = mix(roughnessFactor, 0.1, max(win, shop));
+    // depth cues: the lintel shades the top of each pane, the sill catches light
+    float lintel = smoothstep(0.93, 0.8, f.y);
+    float jamb = smoothstep(mx, mx + 0.07, f.x);
+    fRelief = mix(1.0, 0.5 + 0.5 * lintel * (0.75 + 0.25 * jamb), win);
+    fRelief *= 1.0 + 0.22 * step(0.255, f.y) * step(f.y, 0.3) * body * step(mx, f.x) * step(f.x, 1.0 - mx);
+    fRelief = mix(fRelief, 0.55 + 0.45 * smoothstep(3.5, 2.6, hy), shop);
     vec3 litCol = mix(${v3(opts.lit)}, vec3(1.0, 0.8, 0.55), step(0.7, fract(r * 7.13)));
     totalEmissiveRadiance += litCol * win * lit * (0.04 + uNight * 0.9) * (1.0 - 0.65 * blind) * (0.55 + 0.45 * fract(r * 3.7));
     float open = step(0.3, eh21(vec2(floor(sc.x), bh * 13.0)));
@@ -89,6 +95,10 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
     float fr = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 2.5);
     diffuseColor.rgb = mix(diffuseColor.rgb, mix(${v3(opts.glass)}, uSky * 0.7 * (0.15 + 0.85 * uDay), 0.2 + 0.5 * fr), win * (1.0 - bar));
     roughnessFactor = mix(roughnessFactor, 0.2, win * (1.0 - bar));
+    fRelief = mix(1.0, 0.55 + 0.45 * smoothstep(0.8, 0.66, f.y), win);
+    fRelief *= 1.0 + 0.2 * step(0.3, f.y) * step(f.y, 0.335) * step(0.27, f.x) * step(f.x, 0.73) * hasWin;
+    // beams and shutters stand proud: light upper edge, shadow line beneath
+    fRelief *= 1.0 - 0.3 * step(0.06, f.y) * step(f.y, 0.085) * timbered * step(base, hy);
     // stone footing and a dark eave line
     diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.42, 0.4, 0.37) * (0.8 + 0.3 * sp) * (1.0 - 0.3 * max(course, joint)), step(hy, base));
     diffuseColor.rgb *= 1.0 - 0.35 * step(topH - 0.3, hy);
@@ -125,7 +135,17 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
         vWNorm = normalize(mat3(modelMatrix) * n);`,
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nuniform float uNight;\nuniform float uDay;\nuniform vec3 uSky;\nuniform vec3 uAccent;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nvarying vec4 vInst;\n${NOISE_GLSL}`)
+      .replace('#include <common>', `#include <common>\nuniform float uNight;\nuniform float uDay;\nuniform vec3 uSky;\nuniform vec3 uAccent;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nvarying vec4 vInst;\n${NOISE_GLSL}\n${BUMP_GLSL}`)
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        float fRelief = 1.0;`,
+      )
+      .replace(
+        '#include <lights_physical_fragment>',
+        `diffuseColor.rgb *= fRelief;
+        #include <lights_physical_fragment>`,
+      )
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
@@ -139,6 +159,7 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
           } else {
             // roofs: dark membrane with gravel speckle
             diffuseColor.rgb = diffuseColor.rgb * 0.42 * (0.85 + 0.3 * evn(vWPos.xz * 2.5));
+            fRelief = 1.0;
           }
         }`,
       );
@@ -151,12 +172,16 @@ function surfaceMaterial(color: string, roughness: number, cobbles: boolean) {
   const m = new THREE.MeshStandardMaterial({ color, roughness, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2 });
   m.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\n${NOISE_GLSL}`).replace(
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\n${NOISE_GLSL}\n${BUMP_GLSL}\nfloat streetH(vec2 q) { ${cobbles ? 'vec2 c = q / 0.55; c.x += 0.5 * mod(floor(c.y), 2.0); vec2 cf = fract(c) - 0.5; return (1.0 - smoothstep(0.3, 0.5, max(abs(cf.x), abs(cf.y)))) + 0.2 * evn(q * 9.0);' : 'return evn(q * 9.0) * 0.6 + evn(q * 23.0) * 0.4;'} }`).replace(
       '#include <emissivemap_fragment>',
       `#include <emissivemap_fragment>
       {
         float n = efbm(vWPos.xz * 0.35) * 0.6 + evn(vWPos.xz * 6.0) * 0.25;
         diffuseColor.rgb *= 0.8 + 0.4 * n;
+        float fw = max(length(fwidth(vWPos.xz)), 1e-4);
+        float e = max(0.015, fw);
+        float sh0 = streetH(vWPos.xz);
+        vec2 sg = vec2(streetH(vWPos.xz + vec2(e, 0.0)) - sh0, streetH(vWPos.xz + vec2(0.0, e)) - sh0) / e;
         ${
           cobbles
             ? `vec2 c = vWPos.xz / 0.55; c.x += 0.5 * mod(floor(c.y), 2.0);
@@ -165,6 +190,7 @@ function surfaceMaterial(color: string, roughness: number, cobbles: boolean) {
         diffuseColor.rgb *= (1.0 - 0.3 * gap) * (0.88 + 0.24 * eh21(floor(c)));`
             : `roughnessFactor = mix(roughnessFactor, 0.25, smoothstep(0.62, 0.75, efbm(vWPos.xz * 0.08 + 9.0)));`
         }
+        normal = ebumpW(normal, sg, vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), ${cobbles ? '0.035' : '0.012'} * efade(fw));
       }`,
     );
   };
@@ -218,17 +244,18 @@ const roofGeo = (() => {
 
 export function City({ layout, t, quality, civColor }: { layout: Layout; t: TerrainData; quality: 'low' | 'medium' | 'high'; civColor: string }) {
   const y0 = t.flatHeight;
-  const shadows = quality === 'high';
+  const shadows = quality !== 'low';
   const mats = useMemo(
     () => ({
       futuristic: windowMaterial({ style: 'glass', floor: 3.4, col: 1.7, lit: [0.85, 0.92, 1.0], density: 0.55, glass: [0.1, 0.17, 0.26], metalness: 0.12, roughness: 0.5, accent: new THREE.Color(civColor) }),
       frontier: windowMaterial({ style: 'timber', floor: 3.0, col: 3.2, lit: [1.0, 0.72, 0.38], density: 0.6, glass: [0.1, 0.11, 0.13], roughness: 0.95, metalness: 0 }),
-      plain: new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.05 }),
+      plain: texturedMaterial('plaster', { roughness: 0.8, metalness: 0.05 }),
+      pave: texturedMaterial('paving', { color: layout.style === 'futuristic' ? '#8b939d' : layout.style === 'organic' ? '#6f7f4c' : '#a39478', roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1 }),
       far: new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.05, emissive: new THREE.Color('#9fb4d8'), emissiveIntensity: 0.1 }),
-      roof: new THREE.MeshStandardMaterial({ roughness: 0.9 }),
-      dome: new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.05 }),
+      roof: texturedMaterial('tiles', { roughness: 0.85 }),
+      dome: texturedMaterial('plaster', { roughness: 0.7, metalness: 0.02 }),
       leaf: foliageMaterial(),
-      bark: new THREE.MeshStandardMaterial({ color: '#6a5242', roughness: 1 }),
+      bark: texturedMaterial('bark', { color: '#7a5e4a', roughness: 1 }),
       street: surfaceMaterial(layout.style === 'futuristic' ? '#454b54' : layout.style === 'cloud' ? '#4a525e' : layout.style === 'organic' ? '#8a7a5a' : '#8f7c60', layout.style === 'futuristic' || layout.style === 'cloud' ? 0.55 : 1, layout.style === 'frontier' || layout.style === 'organic'),
       glow: new THREE.MeshStandardMaterial({ color: '#000000', emissive: new THREE.Color(civColor), emissiveIntensity: 1 }),
       warm: new THREE.MeshStandardMaterial({ color: '#2a1a0a', emissive: new THREE.Color('#ffb060'), emissiveIntensity: 1 }),
@@ -401,14 +428,11 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
     return { poles, bulbs };
   }, [layout, y0]);
 
-  const paveColor = layout.style === 'futuristic' ? '#7d858f' : layout.style === 'organic' ? '#6f7f4c' : '#a39478';
 
   return (
     <group>
       {paveGeo && (
-        <mesh geometry={paveGeo} receiveShadow>
-          <meshStandardMaterial color={paveColor} roughness={0.95} polygonOffset polygonOffsetFactor={-1} />
-        </mesh>
+        <mesh geometry={paveGeo} receiveShadow material={mats.pave} />
       )}
       {streetGeo && (
         <mesh geometry={streetGeo} receiveShadow material={mats.street}>

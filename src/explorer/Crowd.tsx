@@ -7,6 +7,7 @@ import type { Planet } from '../sim/types';
 import { getWorld } from '../state/store';
 import { routeBetween, type Layout } from './layout';
 import type { TerrainData } from './terrain';
+import { texturedMaterial } from './env';
 
 /**
  * Ambient crowd: anonymous, procedurally varied residents that stand in for
@@ -57,6 +58,8 @@ const CELL = 4;
 const bodyGeo = new THREE.CapsuleGeometry(0.34, 0.92, 2, 6);
 const headGeo = new THREE.SphereGeometry(0.29, 8, 6);
 const noRaycast = () => null;
+const clothMat = texturedMaterial('cloth', { roughness: 0.85 }, 'object');
+const skinMat = texturedMaterial('skin', { roughness: 0.75 }, 'object');
 
 export function Crowd({ layout, t, population, quality, planetId }: { layout: Layout; t: TerrainData; population: number; quality: 'low' | 'medium' | 'high'; planetId: string }) {
   const count = crowdCapacity(population, quality);
@@ -231,12 +234,8 @@ export function Crowd({ layout, t, population, quality, planetId }: { layout: La
   if (!layout.graph.nodes.length) return null;
   return (
     <group>
-      <instancedMesh ref={body} args={[bodyGeo, undefined, count]} frustumCulled={false} raycast={noRaycast} castShadow={quality === 'high'} key={`b${count}`}>
-        <meshStandardMaterial roughness={0.85} />
-      </instancedMesh>
-      <instancedMesh ref={head} args={[headGeo, undefined, count]} frustumCulled={false} raycast={noRaycast} key={`h${count}`}>
-        <meshStandardMaterial roughness={0.8} />
-      </instancedMesh>
+      <instancedMesh ref={body} args={[bodyGeo, undefined, count]} frustumCulled={false} raycast={noRaycast} castShadow={quality !== 'low'} key={`b${count}`} material={clothMat} />
+      <instancedMesh ref={head} args={[headGeo, undefined, count]} frustumCulled={false} raycast={noRaycast} key={`h${count}`} material={skinMat} />
     </group>
   );
 }

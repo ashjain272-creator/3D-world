@@ -23,7 +23,9 @@ export interface Environment {
  * clock and the planet's atmosphere and current weather.
  */
 export function SkyWeather({ planet, system, quality }: { planet: Planet; system: StarSystem; quality: 'low' | 'medium' | 'high' }) {
-  const { scene } = useThree();
+  const { scene, gl } = useThree();
+  const envTimer = useRef(0);
+  const envRT = useRef<THREE.WebGLRenderTarget | null>(null);
   const sun = useRef<THREE.DirectionalLight>(null);
   const hemi = useRef<THREE.HemisphereLight>(null);
   const moonLight = useRef<THREE.DirectionalLight>(null);
@@ -49,6 +51,23 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
       uDay: { value: 1 },
     }),
     [system.star.radius, planet.orbit],
+  );
+  // A tiny copy of the sky is rendered to an environment map every few seconds, so glass,
+  // metal and water pick up real sky colour and everything gains soft ambient shading.
+  const envRig = useMemo(() => {
+    const pmrem = new THREE.PMREMGenerator(gl);
+    const s = new THREE.Scene();
+    s.add(new THREE.Mesh(new THREE.SphereGeometry(50, 24, 12), new THREE.ShaderMaterial({ vertexShader: skyVertex.replace('gl_Position.z = gl_Position.w;', ''), fragmentShader: skyFragment, uniforms: skyUniforms, side: THREE.BackSide, depthWrite: false })));
+    return { pmrem, scene: s };
+  }, [gl, skyUniforms]);
+  useEffect(
+    () => () => {
+      envRig.pmrem.dispose();
+      envRT.current?.dispose();
+      envRT.current = null;
+      scene.environment = null;
+    },
+    [envRig, scene],
   );
   const cityGlow = useRef<THREE.PointLight>(null);
   const tilt = (planet.axialTilt / 90) * 0.4;
@@ -76,6 +95,17 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
     const day = THREE.MathUtils.smoothstep(elev, -0.12, 0.18);
     const night = 1 - day;
     nightUniform.value = night;
+    if (quality !== 'low') {
+      envTimer.current -= dt;
+      if (envTimer.current <= 0) {
+        envTimer.current = 6;
+        const rt = envRig.pmrem.fromScene(envRig.scene, 0, 0.1, 200);
+        envRT.current?.dispose();
+        envRT.current = rt;
+        scene.environment = rt.texture;
+        scene.environmentIntensity = 0.42;
+      }
+    }
     envU.uTime.value += dt;
     envU.uDay.value = day;
     envU.uSky.value.copy(skyCols.horizon).lerp(skyCols.zenith, 0.45);
@@ -107,7 +137,7 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
     if (flash.current > 0) flash.current = Math.max(0, flash.current - dt * 3);
     if (wx === 'storm' && Math.random() < dt * 0.15) flash.current = 1;
     if (hemi.current) {
-      hemi.current.intensity = 0.42 + day * 0.4 + flash.current * 2;
+      hemi.current.intensity = (quality === 'low' ? 0.42 + day * 0.4 : 0.26 + day * 0.24) + flash.current * 2;
       hemi.current.color.copy(skyCols.zenith).lerp(skyCols.horizon, 0.5).lerp(new THREE.Color('#34466e'), night * 0.6);
       hemi.current.groundColor.copy(skyCols.ground);
     }

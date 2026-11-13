@@ -9,6 +9,19 @@ import { explorerFeed } from '../state/runner';
 import type { ActivityType } from '../sim/types';
 import { npcPositions, playerState, useExplorer } from './explorerStore';
 import { routeBetween, type Layout } from './layout';
+import { texturedMaterial } from './env';
+
+const headMat = texturedMaterial('skin', { color: '#e8d4bc', roughness: 0.75 }, 'object');
+const clothCache = new Map<string, THREE.MeshStandardMaterial>();
+/** One textured cloth material per occupation colour, shared by everyone wearing it. */
+function clothFor(color: string): THREE.MeshStandardMaterial {
+  let m = clothCache.get(color);
+  if (!m) {
+    m = texturedMaterial('cloth', { color, roughness: 0.8 }, 'object');
+    clothCache.set(color, m);
+  }
+  return m;
+}
 import type { TerrainData } from './terrain';
 
 export const OCC_COLORS: Record<Occupation, string> = {
@@ -229,14 +242,10 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
               onPick(id);
             }}
           >
-            <mesh geometry={bodyGeo} position={[0, 0.95, 0]} castShadow>
-              <meshStandardMaterial color={color} roughness={0.7} />
-            </mesh>
+            <mesh geometry={bodyGeo} position={[0, 0.95, 0]} castShadow material={clothFor(color)} />
             {/* simulated individuals are marked so they read apart from the ambient crowd */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} geometry={ringGeo} material={ringMat} />
-            <mesh geometry={headGeo} position={[0, 2.0, 0]} castShadow>
-              <meshStandardMaterial color="#e8d4bc" roughness={0.8} />
-            </mesh>
+            <mesh geometry={headGeo} position={[0, 2.0, 0]} castShadow material={headMat} />
             {world.player.followedCharacterId === id && (
               <mesh position={[0, 3.4, 0]} rotation={[0, 0, Math.PI / 4]}>
                 <boxGeometry args={[0.45, 0.45, 0.45]} />

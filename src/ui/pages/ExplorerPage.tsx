@@ -73,7 +73,27 @@ function Explorer({ target }: { target: Target }) {
   const civ = settlement ? w.civs[settlement.civId] : region.ownerCivId ? w.civs[region.ownerCivId] : undefined;
   const civColor = civ?.color ?? '#6fd6ff';
   const terrain = useMemo(() => cloudCity?.terrain ?? generateTerrain(planet, regionIndex, region.biome, settlement ? settlementRadius(settlement) + 20 : 0), [cloudCity, planet, regionIndex, region.biome, settlement]);
-  const layout = useMemo(() => cloudCity?.layout ?? (settlement ? generateLayout(settlement) : wildLayout(planet.id, regionIndex, terrain.seed, region.name)), [cloudCity, settlement, planet.id, regionIndex, terrain.seed, region.name]);
+  const layout = useMemo(() => {
+    if (cloudCity) return cloudCity.layout;
+    if (settlement) return generateLayout(settlement);
+    const wild = wildLayout(planet.id, regionIndex, terrain.seed, region.name);
+    // never arrive standing in a lake or on a cliff: walk outwards to the nearest dry, level ground
+    const dry = (x: number, z: number) => (terrain.waterLevel === null || terrain.height(x, z) > terrain.waterLevel + 1) && terrain.slope(x, z) < 0.45;
+    if (!dry(wild.spawn.x, wild.spawn.z)) {
+      search: for (let r = 12; r < 300; r += 12) {
+        for (let k = 0; k < 16; k++) {
+          const a = (k / 16) * Math.PI * 2 + r * 0.05;
+          const x = wild.spawn.x + Math.cos(a) * r;
+          const z = wild.spawn.z + Math.sin(a) * r;
+          if (dry(x, z)) {
+            wild.spawn = { ...wild.spawn, x, z };
+            break search;
+          }
+        }
+      }
+    }
+    return wild;
+  }, [cloudCity, settlement, planet.id, regionIndex, terrain, region.name]);
   const quality = useApp((s) => s.settings.quality);
   const vegetation = useMemo(() => generateVegetation(terrain, layout, quality), [terrain, layout, quality]);
   // buildings, landmarks, tree trunks and large rocks all block movement

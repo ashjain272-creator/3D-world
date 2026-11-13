@@ -7,7 +7,7 @@ import { TiledInstances } from './lod';
 import type { VegetationData } from './vegetation';
 import type { Layout } from './layout';
 import { mixHex, type TerrainData } from './terrain';
-import { NOISE_GLSL, env, foliageMaterial } from './env';
+import { BUMP_GLSL, NOISE_GLSL, env, foliageMaterial, texturedMaterial } from './env';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout: Layout; waterColor: string }) {
@@ -67,8 +67,8 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
   const groundMat = useMemo(() => {
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
     m.onBeforeCompile = (shader) => {
-      shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\n${NOISE_GLSL}`).replace(
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vGN;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvGN = normal;');
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vGN;\n${NOISE_GLSL}\n${BUMP_GLSL}\nfloat groundH(vec3 P, float steep) { return mix(efbm(P.xz * 0.9) * 0.7 + evn(P.xz * 4.0) * 0.3, efbm(P.xz * 1.1) * 1.4, steep); }`).replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
         {
@@ -77,6 +77,15 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
           diffuseColor.rgb *= 0.78 + 0.3 * broad + 0.16 * fine;
           // faint warm/cool drift so large fields are not one hue
           diffuseColor.rgb *= mix(vec3(1.05, 1.0, 0.92), vec3(0.94, 1.0, 1.04), efbm(vWPos.xz * 0.012 + 31.0));
+          // relief: clumpy turf on flats, strata and cracks on steep ground
+          float steep = 1.0 - smoothstep(0.55, 0.85, abs(normalize(vGN).y));
+          float fw = max(length(fwidth(vWPos.xz)), 1e-4);
+          float e = max(0.03, fw);
+          float h0 = groundH(vWPos, steep);
+          vec2 gg = vec2(groundH(vWPos + vec3(e, 0.0, 0.0), steep) - h0, groundH(vWPos + vec3(0.0, 0.0, e), steep) - h0) / e;
+          float strata = evn(vec2(vWPos.y * 1.6 + efbm(vWPos.xz * 0.15) * 3.0, 1.0));
+          diffuseColor.rgb *= mix(1.0, 0.78 + 0.34 * strata, steep);
+          normal = ebumpW(normal, gg, vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), mix(0.05, 0.11, steep) * efade(fw * 0.5));
         }`,
       );
     };
@@ -165,14 +174,14 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
 
 /** Instanced vegetation and rocks with tiled LOD (two detail levels plus distance culling). */
 export function Vegetation({ data, kind, cliff, quality }: { data: VegetationData; kind: TerrainData['look']['vegetation']; cliff: string; quality: 'low' | 'medium' | 'high' }) {
-  const shadows = quality === 'high';
+  const shadows = quality !== 'low';
   const far = quality === 'low' ? 0.65 : 1;
   const levels = useMemo(() => {
-    const bark = new THREE.MeshStandardMaterial({ color: kind === 'cactus' ? '#5f8a4a' : '#5a4636', roughness: 1 });
+    const bark = texturedMaterial('bark', { color: kind === 'cactus' ? '#6f9a56' : '#6e5644', roughness: 1 });
     const leaf = foliageMaterial();
     const blade = foliageMaterial({ tip: true, flat: false });
     const petal = new THREE.MeshStandardMaterial({ roughness: 0.6, emissive: new THREE.Color('#ffffff'), emissiveIntensity: 0.06 });
-    const stone = new THREE.MeshStandardMaterial({ color: cliff, roughness: 1, flatShading: true });
+    const stone = texturedMaterial('rock', { color: cliff, roughness: 1 });
     const trunkHi = kind === 'cactus' ? new THREE.CapsuleGeometry(0.45, 0.6, 4, 8) : new THREE.CylinderGeometry(0.16, 0.34, 1, 7);
     const trunkLo = kind === 'cactus' ? new THREE.CapsuleGeometry(0.45, 0.6, 1, 4) : new THREE.CylinderGeometry(0.18, 0.3, 1, 3);
     const canopyHi = kind === 'conifer' ? new THREE.ConeGeometry(1, 1, 7) : kind === 'jungle' ? new THREE.SphereGeometry(1, 8, 5) : new THREE.IcosahedronGeometry(1, 1);

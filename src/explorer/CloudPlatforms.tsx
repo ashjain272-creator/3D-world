@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Planet } from '../sim/types';
 import { CLOUD_SEA_LEVEL, type CloudCity } from './cloudCity';
+import { texturedMaterial } from './env';
 
 /**
  * Geometry for a floating platform complex: deck slabs with tapered
@@ -79,14 +80,12 @@ export function CloudPlatforms({ city, planet }: { city: CloudCity; planet: Plan
     return { deckGeo: merge(deck), underGeo: merge(under), railGeo: merge(rail), cableGeo: merge(cable), glowGeo: merge(glow) };
   }, [city]);
 
+  const mats = useMemo(() => ({ deck: texturedMaterial('deck', { color: '#8a96a4', roughness: 0.55, metalness: 0.45 }), under: texturedMaterial('metal', { color: '#4a5562', roughness: 0.6, metalness: 0.6, side: THREE.DoubleSide }) }), []);
+
   return (
     <group>
-      <mesh geometry={deckGeo} receiveShadow castShadow>
-        <meshStandardMaterial color="#8a96a4" roughness={0.55} metalness={0.45} />
-      </mesh>
-      <mesh geometry={underGeo}>
-        <meshStandardMaterial color="#4a5562" roughness={0.6} metalness={0.6} side={THREE.DoubleSide} />
-      </mesh>
+      <mesh geometry={deckGeo} receiveShadow castShadow material={mats.deck} />
+      <mesh geometry={underGeo} material={mats.under} />
       <mesh geometry={railGeo}>
         <meshStandardMaterial color="#c8d4e0" roughness={0.3} metalness={0.8} />
       </mesh>

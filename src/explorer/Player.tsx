@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { useApp } from '../state/store';
 import { playerCommands, playerState, useExplorer } from './explorerStore';
 import { resolveCollisionsGrid, type ColliderGrid, type Layout } from './layout';
+import { texturedMaterial } from './env';
 import type { TerrainData } from './terrain';
 
 const WALK = 7;
@@ -16,6 +17,8 @@ const JUMP = 11;
  * Space to jump. Mouse: pointer-lock look (click the view) or drag to orbit.
  * Ground following samples the heightfield; buildings push the player out.
  */
+const suitMat = texturedMaterial('metal', { color: '#dfe8f7', roughness: 0.45, metalness: 0.35 }, 'object');
+
 export function Player({ t, layout, colliders, onInteract, spawnKey }: { t: TerrainData; layout: Layout; colliders: ColliderGrid; onInteract: () => void; spawnKey: string }) {
   const { camera, gl } = useThree();
   const body = useRef<THREE.Group>(null);
@@ -198,12 +201,12 @@ export function Player({ t, layout, colliders, onInteract, spawnKey }: { t: Terr
   return (
     <group ref={body}>
       <mesh position={[0, 0.95, 0]} castShadow>
-        <capsuleGeometry args={[0.45, 1.05, 4, 12]} />
-        <meshStandardMaterial color="#dfe8f7" roughness={0.4} metalness={0.3} />
+        <capsuleGeometry args={[0.45, 1.05, 6, 16]} />
+        <primitive object={suitMat} attach="material" />
       </mesh>
       <mesh position={[0, 2.02, 0]} castShadow>
-        <sphereGeometry args={[0.36, 16, 12]} />
-        <meshStandardMaterial color="#dfe8f7" roughness={0.4} metalness={0.3} />
+        <sphereGeometry args={[0.36, 24, 16]} />
+        <meshStandardMaterial color="#e9eef6" roughness={0.18} metalness={0.55} />
       </mesh>
       <mesh position={[0, 2.05, 0.3]}>
         <boxGeometry args={[0.5, 0.12, 0.12]} />

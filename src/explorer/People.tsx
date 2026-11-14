@@ -113,6 +113,8 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
   const npcs = useRef(new Map<string, Npc>());
   const refs = useRef(new Map<string, THREE.Group>());
   const [labelIds, setLabelIds] = useState<string[]>([]);
+  const lastSimTime = useRef(getWorld().time);
+  const jumpUntil = useRef(0);
   const talking = useExplorer((s) => s.talkingId);
   const setNearby = useExplorer((s) => s.setNearby);
   const lastScan = useRef(0);
@@ -151,6 +153,10 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
     const w = getWorld();
     const rng = new Rng(Math.floor(clock.elapsedTime * 10));
     const now = clock.elapsedTime;
+    // a leap of the sim clock stays 'in effect' briefly, until the new activities arrive from the worker
+    if (w.time - lastSimTime.current > 45) jumpUntil.current = now + 1.5;
+    lastSimTime.current = w.time;
+    const jumped = now < jumpUntil.current;
     let nearest: string | null = null;
     let nd = 5.5;
     const dists: { id: string; d: number }[] = [];
@@ -169,6 +175,13 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
         npc.hidden = false;
         npc.hideOnArrive = p.hidden;
         npc.wander = p.wander ? p.target : null;
+        if (jumped) {
+          // the clock leapt (time skip, fast-forward): people are already where their schedule puts them
+          npc.pos.x = p.target[0];
+          npc.pos.z = p.target[1];
+          npc.path = [];
+          npc.hidden = p.hidden;
+        }
       }
       const isTalking = talking === npc.id;
       npc.moving = false;

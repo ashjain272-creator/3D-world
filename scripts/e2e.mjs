@@ -208,7 +208,7 @@ try {
   await advanceLocal(22);
   await page.waitForTimeout(2500);
   const crowdNight = await page.evaluate(() => ({ ...window.__genesis.crowd, named: window.__genesis.npcs.size }));
-  check('night shows visibly fewer figures', crowdNight.visible + crowdNight.named < (crowdNoon.visible + crowdNoon.named) * 0.6, `${crowdNight.visible} crowd + ${crowdNight.named} simulated at 22:00`);
+  check('night shows visibly fewer figures', crowdNight.visible < crowdNoon.visible * 0.6 && crowdNight.visible + crowdNight.named < crowdNoon.visible + crowdNoon.named, `${crowdNight.visible} crowd + ${crowdNight.named} simulated at 22:00`);
   await shot('11-explorer-night');
   await page.click('[data-speed="1"]');
   await page.click('[data-testid=locations-btn]');

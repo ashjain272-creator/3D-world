@@ -1,38 +1,38 @@
 {
-  "seed": "soak-smoke",
-  "years": 2,
-  "wallSeconds": 18,
+  "seed": "soak-100",
+  "years": 100,
+  "wallSeconds": 2873,
   "msPerSimYear": {
-    "mean": 8958,
-    "max": 10266
+    "mean": 28680,
+    "max": 42981
   },
-  "peakHeapMB": 99.72,
-  "peakRssMB": 315.84,
-  "saveMB": 4.65,
-  "archiveMB": 0.02,
+  "peakHeapMB": 814.08,
+  "peakRssMB": 1046.32,
+  "saveMB": 17.81,
+  "archiveMB": 16.12,
   "reloadStatus": "ok",
   "events": {
-    "recordedTotal": 1211,
-    "hot": 1174,
-    "archived": 37,
-    "compactedIntoSummaries": 0,
-    "chunks": 1,
-    "milestonesHot": 16
+    "recordedTotal": 40128,
+    "hot": 1762,
+    "archived": 22819,
+    "compactedIntoSummaries": 15547,
+    "chunks": 195,
+    "milestonesHot": 114
   },
   "danglingLinks": 0,
   "danglingSample": [],
   "missingChunks": [],
   "important": {
-    "total": 766,
-    "withCause": 761,
-    "withCauseOrRoot": 766,
-    "shareWithCause": 0.9935,
+    "total": 23794,
+    "withCause": 23691,
+    "withCauseOrRoot": 23794,
+    "shareWithCause": 0.9957,
     "shareWithCauseOrRoot": 1
   },
   "population": {
     "civs": 3,
-    "settlements": 12,
-    "individualsAlive": 520,
-    "individualsEver": 521
+    "settlements": 47,
+    "individualsAlive": 804,
+    "individualsEver": 1387
   }
 }

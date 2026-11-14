@@ -93,8 +93,9 @@ The world is stored in IndexedDB under an autosave key (every 30 s by default an
 ## Known limitations
 
 - 400–800 individuals are simulated in full (capped at 800 universe-wide). Everyone else is aggregate population, plus an anonymous crowd in Explorer.
+- High quality adds relief shading, shadows from all props and sky reflections, and costs about three times more per frame than medium in software rendering.
 - Frame-rate targets have not been measured on a GPU. Development used software WebGL, which runs at 1–10 fps.
 - Conversations are template text built from real state and recorded causes. A `DialogueProvider` interface allows an LLM to replace it, but none is included.
 - Archived history loads on demand. A chunk that is still loading shows as "loading" in the History page for a moment.
 - Background individuals act on a coarser schedule (activity blocks of 4 hours or more, weekly goal reviews).
-- A full 100-year soak has not completed on the final code (see PHASE2_REPORT.md).
+- After 100 simulated years the save is 17.8 MB (11 MB at 50 years); see PHASE2_REPORT.md.

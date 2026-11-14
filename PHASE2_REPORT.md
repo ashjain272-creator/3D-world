@@ -172,6 +172,42 @@ Every claim below is backed by a test, an e2e check, a script result or a screen
 - **Audio.** Off by default even after a reload, until the user turns it on; a saved "on" setting still waits for a user gesture before making sound.
 - **Dead characters.** Compacted at death to keep saves bounded over a century.
 
+## Phase 3: visual pass and glitch fixes
+
+Requested after Phase 2: better UI, more detailed buildings, trees and environment, more depth and texture, then fix glitches.
+
+**Visuals** (screenshots in `docs/screenshots/after/`, comparisons in `docs/screenshots/diff/`)
+- **Buildings.** New facade shader: three glass-tower variants per building, shopfronts, floor slabs, parapets, sky reflection in glass, lintel shading and lit sills. Old towns get half-timber frames, stone courses, framed windows with shutters and stone footings. Geometry: stepped towers with podiums, rooftop plant, cornices, entrances, chimneys, doors, crates, dome plinths and skylights.
+- **Streets.** Pavements, lane dashes, cobbles, street trees in planters, benches and bollards.
+- **Vegetation.** Layered crowns (tiered conifers, clustered broadleaf, stacked jungle canopies, cactus arms), wind sway, leaf mottling, bushes, grass tufts, flowers and lumpy boulders.
+- **Environment.** Terrain detail and rock strata, rippling reflective water, two hazy ridgelines, a weather-driven cloud deck.
+- **Depth and texture.** Procedural surfaces for bark, rock, plaster, roof tiles, paving, metal deck, cloth and skin. On high quality: relief near the camera (filtered finite differences), sun shadows from trees, props and crowds, and sky reflections from an environment map.
+- **UI.** Glass panels, gradient buttons with hover and focus states, HUD chips, pill labels, restyled toasts and dialogue bubbles.
+
+**Glitches fixed**
+- Arriving in a lake or on a cliff in the wilderness: the spawn now moves to the nearest dry, level ground.
+- After a time jump, simulated people kept walking for minutes instead of being where their schedule puts them.
+- Relief shading aliased into blocky noise at distance: rewritten with filtering and a distance fade.
+- A shader failed to compile on figures (matrix not available in the fragment stage).
+- Entrance canopies blocked the follow camera; shopfronts were blown out white at night.
+- The Universe scene sat partly under the info panel: the view is now centred in the visible area.
+- The night crowd check compared against people who are legitimately awake; it now compares the ambient crowd.
+
+**Verification on the final code**
+- Typecheck: 0 errors. Unit tests: **73 / 73** (13 files), including the long simulation, host and 50-year retention tests (0 dangling links, save 11.05 MB).
+- Browser journey: **37 / 37** at medium quality. Re-run after the canopy and shopfront fixes: **37 / 37**.
+- 100-year soak on the capped code: **completed** (`soak-report.json` values): 100 years in 2 873 s; 40 128 events recorded (1 762 hot, 22 819 archived, 15 547 compacted, 195 chunks); **0 dangling links**; 99.57 % of 23 794 important events cite a cause and 100 % have a cause or root flag; save 17.81 MB, archive 16.12 MB, reload OK; peak heap 814 MB (includes the in-memory IndexedDB); tracked individuals 804 at year 100 (peak 812, cap 800), 47 settlements. The 15 MB save target was set for 50 years (11.05 MB there); at 100 years the save is above it.
+
+**Cost of the new visuals** (software rendering, Explorer in a capital, same seed)
+
+| Quality | Frames per second |
+|---|---|
+| Low | 4.2 |
+| Medium | 2.4 |
+| High | 1.1 (about 3 before this pass) |
+
+High is roughly three times more expensive per frame than before; sky reflections and relief account for most of it, which is why both are limited to high. These are software-rendering numbers; nothing has been measured on a GPU. The browser journey now runs at medium by default (`E2E_QUALITY=high` overrides), because high is too slow here to drive.
+
 ## Limitations and unfinished items
 
 - **Frame-rate targets unproven** (55 fps at 5× in Universe; 60 fps with ≥ 150 figures on medium): no GPU in this environment. Main-thread sim cost and relative fps are reported instead.

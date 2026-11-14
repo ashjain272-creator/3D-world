@@ -60,7 +60,7 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
     vec3 litCol = mix(${v3(opts.lit)}, vec3(1.0, 0.8, 0.55), step(0.7, fract(r * 7.13)));
     totalEmissiveRadiance += litCol * win * lit * (0.04 + uNight * 0.9) * (1.0 - 0.65 * blind) * (0.55 + 0.45 * fract(r * 3.7));
     float open = step(0.3, eh21(vec2(floor(sc.x), bh * 13.0)));
-    totalEmissiveRadiance += vec3(1.0, 0.86, 0.66) * shop * open * (0.06 + uNight * 1.1);
+    totalEmissiveRadiance += vec3(1.0, 0.82, 0.6) * shop * open * (0.04 + uNight * 0.5) * (0.7 + 0.3 * evn(vec2(hc * 1.3, hy * 2.0)));
     // civic accent: a light line above the shopfronts and one under the parapet
     float line = step(3.75, hy) * step(hy, 4.0) + step(topH - 1.0, hy) * step(hy, topH - 0.72) * step(20.0, topH);
     totalEmissiveRadiance += uAccent * line * (0.25 + uNight * 1.5);
@@ -572,8 +572,9 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
         // entrance: recessed doors under a lit canopy
         const fr = front(b, b.kind === 'tower' ? b.w * 1.12 : b.w, b.kind === 'tower' ? b.d * 1.12 : b.d);
         det(fr.x + fr.sx * 0.05, y0, fr.z + fr.sz * 0.05, fr.alongX ? 0.2 : 3.2, 3.1, fr.alongX ? 3.2 : 0.2, '#11161d');
-        det(fr.x + fr.sx * 1.3, y0 + 3.5, fr.z + fr.sz * 1.3, fr.alongX ? 2.8 : 5, 0.22, fr.alongX ? 5 : 2.8, '#c9d2dc');
-        g.glowBits.push({ m: mat(fr.x + fr.sx * 1.3, y0 + 3.38, fr.z + fr.sz * 1.3, fr.alongX ? 2.4 : 4.4, 0.1, fr.alongX ? 4.4 : 2.4) });
+        // shallow canopy, high enough that the follow camera passes beneath it
+        det(fr.x + fr.sx * 0.7, y0 + 4.05, fr.z + fr.sz * 0.7, fr.alongX ? 1.4 : 5, 0.2, fr.alongX ? 5 : 1.4, '#c9d2dc');
+        g.glowBits.push({ m: mat(fr.x + fr.sx * 0.7, y0 + 3.95, fr.z + fr.sz * 0.7, fr.alongX ? 1.1 : 4.4, 0.08, fr.alongX ? 4.4 : 1.1) });
         break;
       }
       case 'house':
@@ -589,7 +590,7 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
         det(fr.x + fr.sx * 0.06, y0, fr.z + fr.sz * 0.06, fr.alongX ? 0.18 : 1.3, 2.2, fr.alongX ? 1.3 : 0.18, '#4a3222');
         det(fr.x + fr.sx * 0.12, y0 + 2.2, fr.z + fr.sz * 0.12, fr.alongX ? 0.3 : 1.8, 0.22, fr.alongX ? 1.8 : 0.3, '#2e2018');
         det(fr.x + fr.sx * 0.5, y0, fr.z + fr.sz * 0.5, fr.alongX ? 1 : 1.9, 0.18, fr.alongX ? 1.9 : 1, '#8a8478');
-        if (b.kind === 'hall') det(fr.x + fr.sx * 1.4, y0 + 2.7, fr.z + fr.sz * 1.4, fr.alongX ? 2.8 : w * 0.7, 0.16, fr.alongX ? d * 0.7 : 2.8, '#7a4a32');
+        if (b.kind === 'hall') det(fr.x + fr.sx * 0.7, y0 + 2.9, fr.z + fr.sz * 0.7, fr.alongX ? 1.4 : w * 0.7, 0.16, fr.alongX ? d * 0.7 : 1.4, '#7a4a32');
         if (u(3) > 0.45) {
           const cx = fr.x + fr.sx * 0.8 + (fr.alongX ? 0 : 2.2);
           const cz = fr.z + fr.sz * 0.8 + (fr.alongX ? 2.2 : 0);

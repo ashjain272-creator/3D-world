@@ -6,6 +6,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Building, BuildingKind, Layout, PlacedLandmark } from './layout';
 import { TiledInstances } from './lod';
 import { Rng } from '../sim/rng';
+import { cityPalette } from './palette';
 import type { TerrainData } from './terrain';
 import { BUMP_GLSL, NOISE_GLSL, detail, env, foliageMaterial, texturedMaterial } from './env';
 
@@ -287,7 +288,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
   });
   useEffect(() => () => Object.values(mats).forEach((m) => m.dispose()), [mats]);
 
-  const groups = useMemo(() => buildGroups(layout.buildings, y0, layout.style), [layout, y0]);
+  const groups = useMemo(() => buildGroups(layout.buildings, y0, layout.style, civColor), [layout, y0, civColor]);
   const streetGeo = useMemo(() => {
     const parts: THREE.BufferGeometry[] = [];
     for (const s of layout.streets) {
@@ -482,7 +483,8 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
   );
 }
 
-function buildGroups(buildings: Building[], y0: number, style: Layout['style']) {
+function buildGroups(buildings: Building[], y0: number, style: Layout['style'], civColor: string) {
+  const pal = cityPalette(civColor, style);
   const g = {
     box: [] as { m: THREE.Matrix4; c?: THREE.Color; x: number; z: number }[],
     caps: [] as { m: THREE.Matrix4 }[],
@@ -515,10 +517,11 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
     const sz = alongX ? 0 : Math.sign(dz) || 1;
     return { x: b.x + (sx * w) / 2, z: b.z + (sz * d) / 2, sx, sz, alongX };
   };
-  const futTones = ['#a9b6c8', '#d4dbe4', '#8794a8', '#e8edf2', '#9aa9bc', '#b8c4d4', '#6f7c90'];
-  const stone = ['#b8a88c', '#a8987a', '#c8b89a', '#9a8a70', '#8a6a4a'];
-  const roofs = ['#7a3a2a', '#5a4a3a', '#8a5a3a', '#4a3a2e'];
-  const domeTones = ['#e6d6b4', '#d4c6a2', '#bccaa4', '#e0c8a8', '#c8b490', '#d8dcc0'];
+  const futTones = pal.walls;
+  const stone = style === 'frontier' ? pal.walls : pal.stone;
+  const roofs = pal.roofs;
+  const domeTones = pal.domes;
+  const accent = (k: number) => pal.accents[Math.floor(k * pal.accents.length) % pal.accents.length];
   for (const b of buildings) {
     const kind: BuildingKind = b.kind;
     const tone = (arr: string[]) => new THREE.Color(arr[Math.floor(b.tone * arr.length) % arr.length]);
@@ -559,7 +562,7 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
             rd = b.d * 0.6;
           }
           // cornice
-          det(b.x, y0 + b.h - 0.35, b.z, b.w + 0.5, 0.45, b.d + 0.5, '#59616d');
+          det(b.x, y0 + b.h - 0.35, b.z, b.w + 0.5, 0.45, b.d + 0.5, pal.trim);
         }
         // rooftop plant: units, a tank or a vent stack
         const units = b.kind === 'tower' ? 1 : 2 + Math.floor(u(1) * 2);
@@ -568,6 +571,17 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
           const uz = b.z + (u(k + 5) - 0.5) * rd * 0.55;
           if (u(k + 8) < 0.3) rnd(ux, roofY, uz, 2.2, 2.6, 2.2, '#8d949c');
           else det(ux, roofY, uz, 2 + u(k + 3) * 2.5, 1.2 + u(k + 4) * 1.4, 1.8 + u(k + 6) * 2, u(k) < 0.5 ? '#767e88' : '#9aa1a9');
+        }
+        // striped retail awnings in accent colours on the two street faces
+        if (b.kind !== 'tower' || u(11) < 0.5) {
+          for (const side of [-1, 1]) {
+            if (u(12 + side) < 0.45) continue;
+            const ax = u(14) < 0.5;
+            const len = (ax ? b.w : b.d) * 0.7;
+            const ox = ax ? 0 : (side * b.w) / 2 + side * 0.9;
+            const oz = ax ? (side * b.d) / 2 + side * 0.9 : 0;
+            det(b.x + ox, y0 + 3.15, b.z + oz, ax ? len : 1.8, 0.14, ax ? 1.8 : len, accent(u(15 + side)));
+          }
         }
         // entrance: recessed doors under a lit canopy
         const fr = front(b, b.kind === 'tower' ? b.w * 1.12 : b.w, b.kind === 'tower' ? b.d * 1.12 : b.d);
@@ -587,7 +601,15 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style']) 
         const u = (k: number) => (((b.tone * 9973 + k * 137.7) % 1) + 1) % 1;
         det(b.x + (u(1) - 0.5) * w * 0.5, y0 + b.h, b.z + (u(2) - 0.5) * d * 0.4, 0.9, b.h * 0.55 + 0.9, 0.9, '#6a4a3c');
         const fr = front(b, w, d);
-        det(fr.x + fr.sx * 0.06, y0, fr.z + fr.sz * 0.06, fr.alongX ? 0.18 : 1.3, 2.2, fr.alongX ? 1.3 : 0.18, '#4a3222');
+        det(fr.x + fr.sx * 0.06, y0, fr.z + fr.sz * 0.06, fr.alongX ? 0.18 : 1.3, 2.2, fr.alongX ? 1.3 : 0.18, u(7) < 0.55 ? accent(u(8)) : '#4a3222');
+        if (u(9) < 0.6) {
+          // flower box under a front window
+          const off = 2.2;
+          const bx = fr.x + fr.sx * 0.35 + (fr.alongX ? 0 : off);
+          const bz = fr.z + fr.sz * 0.35 + (fr.alongX ? off : 0);
+          det(bx, y0 + 1.25, bz, fr.alongX ? 0.4 : 1.4, 0.3, fr.alongX ? 1.4 : 0.4, '#6e4a2e');
+          rnd(bx, y0 + 1.5, bz, fr.alongX ? 0.45 : 1.3, 0.3, fr.alongX ? 1.3 : 0.45, accent(u(10)));
+        }
         det(fr.x + fr.sx * 0.12, y0 + 2.2, fr.z + fr.sz * 0.12, fr.alongX ? 0.3 : 1.8, 0.22, fr.alongX ? 1.8 : 0.3, '#2e2018');
         det(fr.x + fr.sx * 0.5, y0, fr.z + fr.sz * 0.5, fr.alongX ? 1 : 1.9, 0.18, fr.alongX ? 1.9 : 1, '#8a8478');
         if (b.kind === 'hall') det(fr.x + fr.sx * 0.7, y0 + 2.9, fr.z + fr.sz * 0.7, fr.alongX ? 1.4 : w * 0.7, 0.16, fr.alongX ? d * 0.7 : 1.4, '#7a4a32');

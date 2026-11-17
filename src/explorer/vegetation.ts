@@ -29,6 +29,10 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
   const base = new THREE.Color(t.look.grassColor);
+  const speciesWarm = base.clone().offsetHSL(-0.035, 0.08, 0.04);
+  const speciesCool = base.clone().offsetHSL(0.045, -0.05, -0.06);
+  const warmClimate = kind === 'jungle' || kind === 'cactus';
+  const accentLeaf = new THREE.Color(kind === 'conifer' ? '#3e5a3a' : warmClimate ? '#d86a8a' : rng.chance(0.6) ? '#b8762e' : '#a85a36');
   const tries = kind === 'none' ? 0 : max * 4;
   for (let i = 0; i < tries && out.trunks.length < max; i++) {
     const x = rng.range(-t.size * 0.47, t.size * 0.47);
@@ -52,7 +56,11 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
     const cy = h + trunkH + (kind === 'conifer' ? 3.2 * s : kind === 'jungle' ? 1 * s : kind === 'cactus' ? 0 : 1.6 * s);
     const cs = kind === 'conifer' ? new THREE.Vector3(2.6 * s, 7 * s, 2.6 * s) : kind === 'jungle' ? new THREE.Vector3(5 * s, 1.8 * s, 5 * s) : kind === 'cactus' ? new THREE.Vector3(0.001, 0.001, 0.001) : new THREE.Vector3(3.4 * s, 3 * s, 3.4 * s);
     m.compose(new THREE.Vector3(x, cy, z), q, cs);
-    const leaf = base.clone().offsetHSL(rng.range(-0.04, 0.04), rng.range(-0.1, 0.1), rng.range(-0.1, 0.06));
+    // species variety: each tree draws from one of a few related hues (warm yellow-green,
+    // base, cool blue-green) and a rare accent (autumn copper or blossom) for colour rhythm
+    const roll = rng.next();
+    const species = roll < 0.3 ? speciesWarm : roll < 0.62 ? base : roll < 0.95 ? speciesCool : accentLeaf;
+    const leaf = species.clone().offsetHSL(rng.range(-0.025, 0.025), rng.range(-0.08, 0.08), rng.range(-0.08, 0.05));
     out.canopies.push({ m: m.clone(), c: leaf, x, z });
     // Layered crown, visible up close.
     const extra = (ex: number, ey: number, ez: number, sx: number, sy: number, sz: number, dl: number) => {

@@ -61,7 +61,7 @@ export function ExplorerScene(p: Props) {
         <City layout={p.layout} t={p.terrain} quality={quality} civColor={p.civColor} />
         {p.settlement && <Inhabitants settlementId={p.settlement.id} layout={p.layout} t={p.terrain} onPick={p.onPick} />}
         {(p.settlement || p.cloud) && <Crowd layout={p.layout} t={p.terrain} population={p.settlement?.population ?? 3000} quality={quality} planetId={p.planet.id} />}
-        <PostFX quality={quality} bloom={0.7} threshold={0.8} />
+        <PostFX quality={quality} bloom={0.6} threshold={0.82} grade={1} />
         <Player t={p.terrain} layout={p.layout} colliders={p.colliders} onInteract={p.onInteract} spawnKey={p.locationKey} />
       </Suspense>
     </Canvas>

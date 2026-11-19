@@ -26,7 +26,7 @@ export type PartKey =
   | 'cactus' | 'barrel' | 'pad'
   | 'bush0' | 'bush1' | 'dryshrub' | 'fern' | 'reed'
   | 'rock0' | 'rock1' | 'rock2'
-  | 'log' | 'crystal0' | 'crystal1';
+  | 'log' | 'crystal0' | 'crystal1' | 'lily';
 
 export interface VegetationData {
   parts: Partial<Record<PartKey, PartItem[]>>;
@@ -350,6 +350,19 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
       if (h === null) continue;
       const s = rng.range(0.4, 1.1);
       put('dryshrub', x, h + s * 0.35, z, s, s * 0.7, s, new THREE.Color(kind === 'cactus' ? '#9a8452' : '#7d7a5a').offsetHSL(rng.range(-0.03, 0.03), 0, rng.range(-0.08, 0.06)), rng.range(0, 6), rng.range(0, 6), 0);
+    }
+  }
+  if (t.waterLevel !== null && green && snow < 0.4 && !t.look.frozen) {
+    // lily pads in calm shallows, a few in flower
+    for (let i = 0; i < 12000 && (parts.lily?.length ?? 0) < (quality === 'low' ? 80 : 260); i++) {
+      const x = rng.range(-t.size * 0.47, t.size * 0.47);
+      const z = rng.range(-t.size * 0.47, t.size * 0.47);
+      const h = t.height(x, z);
+      if (h > t.waterLevel - 0.4 || h < t.waterLevel - 2.5) continue;
+      if (noise(x / 25 + 90, z / 25) < 0.15) continue;
+      const s = rng.range(0.35, 0.8);
+      put('lily', x, t.waterLevel + 0.04, z, s, 1, s, new THREE.Color('#4f7f3a').offsetHSL(rng.range(-0.03, 0.04), 0, rng.range(-0.08, 0.06)), 0, rng.range(0, 6), 0);
+      if (rng.chance(0.18)) put('dryshrub', x + s * 0.3, t.waterLevel + 0.12, z, 0.16, 0.12, 0.16, new THREE.Color(rng.pick(['#f6f0f4', '#f0a8c8', '#f4e070'])), 0, 0, 0);
     }
   }
   if (kind === 'conifer' || kind === 'broadleaf' || kind === 'jungle') {

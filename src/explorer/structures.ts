@@ -293,7 +293,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
       const dp = rng.range(5, 7);
       const h = rng.range(3.2, 4.4);
       const ry = -a + Math.PI / 2;
-      const wall = vary(rng.pick(['#c89a6a', '#d4a878', '#b88a5c', '#dcb488']), 0.03);
+      const wall = vary(rng.pick(['#e6c08e', '#efcfa0', '#dcb080', '#f4dab0', '#e8c49a']), 0.03);
       add('box', 'sandstone', hx, hy, hz, w, h, dp, wall, ry);
       add('box', 'sandstone', hx, hy + h, hz, w + 0.3, 0.55, dp + 0.3, wall.clone().offsetHSL(0, 0, -0.06), ry);
       if (rng.chance(0.5)) add('box', 'sandstone', hx + Math.cos(ry) * w * 0.15, hy + h + 0.55, hz - Math.sin(ry) * w * 0.15, w * 0.55, h * 0.7, dp * 0.6, wall.clone().offsetHSL(0, 0, 0.03), ry);

@@ -126,7 +126,9 @@ export function SkyWeather({ planet, system, quality, warm = false, cold = false
       sun.current.target.updateMatrixWorld();
       const warm = 1 - THREE.MathUtils.smoothstep(elev, 0.05, 0.45);
       sun.current.color.copy(skyCols.sun).lerp(new THREE.Color('#ff9a5a'), warm * 0.4);
-      sun.current.intensity = day * 2.6 * (1 - overcast * 0.7);
+      // the low sun still lights the land: golden hour rather than an abrupt fade
+      const sunUp = THREE.MathUtils.smoothstep(elev, -0.05, 0.12);
+      sun.current.intensity = Math.max(day, sunUp * 0.8) * 2.6 * (1 - overcast * 0.7);
     }
     if (cityGlow.current) {
       cityGlow.current.position.set(playerState.x, playerState.y + 14, playerState.z);

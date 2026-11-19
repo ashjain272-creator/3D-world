@@ -69,8 +69,9 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
   const groundMat = useMemo(() => {
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
     m.onBeforeCompile = (shader) => {
+      shader.uniforms.envTime = env.uTime;
       shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vGN;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvGN = normal;');
-      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vGN;\n${NOISE_GLSL}\n${BUMP_GLSL}\nfloat groundH(vec3 P, float steep) { return mix(evn(P.xz * 0.9) * 0.7 + evn(P.xz * 4.0) * 0.3, evn(P.xz * 1.1) + evn(P.xz * 2.7) * 0.5, steep); }`).replace(
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vGN;\nuniform float envTime;\n${NOISE_GLSL}\n${BUMP_GLSL}\nfloat groundH(vec3 P, float steep) { return mix(evn(P.xz * 0.9) * 0.7 + evn(P.xz * 4.0) * 0.3, evn(P.xz * 1.1) + evn(P.xz * 2.7) * 0.5, steep); }`).replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
         {
@@ -137,6 +138,14 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
           vec3 ice = mix(vec3(0.42, 0.7, 0.86), vec3(0.72, 0.88, 0.96), efbm(vWPos.xz * 0.3)) * (1.0 - 0.75 * crev);
           diffuseColor.rgb = mix(diffuseColor.rgb, ice, gl);
           roughnessFactor = mix(roughnessFactor, 0.15, gl);` : ''}
+          ${t.waterLevel !== null && !t.look.frozen ? `// shoreline: damp, darker ground just above the water and a lapping foam line
+          float wl = ${t.waterLevel.toFixed(2)};
+          float wet = 1.0 - smoothstep(wl + 0.1, wl + 1.3, vWPos.y);
+          diffuseColor.rgb *= 1.0 - 0.32 * wet;
+          roughnessFactor = mix(roughnessFactor, 0.35, wet);
+          float lap = wl + 0.12 + 0.1 * sin(envTime * 1.3 + vWPos.x * 0.15 + vWPos.z * 0.11);
+          float foam = (1.0 - smoothstep(0.0, 0.18, abs(vWPos.y - lap))) * (0.55 + 0.45 * evn(vWPos.xz * 1.6 + envTime * 0.4));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.95, 0.96), foam * 0.8);` : ''}
           // glints: tiny ice facets catching the light near the camera
           float glint = step(0.996, eh21(floor(vWPos.xz * 9.0))) * snowCover * (1.0 - smoothstep(4.0, 30.0, length(vViewPosition)));
           totalEmissiveRadiance += vec3(0.9, 0.95, 1.0) * glint * 0.8;

@@ -6,6 +6,7 @@ import { useApp } from '../state/store';
 import { City } from './City';
 import { TerrainMesh } from './Landscape';
 import { Vegetation } from './FloraScene';
+import { Fauna } from './Fauna';
 import type { ColliderGrid, Layout } from './layout';
 import type { VegetationData } from './vegetation';
 import { Inhabitants } from './People';
@@ -57,6 +58,7 @@ export function ExplorerScene(p: Props) {
           <>
             <TerrainMesh t={p.terrain} layout={p.layout} waterColor={p.planet.palette.shallow} />
             <Vegetation data={p.vegetation} t={p.terrain} layout={p.layout} quality={quality} />
+            <Fauna t={p.terrain} quality={quality} city={!!p.settlement} />
           </>
         )}
         <City layout={p.layout} t={p.terrain} quality={quality} civColor={p.civColor} />

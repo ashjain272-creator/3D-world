@@ -213,6 +213,27 @@ function surfaceMaterial(color: string, roughness: number, cobbles: boolean) {
   return m;
 }
 
+/** Height helper for banners (stable per building). */
+function rngH(b: Building, lo: number, hi: number): number {
+  return lo + (((b.tone * 3571) % 1) + 1) % 1 * (hi - lo);
+}
+
+/** Emissive sign panels: lit in their instance colour, much brighter at night. */
+function signMaterial(): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.4 });
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uNight = nightUniform;
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight;').replace(
+      '#include <emissivemap_fragment>',
+      `#include <emissivemap_fragment>
+      #if defined( USE_INSTANCING_COLOR ) || defined( USE_COLOR )
+        totalEmissiveRadiance += vColor.rgb * (0.25 + uNight * 1.3);
+      #endif`,
+    );
+  };
+  return m;
+}
+
 function useInstances(ref: React.RefObject<THREE.InstancedMesh>, items: { m: THREE.Matrix4; c?: THREE.Color }[]) {
   useEffect(() => {
     const mesh = ref.current;
@@ -273,6 +294,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       dome: texturedMaterial('plaster', { roughness: 0.7, metalness: 0.02 }),
       leaf: foliageMaterial(),
       bark: texturedMaterial('bark', { color: '#7a5e4a', roughness: 1 }),
+      sign: signMaterial(),
       street: surfaceMaterial(layout.style === 'futuristic' ? '#454b54' : layout.style === 'cloud' ? '#4a525e' : layout.style === 'organic' ? '#8a7a5a' : '#8f7c60', layout.style === 'futuristic' || layout.style === 'cloud' ? 0.55 : 1, layout.style === 'frontier' || layout.style === 'organic'),
       glow: new THREE.MeshStandardMaterial({ color: '#000000', emissive: new THREE.Color(civColor), emissiveIntensity: 1 }),
       warm: new THREE.MeshStandardMaterial({ color: '#2a1a0a', emissive: new THREE.Color('#ffb060'), emissiveIntensity: 1 }),
@@ -499,6 +521,8 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
         <Instanced key={v} items={items} geometry={v === 4 ? skirtGeo(v) : blobGeo(v, 1)} material={mats.leaf} castShadow={shadows} />
       ))}
       <LightPools lights={layout.lights} y={y0} style={layout.style} />
+      <Instanced items={groups.signs} geometry={unitBox} material={mats.sign} />
+      {layout.style === 'futuristic' && <SkyTraffic streets={layout.streets} y={y0} quality={quality} civColor={civColor} />}
       <ContactShadows buildings={layout.buildings} y={y0} />
       <TiledInstances items={furniture.boxes} levels={furnitureLevels} tileSize={90} name="furniture" />
       {lineGeo && <mesh geometry={lineGeo} material={mats.glow} />}
@@ -558,6 +582,7 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style'], 
     /** Small cylinders: water tanks, vents, dome plinths. */
     rounds: [] as { m: THREE.Matrix4; c?: THREE.Color; x: number; z: number }[],
     glowBits: [] as { m: THREE.Matrix4 }[],
+    signs: [] as { m: THREE.Matrix4; c: THREE.Color }[],
   };
   const det = (x: number, y: number, z: number, sx: number, sy: number, sz: number, c: string, rot = 0) => g.details.push({ m: mat(x, y, z, sx, sy, sz, rot), c: new THREE.Color(c), x, z });
   const rnd = (x: number, y: number, z: number, sx: number, sy: number, sz: number, c: string) => g.rounds.push({ m: mat(x, y, z, sx, sy, sz), c: new THREE.Color(c), x, z });
@@ -636,6 +661,15 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style'], 
             det(b.x + ox, y0 + 3.15, b.z + oz, ax ? len : 1.8, 0.14, ax ? 1.8 : len, accent(u(15 + side)));
           }
         }
+        // shop signs and vertical banners in accent colours, glowing after dark
+        if (u(21) < 0.7) {
+          const sx = u(22) < 0.5;
+          const side = u(23) < 0.5 ? -1 : 1;
+          const fx = sx ? b.x + (u(24) - 0.5) * b.w * 0.5 : b.x + (side * b.w) / 2 + side * 0.12;
+          const fz = sx ? b.z + (side * b.d) / 2 + side * 0.12 : b.z + (u(24) - 0.5) * b.d * 0.5;
+          g.signs.push({ m: mat(fx, y0 + 4.4, fz, sx ? 3.4 : 0.15, 0.9, sx ? 0.15 : 3.4), c: new THREE.Color(accent(u(25))) });
+          if (b.h > 20 && u(26) < 0.6) g.signs.push({ m: mat(fx + (sx ? b.w * 0.3 : side * 0.6), y0 + 7, fz + (sx ? side * 0.6 : b.d * 0.3), sx ? 0.9 : 0.2, rngH(b, 6, 12), sx ? 0.2 : 0.9), c: new THREE.Color(accent(u(27))) });
+        }
         // entrance: recessed doors under a lit canopy
         const fr = front(b, b.kind === 'tower' ? b.w * 1.12 : b.w, b.kind === 'tower' ? b.d * 1.12 : b.d);
         det(fr.x + fr.sx * 0.05, y0, fr.z + fr.sz * 0.05, fr.alongX ? 0.2 : 3.2, 3.1, fr.alongX ? 3.2 : 0.2, '#11161d');
@@ -666,6 +700,47 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style'], 
         det(fr.x + fr.sx * 0.12, y0 + 2.2, fr.z + fr.sz * 0.12, fr.alongX ? 0.3 : 1.8, 0.22, fr.alongX ? 1.8 : 0.3, '#2e2018');
         det(fr.x + fr.sx * 0.5, y0, fr.z + fr.sz * 0.5, fr.alongX ? 1 : 1.9, 0.18, fr.alongX ? 1.9 : 1, '#8a8478');
         if (b.kind === 'hall') det(fr.x + fr.sx * 0.7, y0 + 2.9, fr.z + fr.sz * 0.7, fr.alongX ? 1.4 : w * 0.7, 0.16, fr.alongX ? d * 0.7 : 1.4, '#7a4a32');
+        // picket fence around the yard, a barrel by the wall, and on farms a haystack or cart
+        if (u(30) < 0.55) {
+          const fw = w + 6;
+          const fd = d + 6;
+          const posts = Math.round((fw + fd) / 1.6);
+          for (let k = 0; k < posts; k++) {
+            const tt = (k / posts) * 2 * (fw + fd);
+            let px: number, pz: number;
+            if (tt < fw) [px, pz] = [b.x - fw / 2 + tt, b.z - fd / 2];
+            else if (tt < fw + fd) [px, pz] = [b.x + fw / 2, b.z - fd / 2 + (tt - fw)];
+            else if (tt < 2 * fw + fd) [px, pz] = [b.x + fw / 2 - (tt - fw - fd), b.z + fd / 2];
+            else [px, pz] = [b.x - fw / 2, b.z + fd / 2 - (tt - 2 * fw - fd)];
+            // leave a gap in front of the door
+            if (Math.hypot(px - fr.x - fr.sx * 3, pz - fr.z - fr.sz * 3) < 2) continue;
+            det(px, y0, pz, 0.14, 1.05, 0.14, '#d8d0c0');
+          }
+          det(b.x, y0 + 0.75, b.z - fd / 2, fw, 0.1, 0.06, '#d0c8b8');
+          det(b.x, y0 + 0.75, b.z + fd / 2, fw, 0.1, 0.06, '#d0c8b8');
+          det(b.x - fw / 2, y0 + 0.75, b.z, 0.06, 0.1, fd, '#d0c8b8');
+          det(b.x + fw / 2, y0 + 0.75, b.z, 0.06, 0.1, fd, '#d0c8b8');
+        }
+        rnd(fr.x + fr.sx * 0.6 + (fr.alongX ? 0 : -1.8), y0, fr.z + fr.sz * 0.6 + (fr.alongX ? -1.8 : 0), 0.8, 1.1, 0.8, '#6a4a2e');
+        if (b.kind === 'hall' && u(31) < 0.6) {
+          g.domes.push({ m: mat(b.x + w * 0.5 + 3, y0, b.z + d * 0.3, 3.4, 3.2, 3.4), c: new THREE.Color('#c8a850').offsetHSL(0, 0, (u(32) - 0.5) * 0.1) });
+          g.domes.push({ m: mat(b.x + w * 0.5 + 5.5, y0, b.z - d * 0.1, 2.6, 2.4, 2.6), c: new THREE.Color('#bc9a44') });
+        }
+        if (u(33) < 0.3) {
+          // a cart: bed, shafts and two wheels
+          const cx = fr.x + fr.sx * 4 + (fr.alongX ? 0 : 3.5);
+          const cz = fr.z + fr.sz * 4 + (fr.alongX ? 3.5 : 0);
+          const ry = fr.alongX ? 0 : Math.PI / 2;
+          det(cx, y0 + 0.75, cz, 2.6, 0.5, 1.5, '#8a6440', ry);
+          det(cx + (fr.alongX ? 0 : 1.8), y0 + 0.65, cz + (fr.alongX ? 1.8 : 0), fr.alongX ? 1.2 : 1.6, 0.08, fr.alongX ? 1.6 : 1.2, '#6a4a2e', ry);
+          for (const sgn of [-1, 1]) {
+            const wx = cx + (fr.alongX ? sgn * 0.85 : 0);
+            const wz = cz + (fr.alongX ? 0 : sgn * 0.85);
+            const wm = new THREE.Matrix4().compose(new THREE.Vector3(wx, y0 + 0.6, wz), new THREE.Quaternion().setFromEuler(new THREE.Euler(fr.alongX ? 0 : Math.PI / 2, 0, fr.alongX ? Math.PI / 2 : 0)), new THREE.Vector3(1.2, 0.14, 1.2));
+            wm.multiply(new THREE.Matrix4().makeTranslation(0, -0.5, 0));
+            g.rounds.push({ m: wm, c: new THREE.Color('#4a3420'), x: wx, z: wz });
+          }
+        }
         if (u(3) > 0.45) {
           const cx = fr.x + fr.sx * 0.8 + (fr.alongX ? 0 : 2.2);
           const cz = fr.z + fr.sz * 0.8 + (fr.alongX ? 2.2 : 0);
@@ -1113,4 +1188,89 @@ function ContactShadows({ buildings, y }: { buildings: Building[]; y: number }) 
   );
   if (!shadowTex) return null;
   return <Instanced items={items} geometry={shadowGeo} material={mat} />;
+}
+
+const carGeo = new THREE.CapsuleGeometry(0.7, 2.2, 3, 8).rotateX(Math.PI / 2);
+const tailGeo = new THREE.SphereGeometry(0.28, 8, 6);
+/** Flying traffic over futuristic cities: craft follow the street grid on three altitude lanes. */
+function SkyTraffic({ streets, y, quality, civColor }: { streets: Layout['streets']; y: number; quality: 'low' | 'medium' | 'high'; civColor: string }) {
+  const n = quality === 'high' ? 60 : quality === 'medium' ? 36 : 0;
+  const body = useRef<THREE.InstancedMesh>(null);
+  const lights = useRef<THREE.InstancedMesh>(null);
+  const cars = useMemo(() => {
+    const rng = new Rng(streets.length * 31 + 7);
+    // merge the grid into whole avenues: one straight line per distinct street row or column
+    const avenues: Layout['streets'] = [];
+    const seen = new Set<string>();
+    let ext = 0;
+    for (const s of streets) ext = Math.max(ext, Math.abs(s.a[0]), Math.abs(s.a[1]), Math.abs(s.b[0]), Math.abs(s.b[1]));
+    for (const s of streets) {
+      const vertical = Math.abs(s.b[0] - s.a[0]) < 1;
+      const horizontal = Math.abs(s.b[1] - s.a[1]) < 1;
+      if (!vertical && !horizontal) continue;
+      const key = vertical ? `x${Math.round(s.a[0])}` : `z${Math.round(s.a[1])}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      avenues.push(vertical ? { a: [s.a[0], -ext - 40], b: [s.a[0], ext + 40], w: s.w } : { a: [-ext - 40, s.a[1]], b: [ext + 40, s.a[1]], w: s.w });
+    }
+    const long = avenues.length ? avenues : streets.filter((s) => Math.hypot(s.b[0] - s.a[0], s.b[1] - s.a[1]) > 12);
+    return long.length
+      ? Array.from({ length: n }, () => ({ s: long[Math.floor(rng.next() * long.length)], t: rng.next(), dir: rng.chance(0.5) ? 1 : -1, speed: rng.range(10, 22), lane: [14, 22, 31][Math.floor(rng.next() * 3)], off: rng.range(-1.5, 1.5), c: new THREE.Color(rng.pick(['#d8dde4', '#3a4048', '#c8402a', '#e8e0d0', civColor, '#2a5a8a'])) }))
+      : [];
+  }, [streets, n, civColor]);
+  const bodyMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.25, metalness: 0.6 }), []);
+  const lightMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }), []);
+  useEffect(() => () => { bodyMat.dispose(); lightMat.dispose(); }, [bodyMat, lightMat]);
+  const tmp = useMemo(() => ({ m: new THREE.Matrix4(), q: new THREE.Quaternion(), v: new THREE.Vector3(), one: new THREE.Vector3(1, 1, 1), up: new THREE.Vector3(0, 1, 0) }), []);
+  const colored = useRef(false);
+  useFrame((_, dt) => {
+    const b = body.current;
+    const l = lights.current;
+    if (!b || !l) return;
+    if (!colored.current) {
+      cars.forEach((c, i) => {
+        b.setColorAt(i, c.c);
+        l.setColorAt(i * 2, new THREE.Color('#fff4d8'));
+        l.setColorAt(i * 2 + 1, new THREE.Color('#ff3a2a'));
+      });
+      if (b.instanceColor) b.instanceColor.needsUpdate = true;
+      if (l.instanceColor) l.instanceColor.needsUpdate = true;
+      colored.current = true;
+    }
+    cars.forEach((c, i) => {
+      const dx = c.s.b[0] - c.s.a[0];
+      const dz = c.s.b[1] - c.s.a[1];
+      const len = Math.hypot(dx, dz);
+      c.t += (c.dir * c.speed * Math.min(dt, 0.1)) / len;
+      if (c.t > 1) c.t -= 1;
+      if (c.t < 0) c.t += 1;
+      const nx = -dz / len;
+      const nz = dx / len;
+      const x = c.s.a[0] + dx * c.t + nx * c.off * c.dir;
+      const z = c.s.a[1] + dz * c.t + nz * c.off * c.dir;
+      const yy = y + c.lane + Math.sin(c.t * 40 + i) * 0.15;
+      const heading = Math.atan2(dx * c.dir, dz * c.dir);
+      tmp.q.setFromAxisAngle(tmp.up, heading);
+      tmp.v.set(x, yy, z);
+      tmp.m.compose(tmp.v, tmp.q, tmp.one);
+      b.setMatrixAt(i, tmp.m);
+      const fx = Math.sin(heading);
+      const fz = Math.cos(heading);
+      tmp.v.set(x + fx * 1.75, yy, z + fz * 1.75);
+      tmp.m.compose(tmp.v, tmp.q, tmp.one);
+      l.setMatrixAt(i * 2, tmp.m);
+      tmp.v.set(x - fx * 1.75, yy, z - fz * 1.75);
+      tmp.m.compose(tmp.v, tmp.q, tmp.one);
+      l.setMatrixAt(i * 2 + 1, tmp.m);
+    });
+    b.instanceMatrix.needsUpdate = true;
+    l.instanceMatrix.needsUpdate = true;
+  });
+  if (!cars.length) return null;
+  return (
+    <group>
+      <instancedMesh ref={body} args={[carGeo, bodyMat, cars.length]} frustumCulled={false} castShadow={quality === 'high'} />
+      <instancedMesh ref={lights} args={[tailGeo, lightMat, cars.length * 2]} frustumCulled={false} />
+    </group>
+  );
 }

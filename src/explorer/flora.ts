@@ -206,3 +206,8 @@ export const unitConeBase = new THREE.ConeGeometry(0.5, 1, 12).translate(0, 0.5,
 export const pyramidBase = new THREE.ConeGeometry(0.7071, 1, 4).rotateY(Math.PI / 4).translate(0, 0.5, 0);
 export const hemiBase = new THREE.SphereGeometry(0.5, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2);
 export const discBase = new THREE.CircleGeometry(0.5, 32).rotateX(-Math.PI / 2);
+
+/** Lily pad: a flat disc with a notch, lying in the xz plane. */
+export function lilyGeo(): THREE.BufferGeometry {
+  return cached('lily', () => new THREE.CircleGeometry(1, 14, 0.35, Math.PI * 2 - 0.7).rotateX(-Math.PI / 2));
+}

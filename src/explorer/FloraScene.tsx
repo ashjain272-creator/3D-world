@@ -8,7 +8,7 @@ import type { PartItem, PartKey, VegetationData } from './vegetation';
 import type { Layout } from './layout';
 import type { TerrainData } from './terrain';
 import { env, foliageMaterial, texturedMaterial } from './env';
-import { blobGeo, crystalGeo, fernGeo, frondsGeo, hemiBase, logGeo, palmTrunkGeo, pyramidBase, ribbedGeo, rockGeo, skirtGeo, trunkGeo, tuftGeo, unitBoxBase, unitConeBase, unitCylBase, discBase } from './flora';
+import { lilyGeo, blobGeo, crystalGeo, fernGeo, frondsGeo, hemiBase, logGeo, palmTrunkGeo, pyramidBase, ribbedGeo, rockGeo, skirtGeo, trunkGeo, tuftGeo, unitBoxBase, unitConeBase, unitCylBase, discBase } from './flora';
 import type { StructMat, StructPiece, StructShape } from './structures';
 
 type Quality = 'low' | 'medium' | 'high';
@@ -67,6 +67,7 @@ function Parts({ data, quality }: { data: VegetationData; quality: Quality }) {
       log: L(logGeo(), null, bark, 0, 160),
       crystal0: L(crystalGeo(0), null, crystal, 0, 420),
       crystal1: L(crystalGeo(1), null, crystal, 0, 420),
+      lily: L(lilyGeo(), null, leafSoft, 0, 160, false),
     };
     return { s, mats: [bark, leaf, leafSoft, blade, cactus, stone, crystal] };
   }, [data.snow, shadows, far]);
@@ -229,8 +230,8 @@ function GroundCover({ t, layout, data, quality }: { t: TerrainData; layout: Lay
         const meadow = noise(x / 30 + 70, z / 30 - 20);
         if (!dry && snow < 0.5 && meadow > 0.35 && r2 > 0.72 && fi < (f.count ?? 0)) {
           const hue = petals[Math.floor((meadow * 10 + (r1 > 0.85 ? 3 : 0)) % petals.length)];
-          const fsz = 0.09 + r1 * 0.07;
-          tmp.v.set(x + 0.05, y + tall * 0.75, z);
+          const fsz = 0.055 + r1 * 0.05;
+          tmp.v.set(x + 0.05, y + tall * 0.62, z);
           tmp.s.set(fsz, fsz * 0.7, fsz);
           tmp.m.compose(tmp.v, tmp.q, tmp.s);
           f.setMatrixAt(fi, tmp.m);

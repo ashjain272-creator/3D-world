@@ -3,12 +3,9 @@ import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { createNoise2D } from 'simplex-noise';
 import { Rng } from '../sim/rng';
-import { TiledInstances } from './lod';
-import type { VegetationData } from './vegetation';
 import type { Layout } from './layout';
 import { mixHex, type TerrainData } from './terrain';
-import { BUMP_GLSL, NOISE_GLSL, detail, env, foliageMaterial, texturedMaterial } from './env';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { BUMP_GLSL, NOISE_GLSL, detail, env } from './env';
 
 export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout: Layout; waterColor: string }) {
   const geo = useMemo(() => {
@@ -63,6 +60,10 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
   useFrame(({ clock }) => {
     if (water.current) water.current.position.y = (t.waterLevel ?? 0) + Math.sin(clock.elapsedTime * 0.4) * 0.08;
   });
+  const dunes = t.look.vegetation === 'cactus';
+  const snowAmt = t.look.snow ?? 0;
+  // mountains carry snow caps above ~70% of their relief
+  const snowLine = t.look.amplitude >= 40 ? t.flatHeight + t.look.amplitude * 0.75 : 1e4;
   // Ground: vertex colours broken up by procedural detail so it never reads as flat paint.
   const groundMat = useMemo(() => {
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
@@ -90,13 +91,27 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
           float strata = evn(vec2(vWPos.y * 1.6 + efbm(vWPos.xz * 0.15) * 3.0, 1.0));
           diffuseColor.rgb *= mix(1.0, 0.78 + 0.34 * strata, steep);
           normal = ebumpW(normal, gg, vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), mix(0.05, 0.11, steep) * gf);
+          ${dunes ? `// wind ripples across the sand
+          float rip = sin((vWPos.x * 0.8 + vWPos.z * 0.35) * 2.2 + efbm(vWPos.xz * 0.08) * 9.0);
+          diffuseColor.rgb *= 0.95 + 0.06 * rip * (1.0 - steep);` : ''}
+          // snow: settles on flat ground everywhere on cold worlds, above the snowline elsewhere
+          float ny = abs(normalize(vGN).y);
+          float snowCover = max(${snowAmt.toFixed(2)} * smoothstep(0.62, 0.86, ny), smoothstep(${(snowLine - 6).toFixed(1)}, ${(snowLine + 6).toFixed(1)}, vWPos.y + efbm(vWPos.xz * 0.05) * 10.0) * smoothstep(0.5, 0.78, ny));
+          snowCover *= 0.75 + 0.25 * smoothstep(0.35, 0.6, efbm(vWPos.xz * 0.12));
+          vec3 snowCol = mix(vec3(0.78, 0.85, 0.94), vec3(0.97, 0.98, 1.0), efbm(vWPos.xz * 0.3) * 0.6 + 0.4);
+          diffuseColor.rgb = mix(diffuseColor.rgb, snowCol, clamp(snowCover, 0.0, 1.0));
+          roughnessFactor = mix(roughnessFactor, 0.55, snowCover);
+          // glints: tiny ice facets catching the light near the camera
+          float glint = step(0.996, eh21(floor(vWPos.xz * 9.0))) * snowCover * (1.0 - smoothstep(4.0, 30.0, length(vViewPosition)));
+          totalEmissiveRadiance += vec3(0.9, 0.95, 1.0) * glint * 0.8;
         }`,
       );
     };
     return m;
-  }, []);
+  }, [dunes, snowAmt, snowLine]);
   // Water: moving ripples in the normal, sky reflection at grazing angles.
   const waterMat = useMemo(() => {
+    if (t.look.frozen) return iceMaterial();
     const m = new THREE.MeshStandardMaterial({ color: waterColor, transparent: true, opacity: 0.86, roughness: 0.08, metalness: 0.1 });
     m.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = env.uTime;
@@ -128,7 +143,7 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
         );
     };
     return m;
-  }, [waterColor]);
+  }, [waterColor, t.look.frozen]);
   // Hazy far ridgelines so the horizon has depth.
   const ridges = useMemo(() => {
     const make = (radius: number, baseH: number, amp: number, seedOff: number) => {
@@ -177,86 +192,23 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
 }
 
 /** Instanced vegetation and rocks with tiled LOD (two detail levels plus distance culling). */
-export function Vegetation({ data, kind, cliff, quality }: { data: VegetationData; kind: TerrainData['look']['vegetation']; cliff: string; quality: 'low' | 'medium' | 'high' }) {
-  const shadows = quality === 'high';
-  const far = quality === 'low' ? 0.65 : 1;
-  const levels = useMemo(() => {
-    const bark = texturedMaterial('bark', { color: kind === 'cactus' ? '#6f9a56' : '#6e5644', roughness: 1 });
-    const leaf = foliageMaterial();
-    const blade = foliageMaterial({ tip: true, flat: false });
-    const petal = new THREE.MeshStandardMaterial({ roughness: 0.6, emissive: new THREE.Color('#ffffff'), emissiveIntensity: 0.06 });
-    const stone = texturedMaterial('rock', { color: cliff, roughness: 1 });
-    const trunkHi = kind === 'cactus' ? new THREE.CapsuleGeometry(0.45, 0.6, 4, 8) : new THREE.CylinderGeometry(0.16, 0.34, 1, 7);
-    const trunkLo = kind === 'cactus' ? new THREE.CapsuleGeometry(0.45, 0.6, 1, 4) : new THREE.CylinderGeometry(0.18, 0.3, 1, 3);
-    const canopyHi = kind === 'conifer' ? new THREE.ConeGeometry(1, 1, 7) : kind === 'jungle' ? new THREE.SphereGeometry(1, 8, 5) : new THREE.IcosahedronGeometry(1, 1);
-    const canopyLo = kind === 'conifer' ? new THREE.ConeGeometry(1, 1, 4) : kind === 'jungle' ? new THREE.SphereGeometry(1, 5, 3) : new THREE.IcosahedronGeometry(1, 0);
-    // skirts for conifers, blobs for everything else
-    const extraGeo = kind === 'conifer' ? new THREE.ConeGeometry(1, 1, 7) : kind === 'jungle' ? new THREE.SphereGeometry(1, 7, 4) : new THREE.IcosahedronGeometry(1, 1);
-    // a tuft: seven tapered blades fanned out from one root
-    const tuft = mergeGeometries(
-      Array.from({ length: 7 }, (_, k) => {
-        const g = new THREE.ConeGeometry(0.07, 1, 3, 1, true).translate(0, 0.5, 0);
-        g.rotateZ(0.18 + (k % 3) * 0.16);
-        g.rotateY((k / 7) * Math.PI * 2);
-        g.translate(Math.cos(k * 2.4) * 0.16, 0, Math.sin(k * 2.4) * 0.16);
-        return g;
-      }),
-    );
-    return {
-      extra: [{ geometry: extraGeo, material: leaf, maxDist: 150 * far, castShadow: shadows }],
-      bush: [
-        { geometry: new THREE.IcosahedronGeometry(1, 1), material: leaf, maxDist: 110 * far, castShadow: shadows },
-        { geometry: new THREE.IcosahedronGeometry(1, 0), material: leaf, maxDist: 240 * far },
-      ],
-      grass: [{ geometry: tuft, material: blade, maxDist: 70 }],
-      flower: [{ geometry: new THREE.IcosahedronGeometry(1, 0), material: petal, maxDist: 70 }],
-      trunk: [
-        { geometry: trunkHi, material: bark, maxDist: 200 * far, castShadow: shadows },
-        { geometry: trunkLo, material: bark, maxDist: 380 * far },
-      ],
-      canopy: [
-        { geometry: canopyHi, material: leaf, maxDist: 230 * far, castShadow: shadows },
-        { geometry: canopyLo, material: leaf, maxDist: 520 * far },
-      ],
-      rock: [
-        { geometry: rockGeo(), material: stone, maxDist: 170 * far, castShadow: shadows, receiveShadow: true },
-        { geometry: new THREE.TetrahedronGeometry(1, 0), material: stone, maxDist: 300 * far },
-      ],
-    };
-  }, [kind, cliff, shadows, far]);
-  useEffect(
-    () => () => {
-      for (const set of Object.values(levels)) for (const l of set) l.geometry.dispose();
-      levels.trunk[0].material.dispose();
-      levels.canopy[0].material.dispose();
-      levels.rock[0].material.dispose();
-      levels.grass[0].material.dispose();
-      levels.flower[0].material.dispose();
-    },
-    [levels],
-  );
-  return (
-    <group>
-      {data.trunks.length > 0 && <TiledInstances items={data.trunks} levels={levels.trunk} name="trunks" />}
-      {data.trunks.length > 0 && kind !== 'cactus' && <TiledInstances items={data.canopies} levels={levels.canopy} name="canopies" />}
-      {kind !== 'cactus' && data.canopyExtra.length > 0 && <TiledInstances items={data.canopyExtra} levels={levels.extra} tileSize={90} name="canopy-extra" />}
-      {data.bushes.length > 0 && <TiledInstances items={data.bushes} levels={levels.bush} tileSize={90} name="bushes" />}
-      {data.grass.length > 0 && <TiledInstances items={data.grass} levels={levels.grass} tileSize={45} name="grass" />}
-      {data.flowers.length > 0 && <TiledInstances items={data.flowers} levels={levels.flower} tileSize={45} name="flowers" />}
-      <TiledInstances items={data.rocks} levels={levels.rock} name="rocks" />
-    </group>
-  );
-}
 
-/** A lumpy boulder: an icosphere with its vertices pushed around deterministically. */
-function rockGeo(): THREE.BufferGeometry {
-  const g = new THREE.IcosahedronGeometry(1, 1);
-  const p = g.attributes.position as THREE.BufferAttribute;
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const k = 0.78 + 0.34 * Math.abs(Math.sin(x * 5.1 + y * 3.7 + z * 4.3));
-    p.setXYZ(i, x * k, y * k * 0.8, z * k);
-  }
-  g.computeVertexNormals();
-  return g;
+/** Frozen lake surface: pale blue ice with white crack lines and frosted patches. */
+function iceMaterial(): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ color: '#cfe6f4', roughness: 0.12, metalness: 0.05 });
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\n${NOISE_GLSL}`).replace(
+      '#include <emissivemap_fragment>',
+      `#include <emissivemap_fragment>
+      {
+        vec2 p = vWPos.xz;
+        float crack = smoothstep(0.03, 0.0, abs(evn(p * 0.35) - 0.5)) + smoothstep(0.02, 0.0, abs(evn(p * 1.1 + 7.0) - 0.5)) * 0.6;
+        float frost = smoothstep(0.45, 0.75, efbm(p * 0.08));
+        diffuseColor.rgb = mix(diffuseColor.rgb * (0.85 + 0.15 * efbm(p * 0.5)), vec3(0.95, 0.97, 1.0), clamp(crack * 0.7 + frost * 0.6, 0.0, 1.0));
+        roughnessFactor = mix(roughnessFactor, 0.6, frost);
+      }`,
+    );
+  };
+  return m;
 }

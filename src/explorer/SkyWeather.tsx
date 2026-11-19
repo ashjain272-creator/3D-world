@@ -129,10 +129,10 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
     }
     if (cityGlow.current) {
       cityGlow.current.position.set(playerState.x, playerState.y + 14, playerState.z);
-      cityGlow.current.intensity = night * 70;
+      cityGlow.current.intensity = night * 22;
     }
     if (moonLight.current) {
-      moonLight.current.intensity = night * 0.55;
+      moonLight.current.intensity = night * 0.42;
       moonLight.current.position.set(playerState.x - 200, playerState.y + 260, playerState.z - 120);
       moonLight.current.target.position.set(playerState.x, playerState.y, playerState.z);
       moonLight.current.target.updateMatrixWorld();
@@ -140,7 +140,7 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
     if (flash.current > 0) flash.current = Math.max(0, flash.current - dt * 3);
     if (wx === 'storm' && Math.random() < dt * 0.15) flash.current = 1;
     if (hemi.current) {
-      hemi.current.intensity = (quality !== 'high' ? 0.42 + day * 0.4 : 0.26 + day * 0.24) + flash.current * 2;
+      hemi.current.intensity = (quality !== 'high' ? 0.24 + day * 0.58 : 0.12 + day * 0.38) + flash.current * 2;
       hemi.current.color.copy(skyCols.zenith).lerp(skyCols.horizon, 0.5).lerp(new THREE.Color('#34466e'), night * 0.6);
       hemi.current.groundColor.copy(skyCols.ground);
     }

@@ -33,8 +33,9 @@ export { NOISE_GLSL };
  * `tip`: geometry spans y 0..1 and bends from the root (grass); otherwise it
  * is a blob centred on the origin (canopy).
  */
-export function foliageMaterial(opts: { tip?: boolean; sway?: number; roughness?: number; flat?: boolean } = {}): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({ roughness: opts.roughness ?? 0.9, flatShading: opts.flat ?? true, side: opts.tip ? THREE.DoubleSide : THREE.FrontSide });
+export function foliageMaterial(opts: { tip?: boolean; sway?: number; roughness?: number; flat?: boolean; snow?: number; double?: boolean } = {}): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ roughness: opts.roughness ?? 0.9, flatShading: opts.flat ?? true, side: opts.tip || opts.double ? THREE.DoubleSide : THREE.FrontSide });
+  const snowAmt = (opts.snow ?? 0).toFixed(2);
   const sway = (opts.sway ?? (opts.tip ? 0.28 : 0.05)).toFixed(3);
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = env.uTime;
@@ -46,6 +47,8 @@ export function foliageMaterial(opts: { tip?: boolean; sway?: number; roughness?
         `#include <color_vertex>
         #if defined( USE_COLOR_ALPHA ) || defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
           vColor.rgb *= ${opts.tip ? '0.55 + 0.6 * position.y' : '0.66 + 0.46 * smoothstep(-0.9, 0.9, position.y)'};
+          // snow settles on the upper surfaces
+          vColor.rgb = mix(vColor.rgb, vec3(0.9, 0.94, 0.98), ${snowAmt} * smoothstep(${opts.tip ? '0.5, 1.0' : '-0.15, 0.75'}, position.y) * 0.85);
         #endif`,
       )
       .replace(
@@ -82,7 +85,7 @@ vec3 ebumpW(vec3 n, vec2 g, vec3 T, vec3 B, float s) {
 float efade(float fw) { return 1.0 - smoothstep(0.02, 0.22, fw); }
 `;
 
-export type Surface = 'bark' | 'rock' | 'plaster' | 'metal' | 'tiles' | 'paving' | 'deck' | 'cloth' | 'wood' | 'skin';
+export type Surface = 'sandstone' | 'bark' | 'rock' | 'plaster' | 'metal' | 'tiles' | 'paving' | 'deck' | 'cloth' | 'wood' | 'skin';
 
 /** Each snippet reads vec2 p (metres) and writes float h (relief 0..1), float a (albedo multiplier), float ro (roughness offset). */
 const SURFACES: Record<Surface, { code: string; bump: number }> = {
@@ -95,6 +98,7 @@ const SURFACES: Record<Surface, { code: string; bump: number }> = {
   deck: { bump: 0.5, code: `vec2 g = fract(p / 3.0); float e = min(min(g.x, 1.0 - g.x), min(g.y, 1.0 - g.y)); float j = 1.0 - smoothstep(0.0, 0.012, e); vec2 rv = abs(fract(p / 0.75) - 0.5); float riv = (1.0 - smoothstep(0.03, 0.05, length(rv))) * step(e, 0.06); float tread = step(0.5, fract((p.x + p.y) * 2.2)) * step(0.5, fract((p.x - p.y) * 2.2)); h = 1.0 - j + riv * 0.8 + tread * 0.12; a = (0.88 + 0.16 * eh21(floor(p / 3.0))) * (1.0 - 0.4 * j) * (0.92 + 0.14 * efbm(p * 0.8)); ro = -0.1 + 0.25 * efbm(p * 0.3);` },
   cloth: { bump: 0.18, code: `float w1 = sin(p.x * 70.0) * sin(p.y * 70.0); float fold = evn(vec2(p.x * 5.0, p.y * 1.6)); h = w1 * 0.25 + fold; a = 0.86 + 0.2 * fold + 0.05 * w1;` },
   wood: { bump: 0.35, code: `float gr = evn(vec2(p.x * 1.6, p.y * 26.0)); float pl = 1.0 - smoothstep(0.0, 0.04, abs(fract(p.y / 0.32) - 0.5) * 2.0 - 0.92 + 0.92); h = gr * 0.6; a = 0.78 + 0.34 * gr; a *= 0.92 + 0.14 * eh21(vec2(floor(p.y / 0.32), 1.0)); pl = 0.0;` },
+  sandstone: { bump: 0.45, code: `vec2 c = p / vec2(1.6, 0.8); c.x += 0.5 * mod(floor(c.y), 2.0); vec2 f = fract(c); float j = 1.0 - smoothstep(0.0, 0.04, min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y) * 0.6)); float strata = evn(vec2(p.y * 6.0, p.x * 0.3)); h = (1.0 - j) * (0.8 + 0.2 * evn(p * 7.0)); a = (0.86 + 0.18 * eh21(floor(c))) * (1.0 - 0.3 * j) * (0.9 + 0.14 * strata) * (0.92 + 0.12 * efbm(p * 0.35));` },
   skin: { bump: 0.06, code: `h = evn(p * 30.0); a = 0.94 + 0.1 * evn(p * 6.0);` },
 };
 

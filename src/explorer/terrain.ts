@@ -17,6 +17,10 @@ export interface BiomeLook {
   vegetation: 'conifer' | 'broadleaf' | 'jungle' | 'cactus' | 'sparse' | 'none';
   density: number;
   grassColor: string;
+  /** Snow cover 0..1: flat ground whitens and foliage gets snow on top. */
+  snow?: number;
+  /** Lakes are frozen over (walkable ice). */
+  frozen?: boolean;
 }
 
 const LOOKS: Record<Biome, BiomeLook> = {
@@ -24,9 +28,9 @@ const LOOKS: Record<Biome, BiomeLook> = {
   forest: { amplitude: 22, roughness: 0.55, water: -3, low: '#3f6b33', mid: '#4b7a3a', high: '#6b7356', cliff: '#6e665c', sand: '#bfae80', vegetation: 'conifer', density: 1, grassColor: '#4f7f3a' },
   jungle: { amplitude: 26, roughness: 0.6, water: -2, low: '#2f6a2c', mid: '#3a7d33', high: '#56703e', cliff: '#5a5a48', sand: '#b8a874', vegetation: 'jungle', density: 1.1, grassColor: '#3d8a33' },
   coast: { amplitude: 12, roughness: 0.45, water: 0.5, low: '#c9b98a', mid: '#7a9a50', high: '#6f8a4a', cliff: '#8a7a68', sand: '#ddc995', vegetation: 'broadleaf', density: 0.4, grassColor: '#86a654' },
-  desert: { amplitude: 16, roughness: 0.35, water: null, low: '#d4a86a', mid: '#dcb47a', high: '#c08a55', cliff: '#a5704a', sand: '#e2c08a', vegetation: 'cactus', density: 0.18, grassColor: '#c9a46a' },
-  tundra: { amplitude: 12, roughness: 0.45, water: -3, low: '#8a9078', mid: '#9aa088', high: '#b8bcae', cliff: '#7e7a72', sand: '#b0aa94', vegetation: 'sparse', density: 0.22, grassColor: '#9aa284' },
-  ice: { amplitude: 18, roughness: 0.5, water: null, low: '#dfe8f0', mid: '#eef4f8', high: '#ffffff', cliff: '#a8b8c8', sand: '#e6eef4', vegetation: 'none', density: 0, grassColor: '#e8f0f6' },
+  desert: { amplitude: 18, roughness: 0.38, water: null, low: '#d8aa6a', mid: '#e2ba80', high: '#c88c56', cliff: '#a8643e', sand: '#e8c890', vegetation: 'cactus', density: 0.32, grassColor: '#b8a060' },
+  tundra: { amplitude: 14, roughness: 0.5, water: -3, low: '#8a9078', mid: '#9aa088', high: '#c8ccbe', cliff: '#6e6a64', sand: '#b0aa94', vegetation: 'sparse', density: 0.3, grassColor: '#8f9a74', snow: 0.45 },
+  ice: { amplitude: 34, roughness: 0.6, water: -4, low: '#d4e2ee', mid: '#e8f0f6', high: '#ffffff', cliff: '#6e7e90', sand: '#dfe8f0', vegetation: 'sparse', density: 0.15, grassColor: '#4f6a5a', snow: 1, frozen: true },
   mountain: { amplitude: 60, roughness: 0.62, water: -6, low: '#5f7346', mid: '#7a7a68', high: '#c8c8c8', cliff: '#6a645c', sand: '#a89a80', vegetation: 'conifer', density: 0.5, grassColor: '#62774a' },
   volcanic: { amplitude: 30, roughness: 0.6, water: null, low: '#2a2422', mid: '#3a302c', high: '#4a3c34', cliff: '#1e1a18', sand: '#3c3430', vegetation: 'none', density: 0, grassColor: '#3a302c' },
   wasteland: { amplitude: 16, roughness: 0.5, water: null, low: '#8a7a64', mid: '#9a8a70', high: '#a8987c', cliff: '#6e6050', sand: '#b0a088', vegetation: 'sparse', density: 0.1, grassColor: '#9a8a70' },
@@ -41,8 +45,11 @@ export function biomeLook(b: Biome, planet: Planet): BiomeLook {
     base.mid = '#d8e2ea';
     base.high = '#f4f8fb';
     base.low = mixHex(base.low, '#dfe8ef', 0.6);
-    base.grassColor = '#cfd9e0';
-    base.water = null;
+    // evergreen foliage stays dark green under its snow; lakes freeze instead of vanishing
+    base.grassColor = mixHex(base.grassColor, '#3f5a48', 0.5);
+    base.snow = 1;
+    base.frozen = base.water !== null;
+    if (base.vegetation === 'broadleaf' || base.vegetation === 'jungle') base.vegetation = 'conifer';
   }
   if (planet.type === 'volcanic' || planet.type === 'barren') base.water = null;
   return base;

@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import type { Planet, Settlement, StarSystem } from '../sim/types';
 import { useApp } from '../state/store';
 import { City } from './City';
-import { TerrainMesh, Vegetation } from './Landscape';
+import { TerrainMesh } from './Landscape';
+import { Vegetation } from './FloraScene';
 import type { ColliderGrid, Layout } from './layout';
 import type { VegetationData } from './vegetation';
 import { Inhabitants } from './People';
@@ -55,7 +56,7 @@ export function ExplorerScene(p: Props) {
         ) : (
           <>
             <TerrainMesh t={p.terrain} layout={p.layout} waterColor={p.planet.palette.shallow} />
-            <Vegetation data={p.vegetation} kind={p.terrain.look.vegetation} cliff={p.terrain.look.cliff} quality={quality} />
+            <Vegetation data={p.vegetation} t={p.terrain} layout={p.layout} quality={quality} />
           </>
         )}
         <City layout={p.layout} t={p.terrain} quality={quality} civColor={p.civColor} />

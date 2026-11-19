@@ -154,7 +154,7 @@ export function Player({ t, layout, colliders, onInteract, spawnKey }: { t: Terr
       s.x = THREE.MathUtils.clamp(nx, -lim, lim);
       s.z = THREE.MathUtils.clamp(nz, -lim, lim);
     }
-    const ground = Math.max(t.height(s.x, s.z), t.waterLevel !== null ? t.waterLevel - 1.2 : -Infinity);
+    const ground = Math.max(t.height(s.x, s.z), t.waterLevel !== null ? (t.look.frozen ? t.waterLevel + 0.05 : t.waterLevel - 1.2) : -Infinity);
     if (s.grounded && k.Space && !frozen) {
       s.vy = JUMP;
       s.grounded = false;

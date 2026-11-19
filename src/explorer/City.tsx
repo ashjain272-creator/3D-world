@@ -7,6 +7,7 @@ import type { Building, BuildingKind, Layout, PlacedLandmark } from './layout';
 import { TiledInstances } from './lod';
 import { Rng } from '../sim/rng';
 import { cityPalette } from './palette';
+import { blobGeo, skirtGeo } from './flora';
 import type { TerrainData } from './terrain';
 import { BUMP_GLSL, NOISE_GLSL, detail, env, foliageMaterial, texturedMaterial } from './env';
 
@@ -35,9 +36,14 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
     // ground floor: plinth, tall shopfront glazing, luminous canopy line
     vec2 sc = vec2(hc / 3.6 + 0.5, hy);
     float shop = step(0.05, fract(sc.x)) * step(fract(sc.x), 0.95) * step(0.75, hy) * step(hy, 3.5);
+    // occupancy is decided per apartment (groups of 2-3 windows on a floor), and each
+    // building has its own character: offices go dark at night, homes light up
+    float apt = eh21(vec2(floor(id.x / (2.0 + floor(bh * 2.0))), id.y) + bh * 91.0);
     float r = eh21(id + bh * 91.0);
-    float lit = step(1.0 - ${opts.density.toFixed(2)} * (0.3 + 0.7 * uNight), r);
-    float blind = step(0.62, fract(r * 5.3)) * step(0.58, f.y);
+    float residential = step(0.35, fract(bh * 13.7));
+    float occ = mix(0.42, mix(0.12, 0.42, residential), uNight);
+    float lit = step(1.0 - occ, apt);
+    float blind = step(0.55, fract(apt * 5.3)) * step(0.5 + 0.3 * fract(apt * 9.1), f.y);
     float fr = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 2.5);
     vec3 tint = mix(${v3(opts.glass)}, ${v3(opts.glass)} * vec3(1.25, 1.05, 0.8), step(0.66, fract(bh * 7.7)));
     vec3 skyRef = mix(uSky * 0.55, uSky * 1.1, f.y) * (0.15 + 0.85 * uDay);
@@ -58,13 +64,17 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
     fRelief = mix(1.0, 0.5 + 0.5 * lintel * (0.75 + 0.25 * jamb), win);
     fRelief *= 1.0 + 0.22 * step(0.255, f.y) * step(f.y, 0.3) * body * step(mx, f.x) * step(f.x, 1.0 - mx);
     fRelief = mix(fRelief, 0.55 + 0.45 * smoothstep(3.5, 2.6, hy), shop);
-    vec3 litCol = mix(${v3(opts.lit)}, vec3(1.0, 0.8, 0.55), step(0.7, fract(r * 7.13)));
-    totalEmissiveRadiance += litCol * win * lit * (0.04 + uNight * 0.9) * (1.0 - 0.65 * blind) * (0.55 + 0.45 * fract(r * 3.7));
+    // interior light colour: mostly warm lamps, some cool office light, the odd flickering screen
+    float kindL = fract(apt * 7.13);
+    vec3 litCol = kindL < 0.62 ? vec3(1.0, 0.7, 0.42) : kindL < 0.86 ? vec3(1.0, 0.86, 0.68) : kindL < 0.95 ? vec3(0.78, 0.88, 1.0) : vec3(0.45, 0.62, 1.0) * (0.7 + 0.3 * sin(uTime * 7.0 + apt * 40.0));
+    // a room is brightest near the ceiling light and falls off towards the sill
+    float room = 0.45 + 0.55 * smoothstep(0.3, 0.9, f.y) * (1.0 - 0.6 * abs(f.x - 0.5));
+    totalEmissiveRadiance += litCol * win * lit * (0.02 + uNight * 0.55) * room * (1.0 - 0.7 * blind) * (0.55 + 0.45 * fract(apt * 3.7));
     float open = step(0.3, eh21(vec2(floor(sc.x), bh * 13.0)));
     totalEmissiveRadiance += vec3(1.0, 0.82, 0.6) * shop * open * (0.04 + uNight * 0.5) * (0.7 + 0.3 * evn(vec2(hc * 1.3, hy * 2.0)));
     // civic accent: a light line above the shopfronts and one under the parapet
     float line = step(3.75, hy) * step(hy, 4.0) + step(topH - 1.0, hy) * step(hy, topH - 0.72) * step(20.0, topH);
-    totalEmissiveRadiance += uAccent * line * (0.25 + uNight * 1.5);
+    totalEmissiveRadiance += uAccent * line * (0.15 + uNight * 0.55);
   `;
   const timberBody = /* glsl */ `
     float base = 0.9;
@@ -105,11 +115,13 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
     diffuseColor.rgb *= 1.0 - 0.35 * step(topH - 0.3, hy);
     diffuseColor.rgb *= mix(0.9, 1.12, smoothstep(0.0, 5.0, hy));
     float r = eh21(id + bh * 91.0);
-    float lit = step(1.0 - ${opts.density.toFixed(2)} * (0.2 + 0.8 * uNight), r);
-    totalEmissiveRadiance += ${v3(opts.lit)} * win * (1.0 - bar) * lit * (0.03 + uNight * 1.0) * (0.6 + 0.4 * fract(r * 3.7));
+    float lit = step(1.0 - ${opts.density.toFixed(2)} * (0.15 + 0.55 * uNight), r);
+    float flick = 0.88 + 0.12 * sin(uTime * (3.0 + r * 4.0) + r * 30.0) * sin(uTime * 1.7 + r * 11.0);
+    totalEmissiveRadiance += ${v3(opts.lit)} * win * (1.0 - bar) * lit * (0.02 + uNight * 0.65) * flick * (0.45 + 0.55 * smoothstep(0.36, 0.8, f.y)) * (0.6 + 0.4 * fract(r * 3.7));
   `;
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uNight = nightUniform;
+    shader.uniforms.uTime = env.uTime;
     shader.uniforms.uSky = env.uSky;
     shader.uniforms.uDay = env.uDay;
     shader.uniforms.uAccent = { value: opts.accent ?? new THREE.Color(0, 0, 0) };
@@ -136,7 +148,7 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
         vWNorm = normalize(mat3(modelMatrix) * n);`,
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nuniform float uNight;\nuniform float uDay;\nuniform vec3 uSky;\nuniform vec3 uAccent;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nvarying vec4 vInst;\n${NOISE_GLSL}\n${BUMP_GLSL}`)
+      .replace('#include <common>', `#include <common>\nuniform float uNight;\nuniform float uTime;\nuniform float uDay;\nuniform vec3 uSky;\nuniform vec3 uAccent;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nvarying vec4 vInst;\n${NOISE_GLSL}\n${BUMP_GLSL}`)
       .replace(
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>
@@ -234,6 +246,7 @@ const taperCyl = new THREE.CylinderGeometry(0.32, 0.5, 1, 12).translate(0, 0.5, 
 const hemi = new THREE.SphereGeometry(0.5, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
 const ball = new THREE.SphereGeometry(0.5, 16, 12);
 const ico = new THREE.IcosahedronGeometry(0.5, 1);
+const spireGeo = new THREE.ConeGeometry(0.5, 1, 10).translate(0, 0.5, 0);
 const roofGeo = (() => {
   // gable roof prism, base 1×1, height 1
   const s = new THREE.Shape();
@@ -283,7 +296,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
   );
   useFrame(() => {
     mats.far.emissiveIntensity = 0.04 + nightUniform.value * 0.35;
-    mats.glow.emissiveIntensity = 0.3 + nightUniform.value * 1.1;
+    mats.glow.emissiveIntensity = 0.25 + nightUniform.value * 0.45;
     mats.warm.emissiveIntensity = 0.15 + nightUniform.value * 2.4;
   });
   useEffect(() => () => Object.values(mats).forEach((m) => m.dispose()), [mats]);
@@ -348,7 +361,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
   const furniture = useMemo(() => {
     const out = {
       trunks: [] as { m: THREE.Matrix4 }[],
-      leaves: [] as { m: THREE.Matrix4; c: THREE.Color }[],
+      leaves: [] as { m: THREE.Matrix4; c: THREE.Color; v: number }[],
       boxes: [] as { m: THREE.Matrix4; c: THREE.Color; x: number; z: number }[],
     };
     if (layout.style === 'cloud' || layout.style === 'wild') return out;
@@ -372,14 +385,47 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
         if (blocked(x, z)) continue;
         const roll = rng.next();
         if (roll < 0.62) {
-          const h = rng.range(3.2, 5);
-          out.trunks.push({ m: mat(x, y0, z, 0.5, h, 0.5) });
-          const base = new THREE.Color(green);
-          for (let k = 0; k < 3; k++) {
-            const a = rng.range(0, 6.28);
-            const r = k === 0 ? 0 : rng.range(0.7, 1.2);
-            const sz = k === 0 ? rng.range(3, 3.8) : rng.range(2, 2.7);
-            out.leaves.push({ m: mat(x + Math.cos(a) * r, y0 + h + (k === 0 ? 0.6 : rng.range(-0.4, 1.2)), z + Math.sin(a) * r, sz, sz * 0.85, sz), c: base.clone().offsetHSL(rng.range(-0.03, 0.03), rng.range(-0.08, 0.08), rng.range(-0.07, 0.07)) });
+          // five street-tree species with their own silhouettes and hues; a few in blossom or autumn colour
+          const species = Math.floor(rng.next() * 5);
+          const base = new THREE.Color(green).offsetHSL([0, -0.04, 0.05, -0.02, 0.03][species], [0, 0.08, -0.06, -0.1, 0.04][species], [0, 0.05, -0.08, -0.02, 0.02][species]);
+          const accentRoll = rng.next();
+          if (accentRoll < 0.07) base.set('#e8a6bc');
+          else if (accentRoll < 0.11) base.set('#f2ece0');
+          else if (accentRoll < 0.15) base.set(rng.pick(['#c4823a', '#b8502e', '#d4a840']));
+          const leafC = () => base.clone().offsetHSL(rng.range(-0.02, 0.02), rng.range(-0.06, 0.06), rng.range(-0.06, 0.05));
+          const lv = () => Math.floor(rng.next() * 4);
+          const ry = rng.range(0, 6.28);
+          const h = species === 1 ? rng.range(2.2, 3) : species === 3 ? rng.range(4, 5.2) : rng.range(2.8, 4.2);
+          out.trunks.push({ m: mat(x, y0, z, species === 1 ? 0.4 : 0.55, h + (species === 2 ? 0 : 1), species === 1 ? 0.4 : 0.55, ry) });
+          if (species === 0) {
+            // round, layered crown
+            const n = 3 + Math.floor(rng.next() * 3);
+            for (let k = 0; k < n; k++) {
+              const a = ry + (k / n) * 6.28;
+              const rr = k === 0 ? 0 : rng.range(0.8, 1.3);
+              const sz = k === 0 ? rng.range(1.6, 2) : rng.range(1, 1.35);
+              out.leaves.push({ m: mat(x + Math.cos(a) * rr, y0 + h + 1.2 + (k ? rng.range(-0.5, 0.8) : 0), z + Math.sin(a) * rr, sz, sz * 0.85, sz, rng.range(0, 6)), c: leafC(), v: lv() });
+            }
+          } else if (species === 1) {
+            // columnar
+            out.leaves.push({ m: mat(x, y0 + h + 2.4, z, 1.05, 3, 1.05, ry), c: leafC(), v: lv() });
+            out.leaves.push({ m: mat(x + 0.2, y0 + h + 0.9, z, 0.95, 1.5, 0.95, ry + 1), c: leafC(), v: lv() });
+          } else if (species === 2) {
+            // ornamental cone
+            out.leaves.push({ m: mat(x, y0 + h + 1.6, z, 1.6, 3.6, 1.6, ry), c: leafC(), v: 4 });
+            out.leaves.push({ m: mat(x, y0 + h + 3.2, z, 1.1, 2.4, 1.1, ry + 0.7), c: leafC(), v: 4 });
+          } else if (species === 3) {
+            // umbrella: wide, flat, high crown
+            for (let k = 0; k < 3; k++) {
+              const a = ry + k * 2.1;
+              out.leaves.push({ m: mat(x + Math.cos(a) * 1.1, y0 + h + 0.8 + rng.range(-0.2, 0.3), z + Math.sin(a) * 1.1, 1.8, 0.75, 1.6, a), c: leafC(), v: lv() });
+            }
+          } else {
+            // loose, multi-lobed
+            for (let k = 0; k < 4; k++) {
+              const a = rng.range(0, 6.28);
+              out.leaves.push({ m: mat(x + Math.cos(a) * rng.range(0.4, 1.4), y0 + h + rng.range(0.6, 2.2), z + Math.sin(a) * rng.range(0.4, 1.4), rng.range(0.8, 1.3), rng.range(0.7, 1.1), rng.range(0.8, 1.3), rng.range(0, 6)), c: leafC(), v: lv() });
+            }
           }
           if (layout.style === 'futuristic') out.boxes.push({ m: mat(x, y0, z, 1.9, 0.45, 1.9), c: new THREE.Color('#aab2bc'), x, z });
         } else if (roll < 0.82) {
@@ -395,12 +441,13 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
         } else {
           // planter tub with a shrub
           out.boxes.push({ m: mat(x, y0, z, 1.1, 0.7, 1.1, rng.range(0, 1)), c: new THREE.Color('#8a6a44'), x, z });
-          out.leaves.push({ m: mat(x, y0 + 1.15, z, 1.5, 1.2, 1.5), c: new THREE.Color(green).offsetHSL(0, 0, rng.range(-0.05, 0.08)) });
+          out.leaves.push({ m: mat(x, y0 + 1.15, z, 0.78, 0.62, 0.78), c: new THREE.Color(green).offsetHSL(0, 0, rng.range(-0.05, 0.08)), v: Math.floor(rng.next() * 4) });
         }
       }
     }
     return out;
   }, [layout, y0]);
+  const leafSets = useMemo(() => [0, 1, 2, 3, 4].map((v) => furniture.leaves.filter((l) => l.v === v)), [furniture]);
   const furnitureLevels = useMemo(() => [{ geometry: unitBox, material: mats.plain, maxDist: 170, castShadow: shadows, receiveShadow: true }], [mats, shadows]);
   const lineGeo = useMemo(() => {
     if (layout.style !== 'futuristic') return null;
@@ -448,7 +495,11 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
         </mesh>
       )}
       <Instanced items={furniture.trunks} geometry={taperCyl} material={mats.bark} castShadow={shadows} />
-      <Instanced items={furniture.leaves} geometry={ico} material={mats.leaf} castShadow={shadows} />
+      {leafSets.map((items, v) => (
+        <Instanced key={v} items={items} geometry={v === 4 ? skirtGeo(v) : blobGeo(v, 1)} material={mats.leaf} castShadow={shadows} />
+      ))}
+      <LightPools lights={layout.lights} y={y0} style={layout.style} />
+      <ContactShadows buildings={layout.buildings} y={y0} />
       <TiledInstances items={furniture.boxes} levels={furnitureLevels} tileSize={90} name="furniture" />
       {lineGeo && <mesh geometry={lineGeo} material={mats.glow} />}
       {/* Futuristic */}
@@ -468,6 +519,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       ))}
       {/* Organic */}
       <Instanced items={groups.domes} geometry={hemi} material={mats.dome} castShadow={shadows} receiveShadow />
+      <Instanced items={groups.spires} geometry={spireGeo} material={mats.plain} castShadow={shadows} />
       <Instanced items={groups.trunks} geometry={taperCyl} material={mats.bark} castShadow={shadows} />
       <Instanced items={groups.platforms} geometry={unitCyl} material={mats.plain} castShadow={shadows} />
       <Instanced items={groups.canopies} geometry={ico} material={mats.leaf} castShadow={shadows} />
@@ -500,6 +552,7 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style'], 
     canopies: [] as { m: THREE.Matrix4; c?: THREE.Color }[],
     pods: [] as { m: THREE.Matrix4; c?: THREE.Color }[],
     lanterns: [] as { m: THREE.Matrix4 }[],
+    spires: [] as { m: THREE.Matrix4; c?: THREE.Color }[],
     /** Small coloured boxes: rooftop plant, cornices, doors, canopies, chimneys, crates. */
     details: [] as { m: THREE.Matrix4; c?: THREE.Color; x: number; z: number }[],
     /** Small cylinders: water tanks, vents, dome plinths. */
@@ -630,22 +683,74 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style'], 
         g.silos.push({ m: mat(b.x, y0, b.z, b.w * 0.8, b.h, b.w * 0.8), c: tone(stone) });
         g.siloCaps.push({ m: mat(b.x, y0 + b.h, b.z, b.w * 0.8, b.w * 0.6, b.w * 0.8), c: tone(roofs) });
         break;
-      case 'dome':
-        g.domes.push({ m: mat(b.x, y0, b.z, b.w, b.h * 2, b.w), c: tone(domeTones) });
-        {
-          // stone plinth, an oculus light at the crown and a wooden door facing the path
-          rnd(b.x, y0, b.z, b.w * 1.05, 0.55, b.w * 1.05, '#9c9484');
-          rnd(b.x, y0 + b.h - 0.15, b.z, b.w * 0.22, 0.5, b.w * 0.22, '#7a6a52');
-          g.lanterns.push({ m: mat(b.x, y0 + b.h + 0.3, b.z, 0.9, 0.5, 0.9) });
-          const dx = b.door[0] - b.x;
-          const dz = b.door[1] - b.z;
-          const dl = Math.hypot(dx, dz) || 1;
-          const ang = Math.atan2(dx, dz);
-          det(b.x + (dx / dl) * b.w * 0.47, y0, b.z + (dz / dl) * b.w * 0.47, 1.5, 2.3, 0.9, '#5a3e28', ang);
-          det(b.x + (dx / dl) * b.w * 0.5, y0 + 2.3, b.z + (dz / dl) * b.w * 0.5, 2, 0.3, 1.1, '#7a6a52', ang);
+      case 'dome': {
+        const U = (k: number) => (((b.tone * 7919 + k * 101.3 + b.x * 0.013) % 1) + 1) % 1;
+        const col = tone(domeTones).offsetHSL((U(1) - 0.5) * 0.04, (U(2) - 0.5) * 0.1, (U(3) - 0.5) * 0.08);
+        const trimC = U(4) < 0.5 ? accent(U(5)) : '#8a7a62';
+        const r0 = b.w / 2;
+        const variant = Math.floor(U(6) * 6);
+        let top = y0 + b.h;
+        rnd(b.x, y0, b.z, b.w * 1.06, 0.5, b.w * 1.06, '#9c9484');
+        if (variant === 0) {
+          // classic low dome with a painted band
+          g.domes.push({ m: mat(b.x, y0, b.z, b.w, b.h * 2, b.w), c: col });
+          rnd(b.x, y0 + 0.5, b.z, b.w * 1.01, 0.35, b.w * 1.01, trimC);
+        } else if (variant === 1) {
+          // tall beehive
+          g.domes.push({ m: mat(b.x, y0, b.z, b.w * 0.9, b.h * 3.2, b.w * 0.9), c: col });
+          top = y0 + b.h * 1.6;
+        } else if (variant === 2 || variant === 3) {
+          // drum walls with a ring of windows, dome on top; variant 3 adds a spire
+          const dh = b.h * 0.75;
+          rnd(b.x, y0, b.z, b.w, dh, b.w, `#${col.clone().offsetHSL(0, -0.05, -0.06).getHexString()}`);
+          rnd(b.x, y0 + dh - 0.25, b.z, b.w * 1.05, 0.3, b.w * 1.05, trimC);
+          g.domes.push({ m: mat(b.x, y0 + dh, b.z, b.w * 0.98, b.h * 1.5, b.w * 0.98), c: col });
+          for (let k = 0; k < 6; k++) {
+            const a = (k / 6) * Math.PI * 2 + U(7);
+            det(b.x + Math.cos(a) * r0 * 0.99, y0 + dh * 0.45, b.z + Math.sin(a) * r0 * 0.99, 0.12, 1.1, 0.8, '#2a2a30', -a);
+            g.lanterns.push({ m: mat(b.x + Math.cos(a) * r0 * 0.96, y0 + dh * 0.45 + 0.5, b.z + Math.sin(a) * r0 * 0.96, 0.25, 0.4, 0.25) });
+          }
+          top = y0 + dh + b.h * 0.75;
+          if (variant === 3) g.spires.push({ m: mat(b.x, top - 0.2, b.z, 1.1, 2.6, 1.1), c: new THREE.Color(U(8) < 0.5 ? '#d8a844' : accent(U(9))) });
+        } else if (variant === 4) {
+          // cluster: a main dome with one or two smaller rooms grown onto it
+          g.domes.push({ m: mat(b.x, y0, b.z, b.w, b.h * 2, b.w), c: col });
+          const n = 1 + Math.floor(U(10) * 2);
+          for (let k = 0; k < n; k++) {
+            const a = U(11 + k) * Math.PI * 2;
+            const sw = b.w * (0.45 + U(13 + k) * 0.15);
+            g.domes.push({ m: mat(b.x + Math.cos(a) * r0 * 0.9, y0, b.z + Math.sin(a) * r0 * 0.9, sw, sw * 1.3, sw), c: col.clone().offsetHSL(0, 0, (U(15 + k) - 0.5) * 0.1) });
+          }
+        } else {
+          // two-tier: wide base dome, smaller dome stacked on a short collar
+          g.domes.push({ m: mat(b.x, y0, b.z, b.w * 1.1, b.h * 1.4, b.w * 1.1), c: col });
+          rnd(b.x, y0 + b.h * 0.62, b.z, b.w * 0.5, 0.9, b.w * 0.5, trimC);
+          g.domes.push({ m: mat(b.x, y0 + b.h * 0.62 + 0.8, b.z, b.w * 0.55, b.h * 1.2, b.w * 0.55), c: col.clone().offsetHSL(0, 0.03, 0.04) });
+          top = y0 + b.h * 1.2 + 0.8;
         }
+        // crown: skylight or chimney pipe
+        if (U(16) < 0.55) {
+          rnd(b.x, top - 0.25, b.z, b.w * 0.2, 0.5, b.w * 0.2, '#7a6a52');
+          g.lanterns.push({ m: mat(b.x, top + 0.25, b.z, 0.8, 0.45, 0.8) });
+        } else rnd(b.x + r0 * 0.3, top - 1, b.z - r0 * 0.2, 0.5, 2.2, 0.5, '#5a4a3a');
+        // door facing the path, coloured lintel, a lantern and maybe a little garden wall
+        const dx = b.door[0] - b.x;
+        const dz = b.door[1] - b.z;
+        const dl = Math.hypot(dx, dz) || 1;
+        const ang = Math.atan2(dx, dz);
+        det(b.x + (dx / dl) * r0 * 0.94, y0, b.z + (dz / dl) * r0 * 0.94, 1.5, 2.3, 0.9, U(17) < 0.6 ? accent(U(18)) : '#5a3e28', ang);
+        det(b.x + (dx / dl) * r0, y0 + 2.3, b.z + (dz / dl) * r0, 2, 0.3, 1.1, '#7a6a52', ang);
         g.lanterns.push({ m: mat(b.door[0] + (b.x - b.door[0]) * 0.55, y0 + 1.2, b.door[1] + (b.z - b.door[1]) * 0.55, 0.5, 0.5, 0.5) });
+        if (U(19) < 0.45) {
+          for (let k = 0; k < 7; k++) {
+            const a = ang + Math.PI * 0.35 + k * 0.32;
+            const wx = b.x + Math.sin(a) * (r0 + 2.2);
+            const wz = b.z + Math.cos(a) * (r0 + 2.2);
+            det(wx, y0, wz, 1.5, 0.7, 0.5, '#a89a80', a);
+          }
+        }
         break;
+      }
       case 'treehouse': {
         g.trunks.push({ m: mat(b.x, y0, b.z, 3.2, b.h, 3.2) });
         g.platforms.push({ m: mat(b.x, y0 + b.h * 0.55, b.z, b.w, 0.6, b.w), c: new THREE.Color('#8a6a4a') });
@@ -954,4 +1059,58 @@ function LandmarkModel({ l, y, style, civColor, shadows }: { l: PlacedLandmark; 
       </Html>
     </group>
   );
+}
+
+const poolGeo = new THREE.CircleGeometry(1, 28).rotateX(-Math.PI / 2);
+/** Warm pools of light on the ground beneath street lamps, fading in after dusk. */
+function LightPools({ lights, y, style }: { lights: [number, number][]; y: number; style: Layout['style'] }) {
+  const mat = useMemo(() => {
+    const m = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: { uNight: nightUniform, uCol: { value: new THREE.Color(style === 'futuristic' ? '#bfe0ff' : '#ffb466') } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = position.xz; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform float uNight; uniform vec3 uCol; varying vec2 vUv; void main(){ float d = length(vUv); float a = pow(max(0.0, 1.0 - d), 2.2); gl_FragColor = vec4(uCol * a * uNight * 0.55, 1.0); }',
+    });
+    return m;
+  }, [style]);
+  useEffect(() => () => mat.dispose(), [mat]);
+  const items = useMemo(() => lights.map(([x, z]) => ({ m: mat4(x + 3, y + 0.12, z + 3, 7.5) })), [lights, y]);
+  return <Instanced items={items} geometry={poolGeo} material={mat} />;
+}
+
+function mat4(x: number, y: number, z: number, s: number): THREE.Matrix4 {
+  return new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(), new THREE.Vector3(s, 1, s));
+}
+
+const shadowTex = (() => {
+  const c = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+  if (!c) return null;
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const grd = g.createRadialGradient(32, 32, 8, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(0,0,0,0.55)');
+  grd.addColorStop(0.6, 'rgba(0,0,0,0.3)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+const shadowGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+/** Soft dark skirts where buildings meet the ground, so they sit in the street instead of floating on it. */
+function ContactShadows({ buildings, y }: { buildings: Building[]; y: number }) {
+  const mat = useMemo(() => new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, color: '#000000', polygonOffset: true, polygonOffsetFactor: -3 }), []);
+  useEffect(() => () => mat.dispose(), [mat]);
+  const items = useMemo(
+    () =>
+      buildings.map((b) => {
+        const w = b.rot ? b.d : b.w;
+        const d = b.rot ? b.w : b.d;
+        return { m: new THREE.Matrix4().compose(new THREE.Vector3(b.x, y + 0.1, b.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), b.kind === 'dome' ? 0 : 0), new THREE.Vector3(w * 1.55 + 3, 1, d * 1.55 + 3)) };
+      }),
+    [buildings, y],
+  );
+  if (!shadowTex) return null;
+  return <Instanced items={items} geometry={shadowGeo} material={mat} />;
 }

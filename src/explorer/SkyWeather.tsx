@@ -22,7 +22,8 @@ export interface Environment {
  * Sky, sun, moonlight, fog and weather, all derived from the simulation
  * clock and the planet's atmosphere and current weather.
  */
-export function SkyWeather({ planet, system, quality }: { planet: Planet; system: StarSystem; quality: 'low' | 'medium' | 'high' }) {
+export function SkyWeather({ planet, system, quality, warm = false, cold = false, bounce }: { planet: Planet; system: StarSystem; quality: 'low' | 'medium' | 'high'; warm?: boolean; cold?: boolean; bounce?: string }) {
+  const bounceCol = useMemo(() => new THREE.Color(bounce ?? '#6a5a48'), [bounce]);
   const { scene, gl } = useThree();
   const envTimer = useRef(0);
   const envElev = useRef(99);
@@ -142,17 +143,21 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
     if (hemi.current) {
       hemi.current.intensity = (quality !== 'high' ? 0.24 + day * 0.58 : 0.12 + day * 0.38) + flash.current * 2;
       hemi.current.color.copy(skyCols.zenith).lerp(skyCols.horizon, 0.5).lerp(new THREE.Color('#34466e'), night * 0.6);
-      hemi.current.groundColor.copy(skyCols.ground);
+      // light bouncing off the ground takes the ground's colour: warm off sand, cool-white off snow
+      hemi.current.groundColor.copy(skyCols.ground).lerp(bounceCol, (warm || cold ? 0.75 : 0.45) * day);
     }
     // fog colour follows the sky: day tint → dusk orange → night navy
     const dusk = Math.max(0, 1 - Math.abs(elev) / 0.25) * day;
     // fog takes the horizon colour of this world's sky
     fogColor.copy(skyCols.horizon);
     void dusk;
-    if (overcast) fogColor.lerp(new THREE.Color(wx === 'dust' ? '#a08060' : '#7a8490'), overcast * day * 0.8);
+    if (overcast) fogColor.lerp(new THREE.Color(wx === 'dust' ? '#a08060' : warm ? '#c8a878' : cold ? '#b8c8d8' : '#7a8490'), overcast * day * 0.8);
+    // deserts sit in a warm, dusty haze; frozen worlds in a crisp blue one
+    if (warm) fogColor.lerp(new THREE.Color('#e0b888'), 0.28 * day);
+    if (cold) fogColor.lerp(new THREE.Color('#a8c4e0'), 0.2 * day);
     if (scene.fog instanceof THREE.Fog) {
       scene.fog.color.copy(fogColor);
-      const dense = wx === 'fog' ? 0.25 : wx === 'dust' ? 0.35 : wx === 'storm' ? 0.5 : wx === 'snow' ? 0.55 : wx === 'rain' ? 0.65 : 1;
+      const dense = wx === 'fog' ? 0.25 : wx === 'dust' ? 0.35 : wx === 'storm' ? 0.5 : wx === 'snow' ? 0.85 : wx === 'rain' ? 0.65 : 1;
       scene.fog.near = 30 * dense;
       scene.fog.far = (quality === 'low' ? 600 : 950) * dense;
     }
@@ -189,6 +194,7 @@ export function SkyWeather({ planet, system, quality }: { planet: Planet; system
           <planeGeometry args={[9000, 9000, 1, 1]} />
         </mesh>
       )}
+      {cold && <Aurora />}
       <Weather kind={weather} planetId={planet.id} quality={quality} />
     </>
   );
@@ -248,8 +254,8 @@ function Weather({ kind, planetId, quality }: { kind: Planet['environment']['wea
     const fall = k === 'snow' ? 2.5 : k === 'dust' ? 0.6 : 38;
     const drift = k === 'dust' ? 14 : k === 'snow' ? 1.2 : k === 'storm' ? 6 : 1.5;
     mat.color.set(k === 'dust' ? '#c8a070' : k === 'snow' ? '#ffffff' : '#a8c0e0');
-    mat.size = k === 'snow' ? 0.28 : k === 'dust' ? 0.3 : 0.16;
-    mat.opacity = k === 'dust' ? 0.5 : 0.75;
+    mat.size = k === 'snow' ? 0.2 : k === 'dust' ? 0.3 : 0.16;
+    mat.opacity = k === 'dust' ? 0.5 : k === 'snow' ? 0.6 : 0.75;
     const arr = geo.attributes.position.array as Float32Array;
     for (let i = 0; i < N; i++) {
       arr[i * 3 + 1] -= fall * dt;
@@ -305,4 +311,61 @@ function cloudMaterial(): THREE.ShaderMaterial {
         gl_FragColor = vec4(col, a * 0.92);
       }`,
   });
+}
+
+/**
+ * Aurora over frozen worlds: two rippling curtains of light high in the sky,
+ * green at the base fading to violet at the top, visible only after dark.
+ */
+function Aurora() {
+  const mat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        fog: false,
+        uniforms: { uTime: envU.uTime, uNight: nightUniform },
+        vertexShader: /* glsl */ `
+          uniform float uTime;
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            vec3 p = position;
+            p.z += sin(p.x * 0.004 + uTime * 0.12) * 180.0 + sin(p.x * 0.011 - uTime * 0.2) * 60.0;
+            gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(p, 1.0);
+          }`,
+        fragmentShader: /* glsl */ `
+          uniform float uTime; uniform float uNight;
+          varying vec2 vUv;
+          float h(float x) { return fract(sin(x * 91.7) * 43758.5); }
+          float n(float x) { float i = floor(x); float f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(h(i), h(i + 1.0), f); }
+          void main() {
+            float x = vUv.x * 60.0;
+            float rays = n(x * 3.0 + uTime * 0.6) * 0.6 + n(x * 9.0 - uTime * 1.1) * 0.4;
+            float band = smoothstep(0.0, 0.12, vUv.y) * (1.0 - smoothstep(0.35, 1.0, vUv.y));
+            float pulse = 0.6 + 0.4 * n(vUv.x * 8.0 + uTime * 0.25);
+            vec3 col = mix(vec3(0.1, 1.0, 0.55), vec3(0.6, 0.3, 1.0), smoothstep(0.25, 0.9, vUv.y));
+            float a = band * rays * pulse * smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
+            gl_FragColor = vec4(col * a * uNight * 0.75, 1.0);
+          }`,
+      }),
+    [],
+  );
+  useEffect(() => () => mat.dispose(), [mat]);
+  const g = useRef<THREE.Group>(null);
+  useFrame(() => {
+    if (g.current) g.current.position.set(playerState.x, 0, playerState.z);
+  });
+  return (
+    <group ref={g}>
+      <mesh material={mat} position={[0, 520, -900]} rotation={[0.25, 0.3, 0]} frustumCulled={false}>
+        <planeGeometry args={[2600, 420, 120, 1]} />
+      </mesh>
+      <mesh material={mat} position={[300, 600, -1300]} rotation={[0.2, -0.4, 0]} frustumCulled={false}>
+        <planeGeometry args={[2200, 380, 100, 1]} />
+      </mesh>
+    </group>
+  );
 }

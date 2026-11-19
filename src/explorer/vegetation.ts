@@ -82,7 +82,8 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
 
   const base = new THREE.Color(t.look.grassColor);
   const coast = t.waterLevel !== null && t.look.sand && kind === 'broadleaf' && t.look.density < 0.42;
-  const mix = coast ? COAST_MIX : MIX[kind];
+  const SNOW_MIX: [Arche, number][] = [['spruce', 5], ['fir', 3.5], ['dead', 1], ['birch', 0.4]];
+  const mix = snow >= 0.45 && kind !== 'none' ? SNOW_MIX : coast ? COAST_MIX : MIX[kind];
   const barkBrown = ['#5e4636', '#6e5240', '#4f3c30', '#76604c'];
   const leafFor = (arche: Arche): THREE.Color => {
     const c = base.clone();
@@ -258,7 +259,7 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
     return false;
   };
   let placed = 0;
-  const tries = !mix ? 0 : max * 6;
+  const tries = !mix ? 0 : max * (kind === 'cactus' ? 9 : 6);
   for (let i = 0; i < tries && placed < max; i++) {
     const x = rng.range(-t.size * 0.47, t.size * 0.47);
     const z = rng.range(-t.size * 0.47, t.size * 0.47);
@@ -326,6 +327,19 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
       put('reed', x, Math.max(h, t.waterLevel - 0.4), z, s, s * rng.range(1.2, 2), s, new THREE.Color('#6f8a3e').offsetHSL(rng.range(-0.04, 0.04), 0, rng.range(-0.06, 0.06)), 0, rng.range(0, 6), 0);
     }
   }
+  if (kind === 'cactus') {
+    // sage-green desert shrubs, some in bloom
+    for (let i = 0; i < (quality === 'low' ? 160 : 420); i++) {
+      const x = rng.range(-t.size * 0.47, t.size * 0.47);
+      const z = rng.range(-t.size * 0.47, t.size * 0.47);
+      const h = placeable(x, z);
+      if (h === null || t.slope(x, z) > 0.4) continue;
+      const s = rng.range(0.5, 1.2);
+      const bloom = rng.chance(0.22);
+      const c = bloom ? new THREE.Color(rng.pick(['#c88ad8', '#e8c040', '#e87858', '#f0e0f0'])) : new THREE.Color('#8a9a6a').offsetHSL(rng.range(-0.03, 0.03), rng.range(-0.1, 0.05), rng.range(-0.08, 0.06));
+      put(rng.chance(0.5) ? 'bush0' : 'bush1', x, h + s * 0.25, z, s * rng.range(1, 1.5), s * 0.6, s * rng.range(1, 1.5), c, 0, rng.range(0, 6), 0);
+    }
+  }
   if (kind === 'cactus' || kind === 'sparse' || kind === 'none') {
     // dry shrubs and tumbleweed
     const n = kind === 'none' ? 0 : quality === 'low' ? 200 : 520;
@@ -374,7 +388,7 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
       const s = rng.range(0.35, k ? 1.4 : 2.8) * (slope > 0.4 ? 1.3 : 1);
       const c = stoneBase.clone().offsetHSL(rng.range(-0.02, 0.02), rng.range(-0.05, 0.05), rng.range(-0.1, 0.08));
       if (green && rng.chance(0.3) && snow < 0.3) c.lerp(base, 0.3);
-      if (snow > 0.3) c.lerp(new THREE.Color('#e8eef4'), 0.25 * snow);
+      if (snow > 0.3) c.lerp(new THREE.Color('#4e5662'), 0.45 * snow);
       const lowest = Math.min(t.height(x, z), t.height(x + s, z), t.height(x - s, z), t.height(x, z + s), t.height(x, z - s));
       put(`rock${Math.floor(rng.next() * 3)}` as PartKey, x, lowest - s * (0.15 + Math.min(0.4, slope * 0.35)), z, s * rng.range(0.9, 1.3), s * rng.range(0.55, 1), s * rng.range(0.9, 1.3), c, rng.range(-0.3, 0.3), rng.range(0, 6), rng.range(-0.3, 0.3));
       if (s > 1.3) colliders.push({ type: 'circle', x, z, hw: s * 0.8, hd: 0 });

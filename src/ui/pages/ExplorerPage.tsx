@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExplorerScene } from '../../explorer/ExplorerScene';
 import { Minimap } from '../../explorer/Minimap';
 import { TOPICS, respond, type Topic } from '../../explorer/dialogue';
-import { playerState, useExplorer } from '../../explorer/explorerStore';
+import { playerState, sceneDebug, useExplorer } from '../../explorer/explorerStore';
 import { buildColliderGrid, generateLayout, settlementRadius, wildLayout } from '../../explorer/layout';
 import { generateVegetation } from '../../explorer/vegetation';
 import { generateCloudCity } from '../../explorer/cloudCity';
@@ -96,6 +96,7 @@ function Explorer({ target }: { target: Target }) {
   }, [cloudCity, settlement, planet.id, regionIndex, terrain, region.name]);
   const quality = useApp((s) => s.settings.quality);
   const vegetation = useMemo(() => generateVegetation(terrain, layout, quality), [terrain, layout, quality]);
+  sceneDebug.footprints = vegetation.structures.footprints;
   // buildings, landmarks, tree trunks and large rocks all block movement
   const colliders = useMemo(() => buildColliderGrid([...layout.colliders, ...vegetation.colliders]), [layout, vegetation]);
   const [ready, setReady] = useState(false);

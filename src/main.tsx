@@ -21,7 +21,7 @@ createRoot(document.getElementById('root')!).render(
 
 // Small debugging/automation surface (used by the end-to-end script).
 Promise.all([import('./state/store'), import('./explorer/explorerStore'), import('./state/runner'), import('./explorer/Crowd')]).then(([store, ex, runner, crowd]) => {
-  (window as unknown as { __genesis: unknown }).__genesis = { store, sim: runner.sim, crowd: crowd.crowdStats, player: ex.playerState, commands: ex.playerCommands, npcs: ex.npcPositions, explorer: ex.useExplorer, ambient: audio.ambient };
+  (window as unknown as { __genesis: unknown }).__genesis = { store, sim: runner.sim, crowd: crowd.crowdStats, player: ex.playerState, commands: ex.playerCommands, npcs: ex.npcPositions, explorer: ex.useExplorer, scene: ex.sceneDebug, ambient: audio.ambient };
 });
 
 boot().catch((e: Error) => {

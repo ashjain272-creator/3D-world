@@ -62,6 +62,7 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
   });
   const dunes = t.look.vegetation === 'cactus';
   const snowAmt = t.look.snow ?? 0;
+  const glacier = snowAmt >= 0.95;
   // mountains carry snow caps above ~70% of their relief
   const snowLine = t.look.amplitude >= 40 ? t.flatHeight + t.look.amplitude * 0.75 : 1e4;
   // Ground: vertex colours broken up by procedural detail so it never reads as flat paint.
@@ -91,16 +92,51 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
           float strata = evn(vec2(vWPos.y * 1.6 + efbm(vWPos.xz * 0.15) * 3.0, 1.0));
           diffuseColor.rgb *= mix(1.0, 0.78 + 0.34 * strata, steep);
           normal = ebumpW(normal, gg, vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), mix(0.05, 0.11, steep) * gf);
-          ${dunes ? `// wind ripples across the sand
-          float rip = sin((vWPos.x * 0.8 + vWPos.z * 0.35) * 2.2 + efbm(vWPos.xz * 0.08) * 9.0);
-          diffuseColor.rgb *= 0.95 + 0.06 * rip * (1.0 - steep);` : ''}
+          ${dunes ? `// sand: pale sun-bleached crests, warmer troughs, wind ripples, red rock outcrops with strata, cracked clay flats
+          float rel = clamp((vWPos.y - ${(t.flatHeight - 4).toFixed(1)}) / 16.0, 0.0, 1.0);
+          vec3 sandLo = vec3(0.74, 0.5, 0.3);
+          vec3 sandHi = vec3(0.95, 0.8, 0.58);
+          vec3 sand = mix(sandLo, sandHi, rel) * (0.92 + 0.12 * efbm(vWPos.xz * 0.04));
+          sand = mix(sand, sand * vec3(1.08, 0.88, 0.76), smoothstep(0.55, 0.8, efbm(vWPos.xz * 0.015 + 4.0)) * 0.6);
+          float rip = sin((vWPos.x * 0.8 + vWPos.z * 0.35) * 2.6 + efbm(vWPos.xz * 0.08) * 9.0);
+          sand *= 0.95 + 0.07 * rip * (1.0 - steep);
+          float rockMask = smoothstep(0.42, 0.7, steep + max(0.0, vWPos.y - ${(t.flatHeight + 14).toFixed(1)}) * 0.04);
+          float strataD = evn(vec2(vWPos.y * 1.4, vWPos.x * 0.02)) * 0.6 + evn(vec2(vWPos.y * 4.0, vWPos.z * 0.05)) * 0.4;
+          vec3 rockC = mix(vec3(0.55, 0.28, 0.17), vec3(0.78, 0.5, 0.32), strataD) * (0.85 + 0.25 * efbm(vWPos.xz * 0.3));
+          vec3 desertCol = mix(sand, rockC, rockMask);
+          float playa = smoothstep(${(t.flatHeight - 6).toFixed(1)}, ${(t.flatHeight - 8).toFixed(1)}, vWPos.y) * (1.0 - smoothstep(0.05, 0.25, steep));
+          // dried mud: proper Voronoi cell borders (second-nearest minus nearest), fading with distance
+          vec2 cp = vWPos.xz * 0.9;
+          vec2 ci = floor(cp); vec2 cf = fract(cp);
+          float f1 = 8.0; float f2 = 8.0;
+          for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) {
+            vec2 o = vec2(float(i), float(j));
+            vec2 pt = o + vec2(eh21(ci + o), eh21(ci + o + 17.0)) * 0.85;
+            float dd = length(cf - pt);
+            if (dd < f1) { f2 = f1; f1 = dd; } else if (dd < f2) { f2 = dd; }
+          }
+          float crackLine = (1.0 - smoothstep(0.02, 0.07, f2 - f1)) * (1.0 - smoothstep(25.0, 60.0, length(vViewPosition)));
+          vec3 clay = vec3(0.84, 0.74, 0.6) * (0.94 + 0.1 * eh21(ci)) * (1.0 - 0.4 * crackLine);
+          diffuseColor.rgb = mix(desertCol, clay, playa);` : ''}
           // snow: settles on flat ground everywhere on cold worlds, above the snowline elsewhere
           float ny = abs(normalize(vGN).y);
           float snowCover = max(${snowAmt.toFixed(2)} * smoothstep(0.62, 0.86, ny), smoothstep(${(snowLine - 6).toFixed(1)}, ${(snowLine + 6).toFixed(1)}, vWPos.y + efbm(vWPos.xz * 0.05) * 10.0) * smoothstep(0.5, 0.78, ny));
           snowCover *= 0.75 + 0.25 * smoothstep(0.35, 0.6, efbm(vWPos.xz * 0.12));
-          vec3 snowCol = mix(vec3(0.78, 0.85, 0.94), vec3(0.97, 0.98, 1.0), efbm(vWPos.xz * 0.3) * 0.6 + 0.4);
+          // wind-carved snow (sastrugi): long ridges across the prevailing wind, blue in the hollows
+          float sast = evn(vec2(vWPos.x * 0.12 + efbm(vWPos.xz * 0.05) * 4.0, vWPos.z * 0.9));
+          vec3 snowCol = mix(vec3(0.66, 0.76, 0.9), vec3(0.9, 0.93, 0.97), smoothstep(0.2, 0.75, sast * 0.7 + efbm(vWPos.xz * 0.2) * 0.3));
+          ${snowAmt > 0.4 ? `// exposed rock on steep ground goes dark and blue-grey, with snow caught on its ledges
+          float ledge = smoothstep(0.45, 0.65, evn(vec2(vWPos.y * 1.8, vWPos.x * 0.03)));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.24, 0.27, 0.32) * (0.8 + 0.4 * efbm(vWPos.xz * 0.4)), steep * 0.85);
+          snowCover = max(snowCover, steep * ledge * 0.7);` : ''}
           diffuseColor.rgb = mix(diffuseColor.rgb, snowCol, clamp(snowCover, 0.0, 1.0));
           roughnessFactor = mix(roughnessFactor, 0.55, snowCover);
+          ${glacier ? `// glacier: patches of blue ice with dark crevasses
+          float gl = smoothstep(0.52, 0.62, efbm(vWPos.xz * 0.012 + 3.0)) * (1.0 - steep);
+          float crev = 1.0 - smoothstep(0.0, 0.035, abs(evn(vec2(vWPos.x * 0.05, vWPos.z * 0.2)) - 0.5));
+          vec3 ice = mix(vec3(0.42, 0.7, 0.86), vec3(0.72, 0.88, 0.96), efbm(vWPos.xz * 0.3)) * (1.0 - 0.75 * crev);
+          diffuseColor.rgb = mix(diffuseColor.rgb, ice, gl);
+          roughnessFactor = mix(roughnessFactor, 0.15, gl);` : ''}
           // glints: tiny ice facets catching the light near the camera
           float glint = step(0.996, eh21(floor(vWPos.xz * 9.0))) * snowCover * (1.0 - smoothstep(4.0, 30.0, length(vViewPosition)));
           totalEmissiveRadiance += vec3(0.9, 0.95, 1.0) * glint * 0.8;
@@ -108,7 +144,7 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
       );
     };
     return m;
-  }, [dunes, snowAmt, snowLine]);
+  }, [dunes, snowAmt, snowLine, glacier, t.flatHeight]);
   // Water: moving ripples in the normal, sky reflection at grazing angles.
   const waterMat = useMemo(() => {
     if (t.look.frozen) return iceMaterial();

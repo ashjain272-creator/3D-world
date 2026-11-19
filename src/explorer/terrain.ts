@@ -107,7 +107,28 @@ export function generateTerrain(planet: Planet, regionIndex: number, biome: Biom
       f *= 2.1;
     }
     let h = (s / norm) * look.amplitude;
-    if (dunes) h += Math.sin((x + n2(x / 90, z / 90) * 60) / 22) * 2.2;
+    if (dunes) {
+      // transverse dunes: asymmetric crests (gentle windward slope, steep slip face) that
+      // meander and break up, with small ripples on top and rocky outcrops poking through
+      const warp = n2(x / 140, z / 140) * 90;
+      const ph = (x * 0.8 + z * 0.35 + warp) / 34;
+      const saw = ph - Math.floor(ph);
+      const crest = saw < 0.7 ? saw / 0.7 : (1 - saw) / 0.3;
+      const strength = 0.55 + 0.45 * n2(x / 210 + 9, z / 210 - 4);
+      const c2 = crest * crest * (3 - 2 * crest);
+      h = h * 0.45 + c2 * 6.5 * Math.max(0, strength) + Math.sin((x + z * 0.4) / 9 + warp * 0.05) * 0.4;
+      // outcrops: ridged rock that rises out of the sand in a few places
+      const rock = 1 - Math.abs(n2(x / 75 - 30, z / 75 + 12)) * 2;
+      // flat-topped buttes rather than spikes
+      if (rock > 0.6) h += Math.min((rock - 0.6) * 60, 8 + 4 * n2(x / 40, z / 40));
+      // playa: flat, cracked clay basins
+      const basin = n2(x / 180 + 50, z / 180 - 50);
+      if (basin > 0.45) h = h * (1 - Math.min(1, (basin - 0.45) * 5)) + (basin - 0.45) * -6;
+    }
+    if (biome === 'ice' || biome === 'tundra') {
+      // wind-sculpted snow drifts
+      h += Math.pow(Math.max(0, n2(x / 60 + 3, z / 22)), 2) * 3;
+    }
     // Edge mountains frame the playable area.
     const edge = Math.max(Math.abs(x), Math.abs(z)) / (size / 2);
     if (edge > 0.72) h += Math.pow((edge - 0.72) / 0.28, 2) * look.amplitude * 1.6 + 8;

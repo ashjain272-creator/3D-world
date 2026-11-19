@@ -50,7 +50,7 @@ export function ExplorerScene(p: Props) {
       onCreated={() => requestAnimationFrame(() => requestAnimationFrame(() => p.onReady?.()))}
     >
       <Suspense fallback={null}>
-        <SkyWeather planet={p.planet} system={p.system} quality={quality} />
+        <SkyWeather planet={p.planet} system={p.system} quality={quality} warm={p.terrain.look.vegetation === 'cactus'} cold={(p.terrain.look.snow ?? 0) >= 0.45} bounce={(p.terrain.look.snow ?? 0) >= 0.45 ? '#dfe8f2' : p.terrain.look.mid} />
         {p.cloud ? (
           <CloudPlatforms city={p.cloud} planet={p.planet} />
         ) : (

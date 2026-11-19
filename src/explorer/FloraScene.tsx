@@ -35,7 +35,7 @@ function Parts({ data, quality }: { data: VegetationData; quality: Quality }) {
     const leafSoft = foliageMaterial({ snow, flat: false, double: true, sway: 0.08 });
     const blade = foliageMaterial({ tip: true, flat: false, snow: snow * 0.5 });
     const cactus = texturedMaterial('bark', { color: '#ffffff', roughness: 0.75 });
-    const stone = texturedMaterial('rock', { color: '#ffffff', roughness: 1 });
+    const stone = snowCapped(texturedMaterial('rock', { color: '#ffffff', roughness: 1 }), snow);
     const crystal = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.06, metalness: 0.1, transparent: true, opacity: 0.84, emissive: new THREE.Color('#3f9ad0'), emissiveIntensity: 0.22 });
     const L = (geo: THREE.BufferGeometry, lo: THREE.BufferGeometry | null, mat: THREE.Material, near: number, farD: number, cast = true): LodLevel[] =>
       lo ? [{ geometry: geo, material: mat, maxDist: near * far, castShadow: shadows && cast }, { geometry: lo, material: mat, maxDist: farD * far }] : [{ geometry: geo, material: mat, maxDist: farD * far, castShadow: shadows && cast }];
@@ -80,7 +80,8 @@ function Parts({ data, quality }: { data: VegetationData; quality: Quality }) {
   );
 }
 
-const SHAPES: Record<StructShape, THREE.BufferGeometry> = { box: unitBoxBase, cyl: unitCylBase, cone: unitConeBase, pyramid: pyramidBase, hemi: hemiBase };
+const arcBase = new THREE.TorusGeometry(0.5, 0.055, 8, 24, Math.PI);
+const SHAPES: Record<StructShape, THREE.BufferGeometry> = { box: unitBoxBase, cyl: unitCylBase, cone: unitConeBase, pyramid: pyramidBase, hemi: hemiBase, arc: arcBase };
 
 function Structures({ pieces, quality }: { pieces: StructPiece[]; quality: Quality }) {
   const shadows = quality !== 'low';
@@ -93,6 +94,12 @@ function Structures({ pieces, quality }: { pieces: StructPiece[]; quality: Quali
       ice: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.05, metalness: 0.15, transparent: true, opacity: 0.88, emissive: new THREE.Color('#2f7ab0'), emissiveIntensity: 0.18 }),
       snow: texturedMaterial('plaster', { color: '#ffffff', roughness: 0.7 }),
       gold: texturedMaterial('metal', { color: '#ffffff', roughness: 0.3, metalness: 0.75 }),
+      metal: texturedMaterial('metal', { color: '#ffffff', roughness: 0.45, metalness: 0.35 }),
+      // unlit, so each piece glows in its own instance colour (fires, windows, beacons)
+      glow: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }),
+      glowCold: new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.8, toneMapped: false }),
+      bone: texturedMaterial('plaster', { color: '#ffffff', roughness: 0.75 }),
+      dark: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1 }),
     }),
     [],
   );
@@ -144,7 +151,7 @@ function GroundCover({ t, layout, data, quality }: { t: TerrainData; layout: Lay
   const dry = kind === 'cactus';
   const none = kind === 'none' || (t.look.frozen && snow > 0.9 && kind !== 'sparse');
   const R = quality === 'high' ? 42 : 30;
-  const sp = dry ? 1.6 : kind === 'sparse' ? 1.15 : quality === 'high' ? 0.62 : 0.78;
+  const sp = dry ? 1.15 : kind === 'sparse' ? 1.15 : quality === 'high' ? 0.62 : 0.78;
   const n = Math.ceil((2 * R) / sp) ** 2;
   const { camera } = useThree();
   const grass = useRef<THREE.InstancedMesh>(null);
@@ -196,7 +203,7 @@ function GroundCover({ t, layout, data, quality }: { t: TerrainData; layout: Lay
         if (dx * dx + dz * dz > R * R) continue;
         if (layout.radius > 0 && x * x + z * z < (layout.radius + 4) ** 2) continue;
         const patch = noise(x / 22, z / 22) * 0.6 + noise(x / 7 + 40, z / 7) * 0.4;
-        const density = dry ? patch - 0.35 : kind === 'sparse' ? patch + 0.05 - snow * 0.4 : patch + 0.75;
+        const density = dry ? patch - 0.1 : kind === 'sparse' ? patch + 0.05 - snow * 0.4 : patch + 0.75;
         if (r1 * 1.3 > density + 0.35) continue;
         const y = t.height(x, z);
         if (t.waterLevel !== null && y < t.waterLevel + 0.25) continue;
@@ -248,4 +255,24 @@ function GroundCover({ t, layout, data, quality }: { t: TerrainData; layout: Lay
       <instancedMesh ref={flowers} args={[flowerGeo, flowerMat, Math.ceil(n / 5)]} frustumCulled={false} />
     </group>
   );
+}
+
+/** Adds snow lying on the upward-facing surfaces of a textured material (uses its world normal varying). */
+function snowCapped(m: THREE.MeshStandardMaterial, snow: number): THREE.MeshStandardMaterial {
+  if (snow < 0.3) return m;
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = (shader, renderer) => {
+    prev.call(m, shader, renderer);
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <emissivemap_fragment>',
+      `#include <emissivemap_fragment>
+      {
+        float cap = smoothstep(0.25, 0.6, normalize(vTN).y) * ${Math.min(1, snow).toFixed(2)};
+        float edge = 0.85 + 0.15 * evn(vTP.xz * 3.0);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.92, 0.97) * edge, cap);
+        roughnessFactor = mix(roughnessFactor, 0.6, cap);
+      }`,
+    );
+  };
+  return m;
 }

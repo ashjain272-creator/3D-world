@@ -47,3 +47,6 @@ export const useExplorer = create<ExplorerUi>((set, get) => ({
   toggleView: () => set({ firstPerson: !get().firstPerson }),
   setNearbyLandmark: (id) => get().nearbyLandmark !== id && set({ nearbyLandmark: id }),
 }));
+
+/** Diagnostics for automated checks: structure footprints in the current scene. */
+export const sceneDebug: { footprints: { x: number; z: number; r: number }[] } = { footprints: [] };

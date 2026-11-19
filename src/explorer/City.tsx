@@ -385,6 +385,8 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       trunks: [] as { m: THREE.Matrix4 }[],
       leaves: [] as { m: THREE.Matrix4; c: THREE.Color; v: number }[],
       boxes: [] as { m: THREE.Matrix4; c: THREE.Color; x: number; z: number }[],
+      /** Small self-lit pieces: traffic-light lamps, adverts. */
+      lit: [] as { m: THREE.Matrix4; c: THREE.Color; x: number; z: number }[],
     };
     if (layout.style === 'cloud' || layout.style === 'wild') return out;
     const rng = new Rng(Math.round(layout.radius * 31) + layout.buildings.length * 7 + 3);
@@ -467,6 +469,79 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
         }
       }
     }
+    // ── intersections: zebra crossings, traffic lights, manholes; along kerbs: bins, hydrants, bus shelters
+    if (layout.style === 'futuristic' || layout.style === 'frontier') {
+      const B = (x: number, y: number, z: number, sx: number, sy: number, sz: number, c: string, rot = 0, lit = false) => (lit ? out.lit : out.boxes).push({ m: mat(x, y, z, sx, sy, sz, rot), c: new THREE.Color(c), x, z });
+      layout.graph.nodes.forEach(([nxp, nzp], ni) => {
+        const deg = layout.graph.adj[ni]?.length ?? 0;
+        if (deg < 3) return;
+        const futur = layout.style === 'futuristic';
+        for (const nb of layout.graph.adj[ni]) {
+          const [bx, bz] = layout.graph.nodes[nb];
+          const dl = Math.hypot(bx - nxp, bz - nzp) || 1;
+          const ux = (bx - nxp) / dl;
+          const uz = (bz - nzp) / dl;
+          const ang = Math.atan2(ux, uz);
+          const st = layout.streets.find((s) => (s.a[0] === nxp && s.a[1] === nzp && s.b[0] === bx && s.b[1] === bz) || (s.b[0] === nxp && s.b[1] === nzp && s.a[0] === bx && s.a[1] === bz));
+          const w = st?.w ?? 8;
+          if (futur) {
+            // zebra stripes across the road, a little way out from the junction
+            const cx = nxp + ux * (w / 2 + 2.2);
+            const cz = nzp + uz * (w / 2 + 2.2);
+            for (let k = -Math.floor(w / 1.4) / 2; k <= Math.floor(w / 1.4) / 2; k++) B(cx - uz * k * 1.2, y0 + 0.07, cz + ux * k * 1.2, 0.55, 0.02, 3, '#e8ecf0', ang);
+          }
+          // a traffic light on the right-hand corner facing this approach
+          if (rng.chance(futur ? 0.8 : 0.35)) {
+            const px = nxp + ux * (w / 2 + 3.5) + uz * (w / 2 + 1.2);
+            const pz = nzp + uz * (w / 2 + 3.5) - ux * (w / 2 + 1.2);
+            B(px, y0, pz, 0.16, futur ? 4.4 : 3.2, 0.16, futur ? '#3a3e44' : '#2a2a2a');
+            B(px, y0 + (futur ? 3.4 : 2.3), pz, 0.38, 1.1, 0.32, '#1a1c1e', ang);
+            const state = rng.next();
+            B(px - ux * 0.17, y0 + (futur ? 4.25 : 3.15), pz - uz * 0.17, 0.24, 0.24, 0.06, state < 0.45 ? '#ff2a20' : '#3a1210', ang, true);
+            B(px - ux * 0.17, y0 + (futur ? 3.95 : 2.85), pz - uz * 0.17, 0.24, 0.24, 0.06, state >= 0.45 && state < 0.55 ? '#ffb020' : '#3a2a10', ang, true);
+            B(px - ux * 0.17, y0 + (futur ? 3.65 : 2.55), pz - uz * 0.17, 0.24, 0.24, 0.06, state >= 0.55 ? '#20e070' : '#103a1e', ang, true);
+          }
+        }
+        // manhole cover in the junction
+        if (futur && rng.chance(0.6)) B(nxp + rng.range(-2, 2), y0 + 0.075, nzp + rng.range(-2, 2), 0.9, 0.02, 0.9, '#2a2c30', rng.range(0, 1));
+      });
+      for (const s of layout.streets) {
+        const dx = s.b[0] - s.a[0];
+        const dz = s.b[1] - s.a[1];
+        const len = Math.hypot(dx, dz);
+        if (len < 20) continue;
+        const nx = -dz / len;
+        const nz = dx / len;
+        const ang = Math.atan2(dx, dz);
+        for (const side of [1, -1]) {
+          const off = s.w / 2 + 0.9;
+          const at = (k: number) => [s.a[0] + (dx / len) * len * k + nx * off * side, s.a[1] + (dz / len) * len * k + nz * off * side] as const;
+          if (rng.chance(0.5)) {
+            const [x, z] = at(rng.range(0.25, 0.4));
+            if (!blocked(x, z)) B(x, y0, z, 0.55, 0.95, 0.55, layout.style === 'futuristic' ? '#2f4a3a' : '#5a4632');
+          }
+          if (rng.chance(0.3)) {
+            const [x, z] = at(rng.range(0.6, 0.75));
+            if (!blocked(x, z)) {
+              B(x, y0, z, 0.32, 0.75, 0.32, '#c8281e');
+              B(x, y0 + 0.75, z, 0.4, 0.12, 0.4, '#a81e16');
+            }
+          }
+          if (layout.style === 'futuristic' && s.w >= 10 && rng.chance(0.4)) {
+            // bus shelter: back panel, roof, bench and a lit advert
+            const [x, z] = at(0.5);
+            const bx = x + nx * side * 1.4;
+            const bz = z + nz * side * 1.4;
+            if (!blocked(bx, bz)) {
+              B(bx + nx * side * 0.7, y0, bz + nz * side * 0.7, 3.6, 2.5, 0.08, '#9ab4c4', ang + Math.PI / 2);
+              B(bx, y0 + 2.5, bz, 4, 0.12, 1.8, '#d4dbe4', ang + Math.PI / 2);
+              B(bx + nx * side * 0.4, y0 + 0.45, bz + nz * side * 0.4, 3, 0.08, 0.5, '#5a6068', ang + Math.PI / 2);
+              B(bx + (dx / len) * 1.9, y0 + 0.4, bz + (dz / len) * 1.9, 1.2, 1.9, 0.12, '#e8f0ff', ang, true);
+            }
+          }
+        }
+      }
+    }
     return out;
   }, [layout, y0]);
   const leafSets = useMemo(() => [0, 1, 2, 3, 4].map((v) => furniture.leaves.filter((l) => l.v === v)), [furniture]);
@@ -525,6 +600,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       {layout.style === 'futuristic' && <SkyTraffic streets={layout.streets} y={y0} quality={quality} civColor={civColor} />}
       <ContactShadows buildings={layout.buildings} y={y0} />
       <TiledInstances items={furniture.boxes} levels={furnitureLevels} tileSize={90} name="furniture" />
+      <Instanced items={furniture.lit} geometry={unitBox} material={mats.sign} />
       {lineGeo && <mesh geometry={lineGeo} material={mats.glow} />}
       {/* Futuristic */}
       <TiledInstances items={groups.box} levels={boxLevels} tileSize={90} name="buildings" />

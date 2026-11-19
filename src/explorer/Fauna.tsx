@@ -52,7 +52,7 @@ function Birds({ t, vultures, count }: { t: TerrainData; vultures: boolean; coun
         phase: rng.range(0, Math.PI * 2),
         h: rng.range(-4, 4),
         flap: rng.range(6, 10),
-        size: vultures ? rng.range(1.6, 2.2) : rng.range(0.45, 0.7),
+        size: vultures ? rng.range(1.8, 2.4) : rng.range(0.8, 1.15),
       };
     });
   }, [t.seed, vultures, count]);
@@ -83,9 +83,9 @@ function Birds({ t, vultures, count }: { t: TerrainData; vultures: boolean; coun
     birds.forEach((b, i) => {
       // each flock wanders on a slow loop around the player; birds orbit their flock centre
       const fa = time * 0.04 + b.flock * 2.4;
-      const cx = camera.position.x + Math.cos(fa) * (vultures ? 40 : 70);
-      const cz = camera.position.z + Math.sin(fa * 1.3) * (vultures ? 40 : 60);
-      const base = Math.max(t.height(cx, cz), t.waterLevel ?? -1e9) + (vultures ? 55 : 28);
+      const cx = camera.position.x + Math.cos(fa) * (vultures ? 40 : 45);
+      const cz = camera.position.z + Math.sin(fa * 1.3) * (vultures ? 40 : 40);
+      const base = Math.max(t.height(cx, cz), t.waterLevel ?? -1e9) + (vultures ? 50 : 20);
       const a = time * b.speed + b.phase;
       const x = cx + Math.cos(a) * b.r;
       const z = cz + Math.sin(a) * b.r;
@@ -188,8 +188,8 @@ function Fireflies({ t, count }: { t: TerrainData; count: number }) {
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         uniforms: { uNight: nightUniform },
-        vertexShader: 'attribute float blink; varying float vB; void main(){ vB = blink; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = 90.0 / -mv.z; gl_Position = projectionMatrix * mv; }',
-        fragmentShader: 'uniform float uNight; varying float vB; void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(vec3(0.75, 1.0, 0.35) * a * vB * uNight, 1.0); }',
+        vertexShader: 'attribute float blink; varying float vB; void main(){ vB = blink; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = clamp(160.0 / -mv.z, 2.0, 14.0); gl_Position = projectionMatrix * mv; }',
+        fragmentShader: 'uniform float uNight; varying float vB; void main(){ float d = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(vec3(0.85, 1.0, 0.4) * a * vB * uNight * 1.6, 1.0); }',
       }),
     [],
   );
@@ -210,7 +210,7 @@ function Fireflies({ t, count }: { t: TerrainData; count: number }) {
       const x = cx + ox + Math.sin(a) * 1.5;
       const z = cz + oz + Math.cos(a * 1.3) * 1.5;
       pos.setXYZ(i, x, t.height(x, z) + 0.6 + Math.sin(a * 2.1) * 0.4, z);
-      blink.setX(i, Math.max(0, Math.sin(time * 1.6 + ph * 3)) ** 6);
+      blink.setX(i, 0.15 + 0.85 * Math.max(0, Math.sin(time * 1.6 + ph * 3)) ** 3);
     });
     pos.needsUpdate = true;
     blink.needsUpdate = true;

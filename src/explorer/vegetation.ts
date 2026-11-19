@@ -381,6 +381,39 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
     }
   }
 
+  // ── Small things: mushroom rings in damp woods, pebble scatters along shores
+  if ((kind === 'conifer' || kind === 'broadleaf' || kind === 'jungle') && snow < 0.4) {
+    for (let i = 0; i < (quality === 'low' ? 30 : 110); i++) {
+      const x = rng.range(-t.size * 0.45, t.size * 0.45);
+      const z = rng.range(-t.size * 0.45, t.size * 0.45);
+      const h = placeable(x, z);
+      if (h === null || noise(x / 160, z / 160) < 0.05) continue;
+      const cap = new THREE.Color(rng.pick(['#b8322a', '#c89a5a', '#8a5a3a', '#e8dcc8']));
+      const n = 3 + Math.floor(rng.next() * 6);
+      for (let k = 0; k < n; k++) {
+        const a = rng.range(0, 6.28);
+        const r = rng.range(0, 0.9);
+        const s = rng.range(0.6, 1.3);
+        const mx = x + Math.cos(a) * r;
+        const mz = z + Math.sin(a) * r;
+        const my = t.height(mx, mz);
+        put(trunk(), mx, my, mz, 0.18 * s, 0.32 * s, 0.18 * s, new THREE.Color('#ece4d4'), 0, 0, 0);
+        put(blob(), mx, my + 0.33 * s, mz, 0.2 * s, 0.09 * s, 0.2 * s, cap.clone().offsetHSL(0, 0, rng.range(-0.05, 0.05)), 0, rng.range(0, 6), 0);
+      }
+    }
+  }
+  if (t.waterLevel !== null && !t.look.frozen) {
+    for (let i = 0; i < 9000 && (parts.rock2?.length ?? 0) < (quality === 'low' ? 100 : 380); i++) {
+      const x = rng.range(-t.size * 0.47, t.size * 0.47);
+      const z = rng.range(-t.size * 0.47, t.size * 0.47);
+      const h = t.height(x, z);
+      if (h < t.waterLevel - 0.3 || h > t.waterLevel + 1.6) continue;
+      if (layout.radius > 0 && Math.hypot(x, z) < layout.radius + 6) continue;
+      const s = rng.range(0.08, 0.3);
+      put('rock2', x, h - s * 0.3, z, s * 1.3, s * 0.7, s, new THREE.Color(t.look.cliff).offsetHSL(rng.range(-0.03, 0.03), -0.05, rng.range(-0.1, 0.15)), 0, rng.range(0, 6), 0);
+    }
+  }
+
   // ── Rocks: clustered, three shapes, mossy tint in green places, frosted when cold.
   const stoneBase = new THREE.Color(t.look.cliff);
   const rockCount = quality === 'low' ? 140 : 360;

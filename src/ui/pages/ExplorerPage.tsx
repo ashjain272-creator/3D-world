@@ -6,6 +6,7 @@ import { playerState, sceneDebug, useExplorer } from '../../explorer/explorerSto
 import { buildColliderGrid, generateLayout, settlementRadius, wildLayout } from '../../explorer/layout';
 import { generateVegetation } from '../../explorer/vegetation';
 import { generateCloudCity } from '../../explorer/cloudCity';
+import { generateHighways } from '../../explorer/roadNetwork';
 import { generateTerrain } from '../../explorer/terrain';
 import { OCC_COLORS } from '../../explorer/People';
 import { hasSurface } from '../../sim/generate/cosmos';
@@ -97,8 +98,20 @@ function Explorer({ target }: { target: Target }) {
   const quality = useApp((s) => s.settings.quality);
   const vegetation = useMemo(() => generateVegetation(terrain, layout, quality), [terrain, layout, quality]);
   sceneDebug.footprints = vegetation.structures.footprints;
+  sceneDebug.shore = useMemo(() => {
+    if (terrain.waterLevel === null) return null;
+    for (let r = 10; r < 340; r += 6)
+      for (let k = 0; k < 24; k++) {
+        const x = layout.spawn.x + Math.cos(k * 0.2618) * r;
+        const z = layout.spawn.z + Math.sin(k * 0.2618) * r;
+        if (Math.abs(terrain.height(x, z) - terrain.waterLevel - 0.3) < 0.25) return [x, z];
+      }
+    return null;
+  }, [terrain, layout]);
   // buildings, landmarks, tree trunks and large rocks all block movement
-  const colliders = useMemo(() => buildColliderGrid([...layout.colliders, ...vegetation.colliders]), [layout, vegetation]);
+  const highways = useMemo(() => generateHighways(layout, terrain), [layout, terrain]);
+  sceneDebug.roads = highways ? highways.roads.map((r) => ({ kind: r.kind, pts: r.pts.filter((_, i) => i % 4 === 0).map((p) => [p.x, p.y, p.z]) })) : [];
+  const colliders = useMemo(() => buildColliderGrid([...layout.colliders, ...vegetation.colliders, ...(highways?.colliders ?? [])]), [layout, vegetation, highways]);
   const [ready, setReady] = useState(false);
   const [picker, setPicker] = useState(false);
   const toast = useApp((s) => s.toast);
@@ -181,7 +194,7 @@ function Explorer({ target }: { target: Target }) {
 
   return (
     <div className="canvas-wrap" data-testid="explorer-page">
-      <ExplorerScene planet={planet} system={system} settlement={settlement} terrain={terrain} layout={layout} vegetation={vegetation} colliders={colliders} civColor={civColor} cloud={cloudCity ?? undefined} locationKey={target.key} onInteract={interact} onPick={pick} onReady={() => setReady(true)} />
+      <ExplorerScene planet={planet} system={system} settlement={settlement} terrain={terrain} layout={layout} vegetation={vegetation} colliders={colliders} civColor={civColor} highways={highways} cloud={cloudCity ?? undefined} locationKey={target.key} onInteract={interact} onPick={pick} onReady={() => setReady(true)} />
       <div className="loading-veil" style={{ opacity: ready ? 0 : 1, pointerEvents: 'none' }}>
         <div style={{ textAlign: 'center' }}>
           <div className="eyebrow">Descending to</div>

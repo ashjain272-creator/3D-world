@@ -7,6 +7,8 @@ import { City } from './City';
 import { TerrainMesh } from './Landscape';
 import { Vegetation } from './FloraScene';
 import { Fauna } from './Fauna';
+import { Highways } from './Highways';
+import type { HighwayData } from './roadNetwork';
 import type { ColliderGrid, Layout } from './layout';
 import type { VegetationData } from './vegetation';
 import { Inhabitants } from './People';
@@ -30,6 +32,8 @@ interface Props {
   civColor: string;
   /** Gas/ice giant visit: floating platforms instead of terrain. */
   cloud?: CloudCity;
+  /** Elevated multi-level road network (futuristic cities). */
+  highways?: HighwayData | null;
   locationKey: string;
   onInteract: () => void;
   onPick: (id: string) => void;
@@ -61,6 +65,7 @@ export function ExplorerScene(p: Props) {
             <Fauna t={p.terrain} quality={quality} city={!!p.settlement} />
           </>
         )}
+        {p.highways && <Highways data={p.highways} quality={quality} civColor={p.civColor} />}
         <City layout={p.layout} t={p.terrain} quality={quality} civColor={p.civColor} />
         {p.settlement && <Inhabitants settlementId={p.settlement.id} layout={p.layout} t={p.terrain} onPick={p.onPick} />}
         {(p.settlement || p.cloud) && <Crowd layout={p.layout} t={p.terrain} population={p.settlement?.population ?? 3000} quality={quality} planetId={p.planet.id} />}

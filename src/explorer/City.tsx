@@ -3,6 +3,8 @@ import { Html } from '@react-three/drei';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { Smoke } from './Smoke';
+import { Districts } from './Districts';
+import { generateDistricts } from './districts';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Building, BuildingKind, Layout, PlacedLandmark } from './layout';
 import { TiledInstances } from './lod';
@@ -19,7 +21,7 @@ export const nightUniform = { value: 0 };
  * A standard material whose vertical faces show procedurally lit windows,
  * computed in world space so any instance scale gets correctly sized floors.
  */
-function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: number; lit: [number, number, number]; density: number; glass: [number, number, number]; roughness?: number; metalness?: number; accent?: THREE.Color }) {
+function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: number; lit: [number, number, number]; density: number; glass: [number, number, number]; roughness?: number; metalness?: number; accent?: THREE.Color; ground?: { value: number } }) {
   const m = new THREE.MeshStandardMaterial({ roughness: opts.roughness ?? 0.6, metalness: opts.metalness ?? 0.2 });
   const F = opts.floor.toFixed(2);
   const C = opts.col.toFixed(2);
@@ -130,6 +132,9 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
     shader.uniforms.uSky = env.uSky;
     shader.uniforms.uDay = env.uDay;
     shader.uniforms.uAccent = { value: opts.accent ?? new THREE.Color(0, 0, 0) };
+    // facades are measured from the street, not from each box's base, so the stacked tiers of
+    // set-back towers continue the floors below instead of each starting with a shopfront
+    shader.uniforms.uGround = opts.ground ?? { value: -1e5 };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nvarying vec4 vInst;')
       .replace(
@@ -153,7 +158,7 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
         vWNorm = normalize(mat3(modelMatrix) * n);`,
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nuniform float uNight;\nuniform float uTime;\nuniform float uDay;\nuniform vec3 uSky;\nuniform vec3 uAccent;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nvarying vec4 vInst;\n${NOISE_GLSL}\n${BUMP_GLSL}`)
+      .replace('#include <common>', `#include <common>\nuniform float uNight;\nuniform float uTime;\nuniform float uDay;\nuniform vec3 uSky;\nuniform vec3 uAccent;\nuniform float uGround;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nvarying vec4 vInst;\n${NOISE_GLSL}\n${BUMP_GLSL}`)
       .replace(
         '#include <normal_fragment_maps>',
         `#include <normal_fragment_maps>
@@ -168,8 +173,11 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
         {
-          float hy = vWPos.y - vInst.y;
-          float topH = vInst.w;
+          // with a street level set, every tier is measured from the street; without one (cloud
+          // decks at many heights, frontier towns) each box is measured from its own base
+          float baseY = uGround > -1e4 ? uGround : vInst.y;
+          float hy = vWPos.y - baseY;
+          float topH = vInst.y - baseY + vInst.w;
           float bh = eh21(floor(vInst.xz * 0.37) + 3.1);
           if (abs(vWNorm.y) < 0.5) {
             float hc = abs(vWNorm.x) > 0.5 ? vWPos.z - vInst.z : vWPos.x - vInst.x;
@@ -289,10 +297,12 @@ const roofGeo = (() => {
 
 export function City({ layout, t, quality, civColor }: { layout: Layout; t: TerrainData; quality: 'low' | 'medium' | 'high'; civColor: string }) {
   const y0 = t.flatHeight;
+  // street level for the facade shader (futuristic cities stand on one flat level)
+  const groundU = useMemo(() => ({ value: layout.style === 'futuristic' ? y0 : -1e5 }), [layout.style, y0]);
   const shadows = quality === 'high';
   const mats = useMemo(
     () => ({
-      futuristic: windowMaterial({ style: 'glass', floor: 3.4, col: 1.7, lit: [0.85, 0.92, 1.0], density: 0.55, glass: [0.1, 0.17, 0.26], metalness: 0.12, roughness: 0.5, accent: new THREE.Color(civColor) }),
+      futuristic: windowMaterial({ style: 'glass', floor: 3.4, col: 1.7, lit: [0.85, 0.92, 1.0], density: 0.55, glass: [0.1, 0.17, 0.26], metalness: 0.12, roughness: 0.5, accent: new THREE.Color(civColor), ground: groundU }),
       frontier: windowMaterial({ style: 'timber', floor: 3.0, col: 3.2, lit: [1.0, 0.72, 0.38], density: 0.6, glass: [0.1, 0.11, 0.13], roughness: 0.95, metalness: 0 }),
       plain: texturedMaterial('plaster', { roughness: 0.8, metalness: 0.05 }),
       pave: texturedMaterial('paving', { color: layout.style === 'futuristic' ? '#8b939d' : layout.style === 'organic' ? '#6f7f4c' : '#a39478', roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1 }),
@@ -306,7 +316,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       glow: new THREE.MeshStandardMaterial({ color: '#000000', emissive: new THREE.Color(civColor), emissiveIntensity: 1 }),
       warm: new THREE.MeshStandardMaterial({ color: '#2a1a0a', emissive: new THREE.Color('#ffb060'), emissiveIntensity: 1 }),
     }),
-    [civColor, layout.style],
+    [civColor, layout.style, groundU],
   );
   // Building LOD: lit-window shader up close, a flat material far away, culled beyond.
   const boxLevels = useMemo(
@@ -331,6 +341,8 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
   useEffect(() => () => Object.values(mats).forEach((m) => m.dispose()), [mats]);
 
   const groups = useMemo(() => buildGroups(layout.buildings, y0, layout.style, civColor), [layout, y0, civColor]);
+  // mansions, souk, mall, places of worship and palm boulevards (palms only on warm worlds)
+  const districts = useMemo(() => generateDistricts(layout, y0, (t.look.snow ?? 0) < 0.3), [layout, y0, t]);
   const streetGeo = useMemo(() => {
     const parts: THREE.BufferGeometry[] = [];
     for (const s of layout.streets) {
@@ -604,6 +616,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       ))}
       <LightPools lights={layout.lights} y={y0} style={layout.style} />
       {quality !== 'low' && <Smoke sources={groups.smoke} perSource={18} />}
+      {districts.pieces.length > 0 && <Districts data={districts} quality={quality} />}
       <Instanced items={groups.signs} geometry={unitBox} material={mats.sign} />
       {layout.style === 'futuristic' && <SkyTraffic streets={layout.streets} y={y0} quality={quality} civColor={civColor} />}
       <ContactShadows buildings={layout.buildings} y={y0} />
@@ -690,6 +703,83 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style'], 
     const kind: BuildingKind = b.kind;
     const tone = (arr: string[]) => new THREE.Color(arr[Math.floor(b.tone * arr.length) % arr.length]);
     switch (kind) {
+      case 'supertall': {
+        // sculpted supertalls, five silhouettes: a Y-plan set-back needle with a spire, a twisting
+        // tower, a curved sail, twin towers joined by a sky bridge, and an octagonal crowned tower
+        const col = tone(futTones);
+        const glassy = col.clone().lerp(new THREE.Color('#9fb8cc'), 0.35);
+        const box = (x: number, y: number, z: number, w: number, h: number, d: number, rot = 0, c = glassy) => g.box.push({ m: mat(x, y, z, w, h, d, rot), c, x, z });
+        const variant = Math.floor(b.tone * 5) % 5;
+        const H = b.h;
+        // lobby podium with a glowing band
+        box(b.x, y0, b.z, b.w * 1.3, 8, b.d * 1.3, 0, col.clone().multiplyScalar(0.85));
+        g.glowBits.push({ m: mat(b.x, y0 + 7.6, b.z, b.w * 1.32, 0.25, b.d * 1.32) });
+        let topY = y0 + H;
+        if (variant === 0) {
+          const tiers = 7;
+          let y = y0;
+          for (let k = 0; k < tiers; k++) {
+            const sc = 1 - k * 0.11;
+            const th = (H * 0.8) / tiers;
+            for (const a of [0, Math.PI / 3, (2 * Math.PI) / 3]) box(b.x, y, b.z, b.w * 1.05 * sc, th, b.d * 0.38 * sc, a);
+            y += th;
+          }
+          g.antenna.push({ m: mat(b.x, y, b.z, 1.6, H * 0.2, 1.6) });
+          g.antenna.push({ m: mat(b.x, y, b.z, 3.2, H * 0.05, 3.2) });
+          topY = y + H * 0.2;
+        } else if (variant === 1) {
+          const n = 18;
+          for (let k = 0; k < n; k++) box(b.x, y0 + (H * k) / n, b.z, b.w * 0.92, H / n + 0.02, b.d * 0.92, (k * Math.PI) / 2 / n);
+          g.caps.push({ m: mat(b.x, topY, b.z, b.w * 0.6, 0.6, b.d * 0.6, Math.PI / 2) });
+        } else if (variant === 2) {
+          const n = 12;
+          for (let k = 0; k < n; k++) {
+            const f = 1 - Math.pow(k / n, 1.7) * 0.78;
+            const dd = b.d * f;
+            box(b.x, y0 + (H * k) / n, b.z - b.d / 2 + dd / 2, b.w * 0.85, H / n + 0.02, dd);
+            g.glowBits.push({ m: mat(b.x, y0 + (H * (k + 1)) / n - 0.4, b.z - b.d / 2 + dd, b.w * 0.86, 0.2, 0.2) });
+          }
+          g.antenna.push({ m: mat(b.x, topY, b.z - b.d * 0.35, 0.8, H * 0.12, 0.8) });
+          topY += H * 0.12;
+        } else if (variant === 3) {
+          for (const s of [-1, 1]) {
+            const tx = b.x + s * b.w * 0.3;
+            const th = s < 0 ? H : H * 0.93;
+            box(tx, y0, b.z, b.w * 0.42, th * 0.7, b.d * 0.8);
+            box(tx, y0 + th * 0.7, b.z, b.w * 0.34, th * 0.22, b.d * 0.66);
+            box(tx, y0 + th * 0.92, b.z, b.w * 0.24, th * 0.08, b.d * 0.48);
+            g.antenna.push({ m: mat(tx, y0 + th, b.z, 0.7, 16, 0.7) });
+            g.glowBits.push({ m: mat(tx, y0 + th + 16, b.z, 0.9, 0.9, 0.9) });
+          }
+          // sky bridge between the towers
+          box(b.x, y0 + H * 0.58, b.z, b.w * 0.3, 6, b.d * 0.4, 0, col.clone().multiplyScalar(0.9));
+          g.glowBits.push({ m: mat(b.x, y0 + H * 0.58 - 0.2, b.z, b.w * 0.3, 0.2, b.d * 0.42) });
+          topY += 16;
+        } else {
+          const tiers = 4;
+          let y = y0;
+          for (let k = 0; k < tiers; k++) {
+            const sc = 1 - k * 0.14;
+            const th = (H * 0.88) / tiers;
+            box(b.x, y, b.z, b.w * 0.9 * sc, th, b.d * 0.9 * sc);
+            box(b.x, y, b.z, b.w * 0.9 * sc, th, b.d * 0.9 * sc, Math.PI / 4);
+            g.glowBits.push({ m: mat(b.x, y + th - 0.3, b.z, b.w * 0.92 * sc, 0.25, b.d * 0.92 * sc, Math.PI / 4) });
+            y += th;
+          }
+          // a crown of lit fins around a glass lantern
+          for (let k = 0; k < 8; k++) {
+            const a = (k / 8) * Math.PI * 2;
+            const r0 = b.w * 0.3;
+            g.glowBits.push({ m: mat(b.x + Math.cos(a) * r0, y, b.z + Math.sin(a) * r0, 0.5, H * 0.1, 0.5) });
+          }
+          box(b.x, y, b.z, b.w * 0.4, H * 0.08, b.d * 0.4, Math.PI / 8);
+          g.antenna.push({ m: mat(b.x, y + H * 0.08, b.z, 0.8, H * 0.1, 0.8) });
+          topY = y + H * 0.18;
+        }
+        // red aviation light at the very top
+        g.signs.push({ m: mat(b.x, topY, b.z, 0.6, 0.6, 0.6), c: new THREE.Color('#ff3426') });
+        break;
+      }
       case 'tower':
       case 'block':
       case 'slab': {

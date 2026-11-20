@@ -1,7 +1,13 @@
 import { Rng, clamp } from '../sim/rng';
 import type { ArchitectureStyle, Landmark, Settlement } from '../sim/types';
 
-export type BuildingKind = 'tower' | 'block' | 'slab' | 'dome' | 'treehouse' | 'pod' | 'house' | 'hall' | 'windmill' | 'silo';
+export type BuildingKind =
+  | 'tower' | 'block' | 'slab' | 'dome' | 'treehouse' | 'pod' | 'house' | 'hall' | 'windmill' | 'silo'
+  // futuristic districts
+  | 'supertall' | 'villa' | 'shop' | 'mall' | 'mosque' | 'temple';
+
+/** Districts of a futuristic city (see `futuristic`). */
+export type District = 'downtown' | 'mixed' | 'souk' | 'villas';
 
 export interface Building {
   x: number;
@@ -14,6 +20,8 @@ export interface Building {
   role: 'home' | 'work' | 'civic';
   tone: number; // 0..1 colour variation
   door: [number, number];
+  /** District the building stands in (futuristic cities only). */
+  district?: District;
 }
 
 export interface PlacedLandmark {
@@ -161,26 +169,96 @@ function futuristic(s: Settlement, rng: Rng): Layout {
   const target = buildingCount(s);
   const cells: [number, number][] = [];
   for (let i = -n; i < n; i++) for (let j = -n; j < n; j++) cells.push([i, j]);
-  rng.shuffle(cells);
   const plaza = { x: 0, z: 0, r: 30 };
-  for (const [i, j] of cells) {
-    const cx = (i + 0.5) * spacing;
-    const cz = (j + 0.5) * spacing;
-    const dc = Math.hypot(cx, cz);
-    if (dc > R - 10 || dc < plaza.r + 4) continue;
+  // Districts, in the manner of a Gulf city: a downtown of supertalls around the central
+  // plaza, a souk quarter of low arcaded shophouses with a mall in one sector, a villa
+  // district of mansions on large plots in another, and mixed towers and blocks elsewhere.
+  const big = s.kind === 'capital' || s.kind === 'city';
+  const turn = rng.range(0, Math.PI * 2);
+  const sector = (x: number, z: number) => (((Math.atan2(z, x) - turn) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const districtOf = (x: number, z: number): District => {
+    const dc = Math.hypot(x, z);
+    const a = sector(x, z);
+    if (dc < R * 0.4) return 'downtown';
+    if (a < Math.PI * 0.62 && dc > R * 0.45) return 'villas';
+    if (a > Math.PI * 0.95 && a < Math.PI * 1.45) return 'souk';
+    return 'mixed';
+  };
+  const usable = cells
+    .map(([i, j]) => ({ i, j, x: (i + 0.5) * spacing, z: (j + 0.5) * spacing }))
+    .filter((c) => {
+      const dc = Math.hypot(c.x, c.z);
+      return dc <= R - 10 && dc >= plaza.r + 4;
+    });
+  // one mall, a mosque and a temple on whole cells (the mall in the souk, worship in quieter streets)
+  const special = new Map<string, BuildingKind>();
+  const pick = (want: (d: District, dc: number) => boolean, kind: BuildingKind) => {
+    const opts = usable.filter((c) => !special.has(`${c.i},${c.j}`) && want(districtOf(c.x, c.z), Math.hypot(c.x, c.z)));
+    if (opts.length) {
+      const c = opts[Math.floor(rng.next() * opts.length)];
+      special.set(`${c.i},${c.j}`, kind);
+    }
+  };
+  if (big || s.kind === 'town') pick((d) => d === 'souk', 'mall');
+  pick((d, dc) => (d === 'souk' || d === 'mixed') && dc > R * 0.42, 'mosque');
+  if (big) pick((d, dc) => (d === 'mixed' || d === 'villas') && dc > R * 0.42, 'temple');
+  rng.shuffle(usable);
+  // whole-cell buildings first so the building cap never squeezes them out
+  usable.sort((a, b) => Number(special.has(`${b.i},${b.j}`)) - Number(special.has(`${a.i},${a.j}`)));
+  let signature = false;
+  for (const c of usable) {
     if (buildings.length >= target) break;
+    const { x: cx, z: cz } = c;
+    const dc = Math.hypot(cx, cz);
     const centrality = 1 - dc / R;
-    const lots = rng.chance(0.55) ? 1 : 2;
+    const district = districtOf(cx, cz);
+    const door: [number, number] = [cx, cz - spacing / 2 + 0.01];
+    const role = (r: Building['role']) => r;
+    const sp = special.get(`${c.i},${c.j}`);
+    if (sp) {
+      const size = sp === 'mall' ? 27 : sp === 'mosque' ? 25 : 23;
+      buildings.push({ x: cx, z: cz, w: size, d: size, h: sp === 'mall' ? 15 : sp === 'mosque' ? 12 : 10, rot: 0, kind: sp, role: sp === 'mall' ? 'work' : 'civic', tone: rng.next(), door, district });
+      continue;
+    }
+    if (district === 'villas') {
+      // one mansion per plot, set back from the street behind a garden
+      // the house stands to one side and back from the street; the pool takes the other side
+      const w = rng.range(10.5, 12.5);
+      const d = rng.range(9.5, 11.5);
+      const side = rng.chance(0.5) ? 1 : -1;
+      buildings.push({ x: cx + side * 2.8, z: cz + 1.5, w, d, h: rng.range(7, 9.5), rot: 0, kind: 'villa', role: 'home', tone: rng.next(), door, district });
+      continue;
+    }
+    if (district === 'souk') {
+      // a terrace of two or three shophouses facing the street, wind towers on the roofs
+      const n3 = rng.chance(0.6) ? 3 : 2;
+      const lw = 26 / n3;
+      for (let l = 0; l < n3; l++) {
+        const x = cx - 13 + lw * (l + 0.5);
+        buildings.push({ x, z: cz - 3, w: lw - 0.6, d: rng.range(12, 15), h: rng.range(6.5, 11), rot: 0, kind: 'shop', role: rng.chance(0.75) ? 'work' : 'home', tone: rng.next(), door: [x, cz - spacing / 2 + 0.01], district });
+      }
+      continue;
+    }
+    // downtown plots are whole blocks so the supertalls get room
+    const lots = district === 'downtown' && big ? 1 : rng.chance(0.55) ? 1 : 2;
     for (let l = 0; l < lots; l++) {
       const w = lots === 1 ? rng.range(14, 22) : rng.range(9, 12);
       const d = lots === 1 ? rng.range(14, 22) : rng.range(14, 20);
       const ox = lots === 1 ? 0 : (l === 0 ? -1 : 1) * 6.5;
       const tall = Math.pow(centrality, 1.6);
-      const h = rng.range(12, 26) + tall * rng.range(40, 120) * (s.kind === 'capital' ? 1 : 0.7);
-      const kind: BuildingKind = h > 55 ? 'tower' : rng.chance(0.4) ? 'slab' : 'block';
+      let h = rng.range(12, 26) + tall * rng.range(40, 120) * (s.kind === 'capital' ? 1 : 0.7);
+      if (district === 'downtown') h *= 1.25;
+      let kind: BuildingKind = h > 55 ? 'tower' : rng.chance(0.4) ? 'slab' : 'block';
+      // downtown's tallest become sculpted supertalls; the first beside the plaza is the city's signature
+      if (district === 'downtown' && h > 70 && big) {
+        kind = 'supertall';
+        if (!signature && dc < plaza.r + spacing) {
+          signature = true;
+          h = s.kind === 'capital' ? rng.range(230, 260) : rng.range(170, 200);
+        }
+      }
       const x = cx + ox;
-      const z = cz;
-      buildings.push({ x, z, w, d, h, rot: 0, kind, role: centrality > 0.5 ? (rng.chance(0.7) ? 'work' : 'home') : rng.chance(0.65) ? 'home' : 'work', tone: rng.next(), door: [x, cz - spacing / 2 + 0.01] });
+      buildings.push({ x, z: cz, w, d, h, rot: 0, kind, role: role(centrality > 0.5 ? (rng.chance(0.7) ? 'work' : 'home') : rng.chance(0.65) ? 'home' : 'work'), tone: rng.next(), door, district });
     }
   }
   const lights: [number, number][] = nodes.filter(() => rng.chance(0.85));

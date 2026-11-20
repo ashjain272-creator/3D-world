@@ -49,4 +49,4 @@ export const useExplorer = create<ExplorerUi>((set, get) => ({
 }));
 
 /** Diagnostics for automated checks: structure footprints in the current scene. */
-export const sceneDebug: { footprints: { x: number; z: number; r: number; kind?: string }[]; roads: { kind: string; pts: number[][] }[]; shore: number[] | null; poi?: { mushrooms: [number, number][]; lilies: [number, number][] } } = { footprints: [], roads: [], shore: null };
+export const sceneDebug: { footprints: { x: number; z: number; r: number; kind?: string }[]; roads: { kind: string; pts: number[][] }[]; shore: number[] | null; poi?: { mushrooms: [number, number][]; lilies: [number, number][] }; buildings?: { x: number; z: number; w: number; d: number; h: number; kind: string; district?: string; tone: number }[] } = { footprints: [], roads: [], shore: null };

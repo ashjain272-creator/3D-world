@@ -6,15 +6,26 @@ Side-by-side composites (baseline left, after right): `docs/screenshots/diff/`.
 
 Both sets come from `scripts/e2e.mjs` at 1440×900 in headless Chromium with **SwiftShader (software WebGL, no GPU)**. Each run generates a new random universe, so the scenes show the same screen of different universes, not identical frames.
 
-## Frame rate at medium quality
+## Frame rate (medium and low)
 
-`node scripts/fps-compare.mjs medium http://localhost:4174/=baseline http://localhost:4173/=current`
+`node scripts/fps-compare.mjs <medium|low> http://localhost:4174/=baseline http://localhost:4173/=current`
 
-Both builds were served side by side: the baseline from a worktree at `7527abe` (Step 0) and the current build. Each used seed `fps-compare-7`, medium quality, the simulation paused, and a 6 s `requestAnimationFrame` sample.
+Both builds were served side by side: the baseline from a worktree at `7527abe` (Step 0) and the current build. Each used seed `fps-compare-7`, the simulation paused, and a 6 s `requestAnimationFrame` sample.
 
-**Not run.** The script and a baseline build at `7527abe` are ready, but the comparison was not executed before delivery: the CPU was occupied by the 100-year soak.
+Measured at the end of the visual passes (commit `27ba4d1`), both builds served side by side on the same machine:
 
-Software rendering gives absolute numbers about two orders of magnitude below a real GPU, so only the ratio between builds means anything. So "no frame-rate regression on medium" is **unverified**. Known cost increases on medium: bloom and tone mapping, and a denser galaxy (42k stars). Known savings: LOD tiles and distance culling for buildings, vegetation and figures.
+| Quality | Scene | Baseline fps | Current fps | Current p95 frame |
+|---|---|---|---|---|
+| Medium | Universe | 15.24 | 4.58 | 234 ms |
+| Medium | Explorer (capital) | 2.87 | 1.27 | 967 ms |
+| Low | Universe | 28.95 | 21.48 | 50 ms |
+| Low | Explorer (capital) | 6.69 | 3.54 | 317 ms |
+
+Low was first measured at 16.08 / 2.27 fps; it now renders at a 0.75 pixel ratio, which gave the numbers above.
+
+**There is a frame-rate regression.** On software rendering the current build is about 2–3× slower than the baseline at medium and about 1.3–1.9× slower at low. The baseline drew far less: flat-coloured boxes, a few trees and almost no figures. The current build adds procedural surface shaders on every material, lit-window facades, ground cover, crowds of articulated figures, multi-level highways with traffic, wildlife and post-processing (bloom and tone mapping on medium).
+
+SwiftShader runs every fragment shader on the CPU, so these numbers say how much heavier the scene is, not how it runs on a GPU. That has not been measured. The 55/60 fps targets remain unproven.
 
 ## Screen by screen
 

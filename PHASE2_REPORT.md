@@ -208,9 +208,83 @@ Requested after Phase 2: better UI, more detailed buildings, trees and environme
 
 High is roughly three times more expensive per frame than before; sky reflections and relief account for most of it, which is why both are limited to high. These are software-rendering numbers; nothing has been measured on a GPU. The browser journey now runs at medium by default (`E2E_QUALITY=high` overrides), because high is too slow here to drive.
 
+## Phase 4: world detail passes (colour, nature, desert and ice, living world, highways, figures)
+
+Requested after Phase 3, in order:
+1. Colour theory and variety.
+2. Domes that all look the same, repetitive trees, a night city that looks fake, missing grass.
+3. A desert with more in it, and better icy mountains.
+4. More detail, down to the smallest things.
+5. Multi-level highways.
+6. "Finish everything and make the world perfect."
+
+Commits `a997643` → `27ba4d1`.
+
+**What was added** (current screenshots: `docs/screenshots/after/`, from the final e2e run)
+- **Colour.** City palettes are derived from the civilisation's colour (analogous wall tints, split-complementary accents) and finished with a colour-grade post effect. Each futuristic tower has its own glazing tint (base, bronze, teal, blue or dark) and draws from a wider wall palette.
+- **Organic towns.** Six dome variants: banded low dome, tall beehive, drum with a window ring, drum with a spire, clusters of grown-on rooms, two-tier domes; skylights or chimney pipes on top.
+- **Night.** Windows are lit per apartment: offices go dark, homes light up. Lamp light pools on the street.
+- **Trees.** Species per biome; trees are clustered by noise with a minimum spacing, so there is no grid pattern.
+- **Grass.** Camera-following ground cover (grass and flowers). Green ground also gets clover and dry patches and a blade texture near the camera.
+- **Deserts.** Dunes, flat-topped buttes and cracked clay pans. Adobe villages with a market and a smoking bread oven, stepped temples, an oasis, giant skeletons, obelisks, hoodoos, arches and wells.
+- **Frozen worlds.** Snow on flat ground and above the snowline, wind-carved snow, glacier ice with crevasses. Igloo villages around a smoking campfire, ice caves, ice arches, spires, outposts, and auroras at night.
+- **Living world.** Birds (vultures over deserts), butterflies by day and fireflies at night. Shoreline foam and damp sand, lily pads, mushroom rings, sky traffic, shop signs, frontier props, golden-hour light.
+- **Smoke.** Plumes rise from about a third of frontier chimneys and from campfires and ovens. The whole particle life runs in the vertex shader, so there is no per-frame CPU cost.
+- **Highways** (futuristic cities):
+  - an elevated ring road and two expressways on different levels, with four ramps on pillars;
+  - asphalt with lane markings, lamps, gantries and signs;
+  - ground boulevards;
+  - cars in every lane, in both directions.
+- **Walking on the decks.** The player can walk up the ramps and along the decks. A central barrier blocks the median, and pillars only block the player at street level.
+- **Roofs.** Gardens with trees and railings on low blocks, helipads with perimeter lights, and red aviation lights on tall towers.
+- **People.** Articulated figures replace the capsules for the crowd, named people and the player. Each has an outfit (shirt, trousers, skin tone, hair, long or short hair) and a walk cycle driven by the vertex shader. Distant crowds use a lower-detail figure on medium.
+
+**Defects found and fixed in this pass**
+- **Most important: shared shader programs.** three.js caches compiled programs by the source text of `onBeforeCompile`. That text is the same for every material made by one factory function. So plaster, paving, roof tiles and rock (and several other parameterised materials) were drawn with whichever variant compiled first, which showed up as bark-like streaks on roofs and pavements. Every parameterised material now sets `customProgramCacheKey`. Before and after were checked in screenshots, and the whole tour was re-shot afterwards.
+- **Noise hash.** The GLSL hash used `sin`, which loses precision at large world coordinates. It was replaced with a sin-free hash.
+- **Name labels.** They scaled with distance, so people behind buildings showed as unreadable specks and people beside the camera as huge banners. Labels are now a fixed screen size and are only shown for people the camera can see (a line-of-sight test past buildings) within 30 m.
+- **Glossy streets.** Asphalt gloss patches caught the sun as a white smear and are now matte.
+- **Rain streaks on roofs.** The plaster's vertical rain streaks appeared on roofs and now apply only to walls.
+- **Landmarks in water.** Wild landmarks could stand in a lake; they now move to the nearest dry ground, as the spawn point already did.
+- **Domes from inside.** Domes were invisible from inside (a door seemed to float in the air); they are now double-sided.
+- **Hidden mushroom rings.** Grass hid the mushroom rings; they were enlarged.
+- **Standing on the median.** The player could stand on top of the median barrier.
+
+**Not verified visually.** The street-car wheels and flatter lamps (commit `dfefd0a`) typecheck and render without errors, but no screenshot caught a car close enough to inspect them.
+
+**Verification on the final code**
+- Typecheck: 0 errors.
+- Unit tests: **84 / 84** in 14 files. These include the long simulation and 50-year retention tests (0 dangling links, save 11.05 MB). New tests (`tests/world3d.test.ts`) cover:
+  - deterministic vegetation;
+  - structures that suit the biome;
+  - spawn point and landmarks on dry ground, with nothing at the spawn point;
+  - a ring road, two expressways on different levels, four ramps and pillars;
+  - road sampling on closed loops;
+  - deck surface and median barrier;
+  - line of sight.
+- Browser journey: see the e2e line below.
+- **Frame rate: regressed.** Medians from `scripts/fps-compare.mjs`, software rendering, same seed:
+
+  | Quality | Scene | Baseline | Now |
+  |---|---|---|---|
+  | Medium | Universe | 15.2 fps | 4.6 fps |
+  | Medium | Explorer | 2.9 fps | 1.3 fps |
+  | Low | Universe | 29.0 fps | 21.5 fps |
+  | Low | Explorer | 6.7 fps | 3.5 fps |
+
+  Low now renders at 0.75 resolution; before that it measured 16.1 and 2.3 fps. The baseline scene was much emptier. These figures measure CPU-side shading cost under SwiftShader and say nothing direct about GPU frame rates.
+- Renderer cost on medium (Explorer, from `renderer.info`):
+
+  | Scene | Draw calls | Triangles |
+  |---|---|---|
+  | Futuristic capital | 266 | 457k |
+  | Organic capital | 352 | 542k |
+  | Forest | 338 | 244k |
+  | Desert | 201 | 300k |
+
 ## Limitations and unfinished items
 
-- **Frame-rate targets unproven** (55 fps at 5× in Universe; 60 fps with ≥ 150 figures on medium): no GPU in this environment. Main-thread sim cost and relative fps are reported instead.
+- **Frame-rate targets unproven** (55 fps at 5× in Universe; 60 fps with ≥ 150 figures on medium): no GPU in this environment. Measured relative to the baseline under software rendering, the current build is 2–3× slower at medium (see Phase 4).
 - **E2E screenshots** come from different random universes in each run, so the baseline/after pairs compare screens, not identical frames. A few after-captures predate the last two UI fixes (label overlap and follow-chip placement), as noted in `VISUAL_DIFF.md`.
 - **The system view's outer orbits** still pass under the side panel (unchanged from baseline).
 - **The worker sends a full-world snapshot once at start**, and history whenever maintenance changes it. Very large worlds would want structured-clone transfer of chunks.

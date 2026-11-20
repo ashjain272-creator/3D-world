@@ -4,7 +4,7 @@ import { generateLayout, groundWildLayout, lineOfSight, settlementRadius, wildLa
 import { generateTerrain, type TerrainData } from '../src/explorer/terrain';
 import { generateVegetation } from '../src/explorer/vegetation';
 import { deckSampler, generateHighways, sampleRoad } from '../src/explorer/roadNetwork';
-import { FUT_SPACING, VILLA_STYLES, generateDistricts, villaStyle } from '../src/explorer/districts';
+import { VILLA_STYLES, generateDistricts, villaStyle } from '../src/explorer/districts';
 import type { Biome, World } from '../src/sim/types';
 import { freshWorld } from './helpers';
 
@@ -191,8 +191,18 @@ describe('futuristic districts', () => {
         if (b.kind === 'shop') expect(b.district).toBe('souk');
         if (b.kind === 'supertall') expect(b.district).toBe('downtown');
       }
-      // at most one each of the whole-block landmarks
-      for (const k of ['mall', 'mosque', 'temple']) expect(l.buildings.filter((b) => b.kind === k).length).toBeLessThanOrEqual(1);
+      // several places of worship, spread across the city rather than bunched in one quarter
+      const worship = l.buildings.filter((b) => b.kind === 'mosque' || b.kind === 'temple' || b.kind === 'church');
+      expect(worship.length).toBeGreaterThanOrEqual(s.kind === 'capital' ? 6 : 4);
+      let minGap = Infinity;
+      for (let i = 0; i < worship.length; i++) for (let j = i + 1; j < worship.length; j++) minGap = Math.min(minGap, Math.hypot(worship[i].x - worship[j].x, worship[i].z - worship[j].z));
+      expect(minGap).toBeGreaterThanOrEqual(36 * 2);
+      // and they stand in more than one district and on several sides of the centre
+      expect(new Set(worship.map((b) => b.district)).size).toBeGreaterThanOrEqual(2);
+      const quadrants = new Set(worship.map((b) => `${Math.sign(b.x)},${Math.sign(b.z)}`));
+      expect(quadrants.size).toBeGreaterThanOrEqual(3);
+      // mansion estates on double plots
+      expect(l.buildings.some((b) => b.kind === 'villa' && b.plot && b.plot.w > 50)).toBe(true);
     }
   });
 
@@ -209,16 +219,22 @@ describe('futuristic districts', () => {
     // palms only on warm worlds
     expect(a.pieces.some((p) => p.shape === 'fronds')).toBe(true);
     expect(generateDistricts(l, 0, false).pieces.some((p) => p.shape === 'fronds')).toBe(false);
-    // villa pieces stay inside their plot (the street block)
+    // every villa piece stays inside its plot, and nothing of the city stands on a closed estate street
     for (const v of l.buildings.filter((x) => x.kind === 'villa')) {
-      const px = Math.floor(v.x / FUT_SPACING) * FUT_SPACING + FUT_SPACING / 2;
-      const pz = Math.floor(v.z / FUT_SPACING) * FUT_SPACING + FUT_SPACING / 2;
-      const own = a.pieces.filter((p) => Math.abs(p.x - px) < FUT_SPACING / 2 && Math.abs(p.z - pz) < FUT_SPACING / 2);
-      for (const p of own) expect(Math.max(Math.abs(p.x - px), Math.abs(p.z - pz))).toBeLessThan(12.2);
+      const pl = v.plot!;
+      const own = a.pieces.filter((p) => Math.abs(p.x - pl.x) < pl.w / 2 + 2 && Math.abs(p.z - pl.z) < pl.d / 2 + 2);
+      expect(own.length).toBeGreaterThan(80);
+      for (const p of own) {
+        expect(Math.abs(p.x - pl.x)).toBeLessThan(pl.w / 2 + 0.8);
+        expect(Math.abs(p.z - pl.z)).toBeLessThan(pl.d / 2 + 0.8);
+      }
     }
+    // churches and parks are built too
+    expect(l.buildings.some((x) => x.kind === 'church')).toBe(true);
+    expect(l.buildings.some((x) => x.kind === 'park')).toBe(true);
   });
 
-  it('spreads mansions over all five styles across the universe', () => {
+  it('spreads mansions over all six styles across the universe', () => {
     const styles = new Set<string>();
     for (const s of cities) for (const b of generateLayout(s).buildings) if (b.kind === 'villa') styles.add(villaStyle(b));
     expect(styles).toEqual(new Set(VILLA_STYLES));

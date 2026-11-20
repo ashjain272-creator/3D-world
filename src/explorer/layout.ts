@@ -4,7 +4,7 @@ import type { ArchitectureStyle, Landmark, Settlement } from '../sim/types';
 export type BuildingKind =
   | 'tower' | 'block' | 'slab' | 'dome' | 'treehouse' | 'pod' | 'house' | 'hall' | 'windmill' | 'silo'
   // futuristic districts
-  | 'supertall' | 'villa' | 'shop' | 'mall' | 'mosque' | 'temple';
+  | 'supertall' | 'villa' | 'shop' | 'mall' | 'mosque' | 'temple' | 'church' | 'park';
 
 /** Districts of a futuristic city (see `futuristic`). */
 export type District = 'downtown' | 'mixed' | 'souk' | 'villas';
@@ -22,6 +22,8 @@ export interface Building {
   door: [number, number];
   /** District the building stands in (futuristic cities only). */
   district?: District;
+  /** Garden plot around a villa (centre and size), which may span two street blocks. */
+  plot?: { x: number; z: number; w: number; d: number };
 }
 
 export interface PlacedLandmark {
@@ -67,6 +69,8 @@ export interface Layout {
 }
 
 export function settlementRadius(s: Settlement): number {
+  // futuristic cities are laid out in districts (downtown, villa estates, souk, mixed), which need room
+  if (s.style === 'futuristic') return s.kind === 'capital' ? 262 : s.kind === 'city' ? 215 : s.kind === 'town' ? 150 : 95;
   return s.kind === 'capital' ? 175 : s.kind === 'city' ? 145 : s.kind === 'town' ? 110 : 75;
 }
 
@@ -142,6 +146,48 @@ function futuristic(s: Settlement, rng: Rng): Layout {
   const R = settlementRadius(s);
   const spacing = 36;
   const n = Math.floor(R / spacing);
+  const big = s.kind === 'capital' || s.kind === 'city';
+  const plaza = { x: 0, z: 0, r: 30 };
+
+  // Districts, in the manner of a Gulf city: a downtown of supertalls around the central plaza,
+  // two villa enclaves of walled estates in the outer ring, an old souk quarter of arcaded
+  // shophouses, and mixed towers and blocks in between. Places of worship, malls and small parks
+  // are spread across all of them.
+  const turn = rng.range(0, Math.PI * 2);
+  const sector = (x: number, z: number) => (((Math.atan2(z, x) - turn) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const districtOf = (x: number, z: number): District => {
+    const dc = Math.hypot(x, z);
+    const a = sector(x, z);
+    if (dc < R * 0.36) return 'downtown';
+    if (a < Math.PI * 0.55 && dc > R * 0.48) return 'villas';
+    if (a > Math.PI * 1.32 && a < Math.PI * 1.68 && dc > R * 0.58) return 'villas';
+    if (a > Math.PI * 0.78 && a < Math.PI * 1.18 && dc > R * 0.3) return 'souk';
+    return 'mixed';
+  };
+  const cellOk = (i: number, j: number) => {
+    const x = (i + 0.5) * spacing;
+    const z = (j + 0.5) * spacing;
+    const dc = Math.hypot(x, z);
+    return dc <= R - 10 && dc >= plaza.r + 4;
+  };
+  // villa estates take two neighbouring blocks with the street between them closed; never across
+  // the inner avenues, which carry the expressways
+  const estates = new Set<string>();
+  const claimed = new Set<string>();
+  for (let j = -n; j < n; j++)
+    for (let i = -n; i < n - 1; i++) {
+      const xa = (i + 0.5) * spacing;
+      const xb = (i + 1.5) * spacing;
+      const z = (j + 0.5) * spacing;
+      if (Math.abs(i + 1) < 4 || !cellOk(i, j) || !cellOk(i + 1, j)) continue;
+      if (claimed.has(`${i},${j}`) || claimed.has(`${i + 1},${j}`)) continue;
+      if (districtOf(xa, z) !== 'villas' || districtOf(xb, z) !== 'villas') continue;
+      if (!rng.chance(0.8)) continue;
+      estates.add(`${i},${j}`);
+      claimed.add(`${i},${j}`);
+      claimed.add(`${i + 1},${j}`);
+    }
+
   const nodes: [number, number][] = [];
   const idx = new Map<string, number>();
   for (let i = -n; i <= n; i++)
@@ -158,6 +204,8 @@ function futuristic(s: Settlement, rng: Rng): Layout {
       [1, 0],
       [0, 1],
     ]) {
+      // the street between the two halves of an estate is closed
+      if (di === 0 && estates.has(`${i - 1},${j}`)) continue;
       const b = idx.get(`${i + di},${j + dj}`);
       if (b !== undefined) {
         edges.push([a, b]);
@@ -165,68 +213,60 @@ function futuristic(s: Settlement, rng: Rng): Layout {
       }
     }
   }
+
   const buildings: Building[] = [];
-  const target = buildingCount(s);
-  const cells: [number, number][] = [];
-  for (let i = -n; i < n; i++) for (let j = -n; j < n; j++) cells.push([i, j]);
-  const plaza = { x: 0, z: 0, r: 30 };
-  // Districts, in the manner of a Gulf city: a downtown of supertalls around the central
-  // plaza, a souk quarter of low arcaded shophouses with a mall in one sector, a villa
-  // district of mansions on large plots in another, and mixed towers and blocks elsewhere.
-  const big = s.kind === 'capital' || s.kind === 'city';
-  const turn = rng.range(0, Math.PI * 2);
-  const sector = (x: number, z: number) => (((Math.atan2(z, x) - turn) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-  const districtOf = (x: number, z: number): District => {
-    const dc = Math.hypot(x, z);
-    const a = sector(x, z);
-    if (dc < R * 0.4) return 'downtown';
-    if (a < Math.PI * 0.62 && dc > R * 0.45) return 'villas';
-    if (a > Math.PI * 0.95 && a < Math.PI * 1.45) return 'souk';
-    return 'mixed';
-  };
-  const usable = cells
-    .map(([i, j]) => ({ i, j, x: (i + 0.5) * spacing, z: (j + 0.5) * spacing }))
-    .filter((c) => {
-      const dc = Math.hypot(c.x, c.z);
-      return dc <= R - 10 && dc >= plaza.r + 4;
-    });
-  // one mall, a mosque and a temple on whole cells (the mall in the souk, worship in quieter streets)
+  const usable: { i: number; j: number; x: number; z: number }[] = [];
+  for (let i = -n; i < n; i++) for (let j = -n; j < n; j++) if (cellOk(i, j) && !claimed.has(`${i},${j}`)) usable.push({ i, j, x: (i + 0.5) * spacing, z: (j + 0.5) * spacing });
+
+  // whole-block landmarks, spread out: each is placed as far as possible from the others
   const special = new Map<string, BuildingKind>();
-  const pick = (want: (d: District, dc: number) => boolean, kind: BuildingKind) => {
-    const opts = usable.filter((c) => !special.has(`${c.i},${c.j}`) && want(districtOf(c.x, c.z), Math.hypot(c.x, c.z)));
-    if (opts.length) {
-      const c = opts[Math.floor(rng.next() * opts.length)];
-      special.set(`${c.i},${c.j}`, kind);
+  const spots: [number, number][] = [[0, 0]];
+  const place = (kind: BuildingKind, allowed: District[], minR: number) => {
+    let best: (typeof usable)[number] | null = null;
+    let bestScore = -1;
+    for (const c of usable) {
+      if (special.has(`${c.i},${c.j}`)) continue;
+      const dc = Math.hypot(c.x, c.z);
+      if (dc < minR || !allowed.includes(districtOf(c.x, c.z))) continue;
+      const near = Math.min(...spots.map(([x, z]) => Math.hypot(x - c.x, z - c.z)));
+      const score = near * rng.range(0.85, 1);
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+    if (best) {
+      special.set(`${best.i},${best.j}`, kind);
+      spots.push([best.x, best.z]);
     }
   };
-  if (big || s.kind === 'town') pick((d) => d === 'souk', 'mall');
-  pick((d, dc) => (d === 'souk' || d === 'mixed') && dc > R * 0.42, 'mosque');
-  if (big) pick((d, dc) => (d === 'mixed' || d === 'villas') && dc > R * 0.42, 'temple');
-  rng.shuffle(usable);
-  // whole-cell buildings first so the building cap never squeezes them out
-  usable.sort((a, b) => Number(special.has(`${b.i},${b.j}`)) - Number(special.has(`${a.i},${a.j}`)));
+  const count = (capital: number, city: number, town: number, outpost: number) => (s.kind === 'capital' ? capital : s.kind === 'city' ? city : s.kind === 'town' ? town : outpost);
+  for (let k = 0; k < count(2, 1, 1, 0); k++) place('mall', k === 0 ? ['souk'] : ['mixed'], R * 0.3);
+  for (let k = 0; k < count(4, 3, 2, 1); k++) place('mosque', ['mixed', 'souk', 'villas'], R * 0.3);
+  for (let k = 0; k < count(2, 1, 1, 0); k++) place('temple', ['mixed', 'villas', 'souk'], R * 0.3);
+  for (let k = 0; k < count(1, 1, 0, 0); k++) place('church', ['mixed', 'villas'], R * 0.3);
+  for (let k = 0; k < count(4, 3, 2, 1); k++) place('park', ['mixed', 'downtown'], plaza.r + 20);
+
   let signature = false;
+  const sizes: Partial<Record<BuildingKind, [number, number]>> = { mall: [28, 15], mosque: [25, 12], temple: [23, 10], church: [22, 14], park: [24, 0.1] };
   for (const c of usable) {
-    if (buildings.length >= target) break;
     const { x: cx, z: cz } = c;
     const dc = Math.hypot(cx, cz);
     const centrality = 1 - dc / R;
     const district = districtOf(cx, cz);
     const door: [number, number] = [cx, cz - spacing / 2 + 0.01];
-    const role = (r: Building['role']) => r;
     const sp = special.get(`${c.i},${c.j}`);
     if (sp) {
-      const size = sp === 'mall' ? 27 : sp === 'mosque' ? 25 : 23;
-      buildings.push({ x: cx, z: cz, w: size, d: size, h: sp === 'mall' ? 15 : sp === 'mosque' ? 12 : 10, rot: 0, kind: sp, role: sp === 'mall' ? 'work' : 'civic', tone: rng.next(), door, district });
+      const [size, h] = sizes[sp]!;
+      buildings.push({ x: cx, z: cz, w: size, d: size, h, rot: 0, kind: sp, role: sp === 'mall' ? 'work' : 'civic', tone: rng.next(), door, district });
       continue;
     }
     if (district === 'villas') {
-      // one mansion per plot, set back from the street behind a garden
-      // the house stands to one side and back from the street; the pool takes the other side
+      // a single-block villa: the house to one side and back from the street, the pool on the other
       const w = rng.range(10.5, 12.5);
       const d = rng.range(9.5, 11.5);
       const side = rng.chance(0.5) ? 1 : -1;
-      buildings.push({ x: cx + side * 2.8, z: cz + 1.5, w, d, h: rng.range(7, 9.5), rot: 0, kind: 'villa', role: 'home', tone: rng.next(), door, district });
+      buildings.push({ x: cx + side * 2.8, z: cz + 1.5, w, d, h: rng.range(7.5, 9.5), rot: 0, kind: 'villa', role: 'home', tone: rng.next(), door, district, plot: { x: cx, z: cz, w: spacing - 12, d: spacing - 12 } });
       continue;
     }
     if (district === 'souk') {
@@ -245,9 +285,9 @@ function futuristic(s: Settlement, rng: Rng): Layout {
       const w = lots === 1 ? rng.range(14, 22) : rng.range(9, 12);
       const d = lots === 1 ? rng.range(14, 22) : rng.range(14, 20);
       const ox = lots === 1 ? 0 : (l === 0 ? -1 : 1) * 6.5;
-      const tall = Math.pow(centrality, 1.6);
+      const tall = Math.pow(Math.max(0, centrality), 1.6);
       let h = rng.range(12, 26) + tall * rng.range(40, 120) * (s.kind === 'capital' ? 1 : 0.7);
-      if (district === 'downtown') h *= 1.25;
+      if (district === 'downtown') h *= 1.3;
       let kind: BuildingKind = h > 55 ? 'tower' : rng.chance(0.4) ? 'slab' : 'block';
       // downtown's tallest become sculpted supertalls; the first beside the plaza is the city's signature
       if (district === 'downtown' && h > 70 && big) {
@@ -258,8 +298,20 @@ function futuristic(s: Settlement, rng: Rng): Layout {
         }
       }
       const x = cx + ox;
-      buildings.push({ x, z: cz, w, d, h, rot: 0, kind, role: role(centrality > 0.5 ? (rng.chance(0.7) ? 'work' : 'home') : rng.chance(0.65) ? 'home' : 'work'), tone: rng.next(), door, district });
+      buildings.push({ x, z: cz, w, d, h, rot: 0, kind, role: centrality > 0.5 ? (rng.chance(0.7) ? 'work' : 'home') : rng.chance(0.65) ? 'home' : 'work', tone: rng.next(), door, district });
     }
+  }
+  // estates: a grand house on a double plot, set to one side, with the garden, pool and court on the other
+  for (const key of estates) {
+    const [i, j] = key.split(',').map(Number);
+    const px = (i + 1) * spacing;
+    const pz = (j + 0.5) * spacing;
+    const pw = spacing * 2 - 12;
+    const pd = spacing - 12;
+    const w = rng.range(19, 24);
+    const d = rng.range(12, 14);
+    const side = rng.chance(0.5) ? 1 : -1;
+    buildings.push({ x: px + side * (pw / 2 - w / 2 - 3), z: pz + 1.2, w, d, h: rng.range(9.5, 12.5), rot: 0, kind: 'villa', role: 'home', tone: rng.next(), door: [px, j * spacing + 0.01], district: 'villas', plot: { x: px, z: pz, w: pw, d: pd } });
   }
   const lights: [number, number][] = nodes.filter(() => rng.chance(0.85));
   return finish('futuristic', s, rng, R, buildings, streets, makeGraph(nodes, edges), [plaza], lights, spacing);
@@ -420,7 +472,7 @@ function finish(
     }
     landmarks.push({ id: lm.id, name: lm.name, kind: lm.kind, description: lm.description, x, z, radius });
   });
-  const colliders: Collider[] = buildings.map((b) =>
+  const colliders: Collider[] = buildings.filter((b) => b.kind !== 'park').map((b) =>
     b.kind === 'dome' || b.kind === 'treehouse' || b.kind === 'pod' || b.kind === 'silo' || b.kind === 'windmill'
       ? { type: 'circle', x: b.x, z: b.z, hw: (b.kind === 'treehouse' ? 2.4 : Math.max(b.w, b.d) / 2) * 0.95, hd: 0 }
       : { type: 'box', x: b.x, z: b.z, hw: (b.rot ? b.d : b.w) / 2, hd: (b.rot ? b.w : b.d) / 2 },

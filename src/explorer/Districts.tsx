@@ -31,6 +31,8 @@ const SHAPES: Record<DShape, THREE.BufferGeometry> = {
     return new THREE.ExtrudeGeometry(s, { depth: 1.1, bevelEnabled: false }).translate(0, 0, -0.55);
   })(),
   arch: archGeo,
+  // hipped roof: a four-sided pyramid on a unit square base
+  hip: new THREE.ConeGeometry(Math.SQRT1_2, 1, 4).rotateY(Math.PI / 4).translate(0, 0.5, 0),
   palmTrunk: palmTrunkGeo(0),
   fronds: frondsGeo(0),
 };

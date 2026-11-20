@@ -88,8 +88,10 @@ export function generateTerrain(planet: Planet, regionIndex: number, biome: Biom
   const rng = new Rng(seed);
   const n2 = createNoise2D(() => rng.next());
   const look = biomeLook(biome, planet);
-  const size = WORLD_SIZE;
-  const res = TERRAIN_RES;
+  // big district cities need more room before the framing mountains begin; the grid grows with
+  // the area so detail per metre stays the same
+  const size = flatRadius > 240 ? 960 : WORLD_SIZE;
+  const res = Math.round((TERRAIN_RES * size) / WORLD_SIZE);
   const heights = new Float32Array((res + 1) * (res + 1));
   const ridged = biome === 'mountain' || biome === 'volcanic';
   const dunes = biome === 'desert';

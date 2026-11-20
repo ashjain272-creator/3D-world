@@ -7,7 +7,7 @@ import type { Building, Layout } from './layout';
  * mall, a mosque and a temple, and palm-lined boulevards. Everything is built
  * from a handful of instanced shapes so a whole district costs a few draw calls.
  */
-export type DShape = 'box' | 'cyl' | 'cone' | 'hemi' | 'sphere' | 'gable' | 'arch' | 'palmTrunk' | 'fronds' | 'oct';
+export type DShape = 'box' | 'cyl' | 'cone' | 'hemi' | 'sphere' | 'gable' | 'arch' | 'palmTrunk' | 'fronds' | 'oct' | 'hip';
 export type DMat = 'plaster' | 'stone' | 'roof' | 'glass' | 'water' | 'gold' | 'metal' | 'leaf' | 'bark' | 'glow' | 'wood' | 'lawn' | 'cloth' | 'dark' | 'marble';
 
 export interface DPiece {
@@ -30,7 +30,7 @@ export interface DistrictData {
 /** Grid spacing of futuristic cities (see layout.ts). */
 export const FUT_SPACING = 36;
 
-export const VILLA_STYLES = ['modern', 'mediterranean', 'courtyard', 'classical', 'pavilion'] as const;
+export const VILLA_STYLES = ['modern', 'mediterranean', 'courtyard', 'classical', 'pavilion', 'tropical'] as const;
 export type VillaStyle = (typeof VILLA_STYLES)[number];
 export function villaStyle(b: Building): VillaStyle {
   return VILLA_STYLES[Math.floor(b.tone * VILLA_STYLES.length) % VILLA_STYLES.length];
@@ -67,6 +67,12 @@ export function generateDistricts(layout: Layout, y0: number, warm: boolean): Di
         break;
       case 'temple':
         temple(out, b, y0);
+        break;
+      case 'church':
+        church(out, b, y0, warm);
+        break;
+      case 'park':
+        park(out, b, y0, warm);
         break;
     }
   }
@@ -113,207 +119,502 @@ function archWindow(add: Add, lx: number, ly: number, lz: number, w: number, h: 
 
 // ───────────────────────── Villas ─────────────────────────
 
+/**
+ * A framed window on a facade whose outward normal is local +z turned by `rot`:
+ * glass, a frame of four members, a projecting sill and, if asked, shutters or a small pediment.
+ */
+function win(add: Add, x: number, y: number, z: number, w: number, h: number, rot: number, frameCol: string, extra: 'none' | 'shutters' | 'pediment' | 'arch' = 'none', shutterCol = '#2f6f8a') {
+  const tx = Math.cos(rot);
+  const tz = -Math.sin(rot);
+  const nx = Math.sin(rot);
+  const nz = Math.cos(rot);
+  if (extra === 'arch') {
+    archWindow(add, x, y, z, w, h, 'glass', '#24303c', rot);
+    add('arch', 'plaster', x + nx * 0.03, y + h - w / 2, z + nz * 0.03, w + 0.3, (w + 0.3) / 2, 0.12, frameCol, rot);
+  } else {
+    add('box', 'glass', x, y, z, w, h, 0.1, '#24303c', rot);
+    add('box', 'plaster', x + nx * 0.04, y + h, z + nz * 0.04, w + 0.28, 0.16, 0.2, frameCol, rot);
+    for (const s of [-1, 1]) add('box', 'plaster', x + tx * s * (w / 2 + 0.07) + nx * 0.04, y, z + tz * s * (w / 2 + 0.07) + nz * 0.04, 0.14, h, 0.2, frameCol, rot);
+    // a mullion and transom divide the pane
+    add('box', 'plaster', x + nx * 0.03, y, z + nz * 0.03, 0.06, h, 0.06, frameCol, rot);
+    add('box', 'plaster', x + nx * 0.03, y + h * 0.66, z + nz * 0.03, w, 0.06, 0.06, frameCol, rot);
+  }
+  add('box', 'stone', x + nx * 0.12, y - 0.16, z + nz * 0.12, w + 0.42, 0.16, 0.34, '#e6e0d2', rot);
+  if (extra === 'shutters') for (const s of [-1, 1]) add('box', 'wood', x + tx * s * (w / 2 + 0.45) + nx * 0.08, y, z + tz * s * (w / 2 + 0.45) + nz * 0.08, w * 0.5, h, 0.06, shutterCol, rot);
+  if (extra === 'pediment') add('gable', 'plaster', x + nx * 0.1, y + h + 0.16, z + nz * 0.1, w + 0.6, 0.55, 0.22, frameCol, rot);
+}
+
+type Face = 'front' | 'back' | 'left' | 'right';
+/** Windows evenly along one or more faces of a box W x D centred on (cx, cz), at one floor height. */
+function windowsOn(add: Add, faces: Face[], cx: number, cz: number, W: number, D: number, y: number, h: number, every: number, frameCol: string, extra: 'none' | 'shutters' | 'pediment' | 'arch' = 'none', skipCentre = false, shutterCol?: string) {
+  for (const f of faces) {
+    const along = f === 'front' || f === 'back' ? W : D;
+    const rot = f === 'front' ? 0 : f === 'back' ? Math.PI : f === 'right' ? Math.PI / 2 : -Math.PI / 2;
+    const ox = f === 'right' ? W / 2 + 0.03 : f === 'left' ? -W / 2 - 0.03 : 0;
+    const oz = f === 'front' ? D / 2 + 0.03 : f === 'back' ? -D / 2 - 0.03 : 0;
+    const n = Math.max(1, Math.floor(along / every));
+    const w = Math.min(1.5, (along / n) * 0.48);
+    for (let k = 0; k < n; k++) {
+      const t = -along / 2 + (along / n) * (k + 0.5);
+      if (skipCentre && f === 'front' && Math.abs(t) < along / n / 2) continue;
+      win(add, cx + ox + Math.cos(rot) * t, y, cz + oz - Math.sin(rot) * t, w, h, rot, frameCol, extra, shutterCol);
+    }
+  }
+}
+
+/** Balustrade: a rail on turned posts along local x (rot 0) or z (rot pi/2). */
+function balustrade(add: Add, x: number, y: number, z: number, len: number, rot: number, col: string) {
+  const tx = Math.cos(rot);
+  const tz = -Math.sin(rot);
+  add('box', 'stone', x, y + 0.82, z, len, 0.14, 0.24, col, rot);
+  add('box', 'stone', x, y, z, len, 0.12, 0.26, col, rot);
+  const posts = Math.max(2, Math.round(len / 0.42));
+  for (let k = 0; k <= posts; k++) {
+    const t = -len / 2 + (k * len) / posts;
+    add('cyl', 'stone', x + tx * t, y + 0.12, z + tz * t, 0.15, 0.7, 0.15, col);
+  }
+}
+
+/** Battlements along a parapet: alternating merlons. */
+function merlons(add: Add, x: number, y: number, z: number, len: number, rot: number, col: THREE.Color | string) {
+  const tx = Math.cos(rot);
+  const tz = -Math.sin(rot);
+  const n = Math.max(2, Math.floor(len / 1.2));
+  for (let k = 0; k < n; k++) {
+    const t = -len / 2 + 0.4 + (k * (len - 0.8)) / (n - 1);
+    add('box', 'plaster', x + tx * t, y, z + tz * t, 0.55, 0.65, 0.4, col, rot);
+  }
+}
+
+function roundTree(add: Add, x: number, z: number, h: number, col: string, r: (k: number) => number, k: number) {
+  add('cyl', 'bark', x, 0, z, 0.35, h * 0.5, 0.35, '#6a5240');
+  const s = h * (0.55 + r(k) * 0.2);
+  add('sphere', 'leaf', x, h * 0.55 + s * 0.35, z, s, s * 0.85, s, new THREE.Color(col).offsetHSL((r(k + 1) - 0.5) * 0.03, 0, (r(k + 2) - 0.5) * 0.08));
+}
+
+function flowerBed(add: Add, x: number, z: number, len: number, rot: number, r: (k: number) => number, k: number) {
+  const tx = Math.cos(rot);
+  const tz = -Math.sin(rot);
+  add('box', 'stone', x, 0, z, len, 0.35, 1.1, '#cfc6b4', rot);
+  add('box', 'dark', x, 0.3, z, len - 0.2, 0.12, 0.9, '#4a3626', rot);
+  const blooms = ['#e8404a', '#f2a81e', '#f4f0e8', '#c84aa0', '#8a5ad8', '#ff7a4a'];
+  const n = Math.max(3, Math.round(len / 0.7));
+  for (let i = 0; i < n; i++) {
+    const t = -len / 2 + 0.35 + (i * (len - 0.7)) / (n - 1);
+    add('sphere', 'leaf', x + tx * t, 0.55, z + tz * t, 0.6, 0.45, 0.6, i % 3 === 0 ? '#3f6e30' : blooms[Math.floor(r(k + i) * blooms.length)]);
+  }
+}
+
+function lounger(add: Add, x: number, z: number, rot: number) {
+  add('box', 'wood', x, 0.25, z, 0.75, 0.12, 1.9, '#b08a62', rot);
+  add('box', 'cloth', x, 0.37, z, 0.7, 0.08, 1.8, '#f4f2ee', rot);
+}
+
 function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
   const r = hashRand(b.tone * 1000 + b.x * 0.37 + b.z * 0.11);
   const style = villaStyle(b);
-  // the plot fills the street block the house stands in
-  const px = Math.floor(b.x / FUT_SPACING) * FUT_SPACING + FUT_SPACING / 2;
-  const pz = Math.floor(b.z / FUT_SPACING) * FUT_SPACING + FUT_SPACING / 2;
-  const P = 11.6;
-  const plot = frame(out, px, pz, y0, b.door);
+  const plotRect = b.plot ?? { x: Math.floor(b.x / FUT_SPACING) * FUT_SPACING + FUT_SPACING / 2, z: Math.floor(b.z / FUT_SPACING) * FUT_SPACING + FUT_SPACING / 2, w: 24, d: 24 };
+  const plot = frame(out, plotRect.x, plotRect.z, y0, b.door);
   const pa = plot.add;
-  // house position in the plot frame
-  const hx = (b.x - px) * Math.cos(plot.ry) - (b.z - pz) * Math.sin(plot.ry);
-  const hz = (b.x - px) * Math.sin(plot.ry) + (b.z - pz) * Math.cos(plot.ry);
-  // the house shares the plot's orientation so it sits square to the garden walls
+  // the plot frame faces the street, so local x runs along the frontage
+  const cos = Math.cos(plot.ry);
+  const sin = Math.sin(plot.ry);
+  const along = Math.abs(sin) > 0.5 ? plotRect.d : plotRect.w;
+  const deep = Math.abs(sin) > 0.5 ? plotRect.w : plotRect.d;
+  const PW = along / 2;
+  const PD = deep / 2;
+  const hx = (b.x - plotRect.x) * cos - (b.z - plotRect.z) * sin;
+  const hz = (b.x - plotRect.x) * sin + (b.z - plotRect.z) * cos;
   const hwx = plot.wx(hx, hz);
   const hwz = plot.wz(hx, hz);
-  const house = frame(out, hwx, hwz, y0, [hwx + Math.sin(plot.ry) * 10, hwz + Math.cos(plot.ry) * 10]);
+  const house = frame(out, hwx, hwz, y0, [hwx + sin * 10, hwz + cos * 10]);
   const add = house.add;
   const W = b.w;
   const D = b.d;
   const H = b.h;
-  const poolSide = hx > 0 ? -1 : 1;
+  const estate = PW > 20;
+  const gardenSide = hx > 0 ? -1 : 1;
+  const floors = H > 10.5 ? 3 : 2;
+  const fh = (H - 0.45) / floors;
+  const front = (lz: number) => lz;
 
-  // ── plot: lawn, boundary, gate, drive, pool, palms, lamps
-  const wallCol = style === 'modern' || style === 'pavilion' ? '#e8e6e0' : style === 'courtyard' ? '#d9bf94' : style === 'mediterranean' ? '#e6d2b0' : '#efe9dc';
-  pa('box', 'lawn', 0, 0, 0, P * 2, 0.14, P * 2, new THREE.Color('#5f8a3c').offsetHSL((r(1) - 0.5) * 0.03, 0, (r(2) - 0.5) * 0.06));
-  const hedge = style === 'classical' || style === 'mediterranean';
-  const wallH = hedge ? 1.5 : 1.8;
-  const wall = (lx: number, lz: number, sx: number, sz: number) =>
-    hedge ? pa('box', 'leaf', lx, 0, lz, sx, wallH, sz, '#3f6e30') : pa('box', 'plaster', lx, 0, lz, sx, wallH, sz, wallCol);
-  wall(0, -P, P * 2, 0.5);
-  wall(-P, 0, 0.5, P * 2);
-  wall(P, 0, 0.5, P * 2);
-  // front wall with a gate opening at the drive
-  const gx = -poolSide * 4.5;
-  const gw = 4.2;
-  const leftLen = gx - gw / 2 + P;
-  const rightLen = P - (gx + gw / 2);
-  wall(-P + leftLen / 2, P, leftLen, 0.5);
-  wall(P - rightLen / 2, P, rightLen, 0.5);
+  // ── grounds: striped lawn, boundary with coping and lamp piers, gate, drive
+  const wallCol = style === 'modern' || style === 'pavilion' ? '#ecebe6' : style === 'courtyard' ? '#d9bf94' : style === 'mediterranean' ? '#e6d2b0' : style === 'tropical' ? '#8a7a66' : '#efe9dc';
+  const lawnC = new THREE.Color('#5f8f3c').offsetHSL((r(1) - 0.5) * 0.03, 0, (r(2) - 0.5) * 0.05);
+  pa('box', 'lawn', 0, 0, 0, PW * 2, 0.14, PD * 2, lawnC);
+  const stripes = Math.floor((PW * 2) / 2.4);
+  for (let k = 0; k < stripes; k += 2) pa('box', 'lawn', -PW + 1.2 + k * 2.4, 0.02, 0, 2.4, 0.14, PD * 2 - 0.6, lawnC.clone().offsetHSL(0, 0, 0.05));
+  const hedge = style === 'classical' || style === 'mediterranean' || style === 'tropical';
+  const wallH = hedge ? 1.6 : 1.9;
+  const wall = (lx: number, lz: number, sx: number, sz: number) => {
+    if (hedge) {
+      pa('box', 'leaf', lx, 0, lz, sx, wallH, sz, '#3a6a2e');
+    } else {
+      pa('box', 'plaster', lx, 0, lz, sx, wallH, sz, wallCol);
+      pa('box', 'stone', lx, wallH, lz, sx + 0.12, 0.14, sz + 0.12, '#d8d0c0');
+    }
+  };
+  wall(0, -PD, PW * 2, 0.5);
+  wall(-PW, 0, 0.5, PD * 2);
+  wall(PW, 0, 0.5, PD * 2);
+  // the gate sits in front of the house; the drive runs straight to the door
+  const gx = estate ? hx : -gardenSide * 4.5;
+  const gw = estate ? 5.2 : 4.2;
+  const leftLen = gx - gw / 2 + PW;
+  const rightLen = PW - (gx + gw / 2);
+  wall(-PW + leftLen / 2, PD, leftLen, 0.5);
+  wall(PW - rightLen / 2, PD, rightLen, 0.5);
+  // piers with lamps along the frontage
+  for (let x = -PW; x <= PW + 0.01; x += estate ? 8 : 6) {
+    if (Math.abs(x - gx) < gw / 2 + 0.8) continue;
+    pa('box', 'stone', x, 0, PD, 0.7, wallH + 0.4, 0.7, '#d8d0c0');
+    pa('sphere', 'glow', x, wallH + 0.6, PD, 0.28, 0.28, 0.28, '#ffe2b0');
+  }
   for (const s of [-1, 1]) {
-    pa('box', style === 'courtyard' ? 'plaster' : 'stone', gx + s * (gw / 2 + 0.35), 0, P, 0.7, 2.4, 0.7, style === 'courtyard' ? '#cfae7c' : '#d8d2c4');
-    pa('sphere', 'glow', gx + s * (gw / 2 + 0.35), 2.6, P, 0.32, 0.32, 0.32, '#ffe2b0');
+    pa('box', 'stone', gx + s * (gw / 2 + 0.4), 0, PD, 0.9, 2.8, 0.9, '#d8d0c0');
+    pa('box', 'stone', gx + s * (gw / 2 + 0.4), 2.8, PD, 1.1, 0.2, 1.1, '#cfc6b4');
+    pa('sphere', style === 'classical' ? 'stone' : 'glow', gx + s * (gw / 2 + 0.4), 3.1, PD, 0.5, 0.6, 0.5, style === 'classical' ? '#ddd6c6' : '#ffe2b0');
   }
-  pa('box', 'metal', gx, 0.1, P, gw, 1.7, 0.08, '#2a2a2e');
-  // driveway from the gate to the front door, with a parked car
-  const fz = hz + D / 2;
-  const driveLen = P - fz;
-  pa('box', 'stone', gx, 0.02, (P + fz) / 2, 3.6, 0.16, driveLen, '#cfc8ba');
-  carProp(pa, gx, fz + driveLen * 0.45, r);
-  // pool and deck beside the house, loungers, an umbrella
-  const poolX = poolSide * (P - 4.2);
-  const poolL = Math.min(9, P * 2 - 6);
-  pa('box', 'marble', poolX, 0.02, -0.5, 6.4, 0.2, poolL + 2.4, '#ecebe6');
-  pa('box', 'water', poolX, 0.08, -0.5, 4.4, 0.18, poolL, '#3fb6d8');
-  out.lights.push([plot.wx(poolX, -0.5), plot.wz(poolX, -0.5)]);
-  for (const k of [0, 1]) pa('box', 'cloth', poolX - poolSide * 2.6, 0.2, -2.5 + k * 1.6, 0.8, 0.3, 1.9, '#f4f2ee');
-  pa('cyl', 'metal', poolX - poolSide * 2.6, 0.2, 2.2, 0.08, 2.4, 0.08, '#8a8a8a');
-  pa('cone', 'cloth', poolX - poolSide * 2.6, 2.1, 2.2, 2.8, 0.7, 2.8, r(9) < 0.5 ? '#f2efe6' : '#2f6f8a');
-  // palms (or clipped conifers on cold worlds) along the boundary
-  const trees = 3 + Math.floor(r(3) * 3);
+  for (const s of [-1, 1]) pa('box', 'metal', gx + s * gw * 0.25, 0.1, PD, gw * 0.48, 2, 0.08, '#24242a');
+  const fz = hz + D / 2 + (style === 'classical' ? 3.6 : 0);
+  const driveLen = Math.max(1, PD - fz);
+  pa('box', 'stone', gx, 0.03, (PD + fz) / 2, estate ? 4.4 : 3.6, 0.16, driveLen, '#d6cfc0');
+  for (const s of [-1, 1]) pa('box', 'stone', gx + s * (estate ? 2.3 : 1.9), 0.03, (PD + fz) / 2, 0.25, 0.22, driveLen, '#b8b0a0');
+  for (let z = fz + 1.5; z < PD - 1; z += 3.5) for (const s of [-1, 1]) pa('cyl', 'glow', gx + s * (estate ? 2.6 : 2.2), 0, z, 0.16, 0.6, 0.16, '#ffe0a8');
+  if (driveLen > 5) carProp(pa, gx - (estate ? 1 : 0), fz + Math.min(driveLen - 2.6, 3.2), r);
+  if (estate && driveLen > 5) carProp(pa, gx + 1.2, fz + Math.min(driveLen - 2.6, 3.2) + 0.4, (k) => r(k + 7));
+
+  // ── garden: pool (and on estates a pool house, a tennis court or a formal garden, a gazebo)
+  const gx0 = hx + gardenSide * (W / 2 + 2);
+  const gx1 = gardenSide * (PW - 1.6);
+  const gcx = (gx0 + gx1) / 2;
+  const gW = Math.abs(gx1 - gx0);
+  let tennis = false;
+  if (gW >= 16) {
+    const poolL = Math.min(gW - 5, 15);
+    const pz = PD - 6.5;
+    pa('box', 'marble', gcx, 0.02, pz, poolL + 3, 0.2, 7.4, '#ecebe6');
+    pa('box', 'water', gcx, 0.08, pz, poolL, 0.18, 4.6, '#3fb6d8');
+    out.lights.push([plot.wx(gcx, pz), plot.wz(gcx, pz)]);
+    for (let k = 0; k < 4; k++) lounger(pa, gcx - poolL / 2 + 1 + k * 1.3, pz - 3.1, 0);
+    pa('cyl', 'metal', gcx + poolL / 2 - 1, 0.2, pz - 3.2, 0.08, 2.4, 0.08, '#8a8a8a');
+    pa('cone', 'cloth', gcx + poolL / 2 - 1, 2.1, pz - 3.2, 3, 0.7, 3, r(9) < 0.5 ? '#f2efe6' : '#2f6f8a');
+    // pool house at the far end
+    const phx = gcx + gardenSide * (poolL / 2 + 0.2);
+    pa('box', 'plaster', phx, 0, pz - 0.2, 3.2, 3, 4.6, wallCol);
+    pa('box', 'glass', phx - gardenSide * 1.62, 0.2, pz - 0.2, 0.1, 2.4, 3.8, '#24303c', Math.PI / 2);
+    pa('box', 'dark', phx, 3, pz - 0.2, 4, 0.25, 5.4, '#5a5e64');
+    const feature = r(18);
+    tennis = feature < 0.45 && gW >= 24;
+    if (tennis) {
+      // tennis court with lines and a net
+      const cz = -PD + 6.8;
+      pa('box', 'cloth', gcx, 0.03, cz, 24, 0.14, 11.6, '#3a7a5a');
+      pa('box', 'cloth', gcx, 0.04, cz, 22, 0.14, 9.6, '#4a6a9a');
+      for (const lz of [-4.8, 4.8, -3.6, 3.6]) pa('box', 'plaster', gcx, 0.06, cz + lz, 22, 0.13, 0.08, '#f4f4f0');
+      for (const lx of [-11, 11, -6.4, 6.4]) pa('box', 'plaster', gcx + lx, 0.06, cz, 0.08, 0.13, lx === -11 || lx === 11 ? 9.6 : 7.2, '#f4f4f0');
+      pa('box', 'plaster', gcx, 0.06, cz, 12.8, 0.13, 0.08, '#f4f4f0', Math.PI / 2);
+      pa('box', 'metal', gcx, 0.1, cz, 0.06, 1, 10.4, '#e8e8e8');
+      for (const s of [-1, 1]) pa('box', 'metal', gcx + s * 12.2, 0, cz, 0.06, 3, 11.8, '#3a3e44');
+    } else if (feature < 0.8) {
+      // formal garden: hedge parterre round a fountain, topiary cones
+      const cz = -PD + 6.5;
+      fountain(pa, gcx, cz, 3.4, true);
+      out.lights.push([plot.wx(gcx, cz), plot.wz(gcx, cz)]);
+      for (const s of [-1, 1]) for (const t of [-1, 1]) {
+        pa('box', 'leaf', gcx + s * 4.5, 0, cz + t * 2.6, 5, 0.7, 0.5, '#3a6a2e');
+        pa('box', 'leaf', gcx + s * 6.8, 0, cz + t * 1.5, 0.5, 0.7, 2.6, '#3a6a2e');
+        pa('cone', 'leaf', gcx + s * 7.6, 0, cz + t * 3.4, 1, 2.6, 1, '#335e2a');
+      }
+      flowerBed(pa, gcx, cz - 4.2, Math.min(gW - 4, 12), 0, r, 60);
+    } else {
+      // a gazebo on the lawn with a table
+      const cz = -PD + 6;
+      pa('oct', 'marble', gcx, 0, cz, 6, 0.4, 6, '#ece6da');
+      for (let k = 0; k < 8; k++) pa('cyl', 'marble', gcx + Math.cos((k * Math.PI) / 4) * 2.7, 0.4, cz + Math.sin((k * Math.PI) / 4) * 2.7, 0.3, 2.8, 0.3, '#f6f2ea');
+      pa('oct', 'marble', gcx, 3.2, cz, 6.6, 0.4, 6.6, '#ece6da');
+      pa('cone', 'roof', gcx, 3.6, cz, 7, 2, 7, style === 'mediterranean' ? '#b4553a' : '#5a6068');
+      pa('cyl', 'wood', gcx, 0.4, cz, 1.8, 0.8, 1.8, '#8a6a4a');
+    }
+  } else {
+    // a narrow side garden: a long pool with a deck, loungers and an umbrella
+    const poolX = gardenSide * (PW - 4.2);
+    const poolL = Math.min(9, PD * 2 - 6);
+    pa('box', 'marble', poolX, 0.02, -0.5, 6.4, 0.2, poolL + 2.4, '#ecebe6');
+    pa('box', 'water', poolX, 0.08, -0.5, 4.4, 0.18, poolL, '#3fb6d8');
+    out.lights.push([plot.wx(poolX, -0.5), plot.wz(poolX, -0.5)]);
+    for (const k of [0, 1]) lounger(pa, poolX - gardenSide * 2.6, -2.5 + k * 1.6, 0);
+    pa('cyl', 'metal', poolX - gardenSide * 2.6, 0.2, 2.2, 0.08, 2.4, 0.08, '#8a8a8a');
+    pa('cone', 'cloth', poolX - gardenSide * 2.6, 2.1, 2.2, 2.8, 0.7, 2.8, r(9) < 0.5 ? '#f2efe6' : '#2f6f8a');
+  }
+  // trees along the boundary and flower beds before the house
+  const trees = estate ? 8 : 4;
   for (let k = 0; k < trees; k++) {
-    const side = k % 2 === 0 ? -1 : 1;
-    const lx = k < 2 ? side * (P - 1.6) : (r(10 + k) - 0.5) * P * 1.4;
-    const lz = k < 2 ? P - 1.8 - r(20 + k) * 2 : -P + 1.6;
-    if (warm) palm(pa, lx, lz, 5.5 + r(30 + k) * 3.5, r, 40 + k * 5);
-    else pa('cone', 'leaf', lx, 0, lz, 1.6, 4.5 + r(30 + k) * 2, 1.6, '#2f5a34');
+    const t = (k + 0.5) / trees;
+    const lx = -PW + 1.6 + t * (PW * 2 - 3.2);
+    const lz = -PD + 1.5;
+    // no trees on the tennis court
+    if (tennis && (lx - gx0) * (lx - gx1) < 0) continue;
+    if (warm && k % 2 === 0) palm(pa, lx, lz, 6 + r(30 + k) * 3.5, r, 40 + k * 5);
+    else if (style === 'mediterranean' || style === 'classical') pa('cone', 'leaf', lx, 0, lz, 1.2, 5.5 + r(30 + k) * 2, 1.2, '#2f5a2c');
+    else roundTree(pa, lx, lz, 4.5 + r(30 + k) * 2, warm ? '#6a8a4a' : '#3f6a34', r, 70 + k * 3);
   }
-  for (const s of [-1, 1]) pa('cyl', 'glow', gx + s * 2.2, 0, (P + fz) / 2, 0.16, 0.7, 0.16, '#ffe0a8');
+  for (const s of [-1, 1]) if (warm) palm(pa, s * (PW - 1.6), PD - 1.8, 6 + r(80 + s) * 3, r, 90 + s * 5);
+  flowerBed(add, -W * 0.3, D / 2 + 1, W * 0.3, 0, r, 100);
+  flowerBed(add, W * 0.3, D / 2 + 1, W * 0.3, 0, r, 110);
+  // facade uplights
+  for (const s of [-1, 0, 1]) add('box', 'glow', s * W * 0.4, 0.05, D / 2 + 0.5, 0.3, 0.12, 0.3, '#ffe6b8');
 
   // ── the house itself, by style
-  const glass = (lx: number, ly: number, lz: number, w: number, h: number, rot = 0) => add('box', 'glass', lx, ly, lz, w, h, 0.14, '#24303c', rot);
   switch (style) {
     case 'modern': {
-      // two offset white volumes, the upper one cantilevered over the terrace
-      const h1 = H * 0.48;
-      add('box', 'plaster', 0, 0, 0, W, h1, D, '#f1f0ec');
-      const uw = W * 0.72;
-      const ud = D * 0.85;
-      const ux = W * 0.2 * (r(4) < 0.5 ? 1 : -1);
-      add('box', 'plaster', ux, h1, 0.8, uw, H * 0.44, ud, '#f6f6f2');
-      // thin roof planes with a dark fascia edge, pale on top
-      add('box', 'dark', 0, h1 - 0.05, 0, W + 0.4, 0.25, D + 0.4, '#5a5e64');
-      add('box', 'plaster', 0, h1 + 0.2, 0, W + 0.3, 0.06, D + 0.3, '#d6d6d2');
-      add('box', 'dark', ux, h1 + H * 0.44, 0.8, uw + 1.2, 0.3, ud + 1.2, '#4a4e54');
-      add('box', 'plaster', ux, h1 + H * 0.44 + 0.3, 0.8, uw + 1.1, 0.06, ud + 1.1, '#e2e2de');
-      // timber screen, floor-to-ceiling glazing, a ribbon window upstairs
-      const accentM: DMat = r(14) < 0.5 ? 'wood' : 'stone';
-      add('box', accentM, ux - uw * 0.32, h1 + 0.2, 0.8 + ud / 2 + 0.02, uw * 0.3, H * 0.4, 0.1, accentM === 'wood' ? '#9a6a42' : ['#5a5650', '#b8a890', '#3a3e44'][Math.floor(r(15) * 3)]);
-      glass(-W * 0.12, 0.25, D / 2 + 0.02, W * 0.66, h1 - 0.6);
-      glass(ux + uw * 0.12, h1 + 0.9, 0.8 + ud / 2 + 0.02, uw * 0.6, H * 0.22);
-      glass(0, 0.25, -D / 2 - 0.02, W * 0.5, h1 - 0.6, Math.PI);
-      // roof terrace rail and a glass balustrade on the cantilever
-      add('box', 'glass', ux, h1 + H * 0.44 + 0.3, 0.8 + ud / 2 + 0.5, uw + 1, 0.9, 0.06, '#9ec4d8');
+      add('box', 'stone', 0, 0, 0, W + 0.6, 0.45, D + 0.6, '#d8d4cc');
+      add('box', 'plaster', 0, 0.45, 0, W, fh, D, '#f3f2ee');
+      // floor-to-ceiling glazing with slim mullions
+      add('box', 'glass', -W * 0.08, 0.6, D / 2 + 0.03, W * 0.72, fh - 0.4, 0.1, '#24303c');
+      for (let k = 0; k <= 6; k++) add('box', 'metal', -W * 0.08 - W * 0.36 + (k * W * 0.72) / 6, 0.6, D / 2 + 0.06, 0.08, fh - 0.4, 0.08, '#2a2a2e');
+      const ux = W * 0.14 * (r(4) < 0.5 ? 1 : -1);
+      const uw = W * 0.74;
+      const ud = D * 0.9;
+      const uy = 0.45 + fh;
+      add('box', 'plaster', ux, uy, 1.4, uw, fh, ud, '#f7f7f4');
+      add('box', 'glass', ux + uw * 0.12, uy + fh * 0.32, 1.4 + ud / 2 + 0.03, uw * 0.62, fh * 0.42, 0.1, '#24303c');
+      // timber or stone fins over part of the upper floor
+      const finM: DMat = r(14) < 0.5 ? 'wood' : 'stone';
+      for (let k = 0; k < 9; k++) add('box', finM, ux - uw * 0.46 + k * 0.42, uy + 0.2, 1.4 + ud / 2 + 0.2, 0.12, fh - 0.4, 0.4, finM === 'wood' ? '#9a6a42' : '#bcb2a0');
+      // thin roof planes with a lit soffit
+      for (const [x, y, z, w, d] of [[0, uy, 0, W + 0.6, D + 0.6], [ux, uy + fh, 1.4, uw + 1.4, ud + 1.4]] as const) {
+        add('box', 'dark', x, y - 0.05, z, w, 0.3, d, '#4a4e54');
+        add('box', 'plaster', x, y + 0.25, z, w - 0.1, 0.06, d - 0.1, '#e2e2de');
+        add('box', 'glow', x, y - 0.08, z + d / 2 - 0.15, w - 0.4, 0.05, 0.08, '#ffe6c0');
+      }
+      if (floors === 3) {
+        // a glass penthouse with a roof terrace
+        add('box', 'glass', ux - uw * 0.15, uy + fh + 0.3, 0.6, uw * 0.45, fh * 0.9, ud * 0.55, '#2a3846');
+        add('box', 'plaster', ux - uw * 0.15, uy + fh * 1.9 + 0.3, 0.6, uw * 0.55, 0.25, ud * 0.65, '#efefec');
+        add('box', 'glass', ux + uw * 0.2, uy + fh + 0.3, 1.4 + ud / 2 + 0.1, uw * 0.5, 1, 0.06, '#9ec4d8');
+      }
+      // terrace rail on the exposed ground roof, a stone feature wall, an entrance canopy
+      add('box', 'glass', -ux * 1.6, uy + 0.25, D / 2 - 0.1, W - uw + 0.6, 1, 0.06, '#9ec4d8');
+      add('box', 'stone', -W / 2 - 0.5, 0, 1, 1, H * 0.82, D + 3, ['#5a5650', '#b8a890', '#3a3e44'][Math.floor(r(15) * 3)]);
+      add('box', 'plaster', W * 0.36, 2.9, D / 2 + 1.3, 3.4, 0.2, 2.6, '#f3f2ee');
+      add('box', 'wood', W * 0.36, 0.45, D / 2 + 0.04, 1.5, 2.4, 0.1, '#7a5232');
+      windowsOn(add, ['back', 'left', 'right'], 0, 0, W, D, 0.45 + 0.6, fh - 1.2, 3, '#3a3e44');
+      windowsOn(add, ['back', 'right'], ux, 1.4, uw, ud, uy + 0.6, fh - 1.2, 3, '#3a3e44');
       break;
     }
     case 'mediterranean': {
-      const wallC = new THREE.Color(r(5) < 0.5 ? '#ead8b4' : '#f0e2c8').offsetHSL(0, 0, (r(6) - 0.5) * 0.04);
-      add('box', 'plaster', 0, 0, 0, W, H * 0.62, D, wallC);
-      // gable cross-sections span local x before rotation, so a ridge along x swaps the scales
-      const roofC = ['#b4553a', '#9a4a32', '#6a6e74', '#c47a3a'][Math.floor(r(11) * 4)];
-      add('gable', 'roof', 0, H * 0.62, 0, D * 1.04, H * 0.38, W * 1.06, roofC, Math.PI / 2);
-      // a lower wing with its own roof
-      const wx = (W / 2 + 2.6) * (r(7) < 0.5 ? 1 : -1);
-      add('box', 'plaster', wx, 0, -1, 5.2, H * 0.4, D * 0.7, wallC);
-      add('gable', 'roof', wx, H * 0.4, -1, 5.6, 1.8, D * 0.74, roofC);
-      // arched windows and doors, painted shutters, a balcony
-      const shutter = r(8) < 0.5 ? '#2f6f8a' : '#4f7a3a';
-      for (const k of [-1, 0, 1]) {
-        const lx = k * W * 0.3;
-        archWindow(add, lx, 0.3, D / 2 + 0.03, k === 0 ? 1.6 : 1.3, k === 0 ? 2.8 : 2.2);
-        archWindow(add, lx, H * 0.34, D / 2 + 0.03, 1.1, 1.8);
-        if (k) for (const s of [-1, 1]) add('box', 'wood', lx + s * 0.95, H * 0.34, D / 2 + 0.05, 0.5, 1.4, 0.06, shutter);
+      const wallC = new THREE.Color(['#ead8b4', '#f0e2c8', '#e8cfa6', '#f2e6d4'][Math.floor(r(5) * 4)]);
+      const roofC = ['#b4553a', '#9a4a32', '#c06a3e', '#a85a3a'][Math.floor(r(11) * 4)];
+      const shutter = ['#2f6f8a', '#4f7a3a', '#6a4a8a', '#8a5a2a'][Math.floor(r(8) * 4)];
+      add('box', 'stone', 0, 0, 0, W + 0.6, 0.45, D + 0.6, '#cfc0a0');
+      add('box', 'plaster', 0, 0.45, 0, W, H - 0.45, D, wallC);
+      add('box', 'plaster', 0, H - 0.35, 0, W + 0.6, 0.35, D + 0.6, wallC.clone().offsetHSL(0, 0, 0.04));
+      add('hip', 'roof', 0, H, 0, W * 1.12, H * 0.3, D * 1.16, roofC);
+      // chimney
+      add('box', 'plaster', W * 0.3, H, -D * 0.2, 1, H * 0.34 + 0.6, 1, wallC);
+      add('box', 'roof', W * 0.3, H + H * 0.34 + 0.6, -D * 0.2, 1.3, 0.25, 1.3, roofC);
+      // arcaded loggia across the front with a balcony above
+      const bays = W > 15 ? 5 : 3;
+      const lw = W * 0.7;
+      const lz = D / 2 + 1.7;
+      for (let k = 0; k <= bays; k++) add('cyl', 'stone', -lw / 2 + (k * lw) / bays, 0.45, lz, 0.5, fh - 0.9, 0.5, '#efe6d4');
+      for (let k = 0; k < bays; k++) add('arch', 'plaster', -lw / 2 + (lw / bays) * (k + 0.5), 0.45 + fh - 0.9 - (lw / bays) / 2 + 0.2, lz, lw / bays - 0.5, (lw / bays - 0.5) / 2, 0.45, wallC);
+      add('box', 'plaster', 0, 0.45 + fh - 0.5, lz - 0.85, lw + 0.6, 0.55, 2.3, wallC);
+      balustrade(add, 0, 0.45 + fh + 0.05, lz + 0.2, lw + 0.4, 0, '#f0e8d6');
+      add('box', 'stone', 0, 0, lz - 0.85, lw + 1, 0.5, 2.6, '#d8ccb4');
+      // windows with shutters all round, arched French doors above the loggia
+      windowsOn(add, ['back', 'left', 'right'], 0, 0, W, D, 1.2, fh - 1.7, 2.8, '#f6efe0', 'shutters', false, shutter);
+      windowsOn(add, ['back', 'left', 'right'], 0, 0, W, D, 0.45 + fh + 0.7, fh - 1.6, 2.8, '#f6efe0', 'shutters', false, shutter);
+      for (let k = 0; k < bays; k++) win(add, -lw / 2 + (lw / bays) * (k + 0.5), 0.45 + fh + 0.6, D / 2 + 0.03, 1.2, fh - 1.2, 0, '#f6efe0', 'arch');
+      if (floors === 3) windowsOn(add, ['front'], 0, 0, W, D, 0.45 + fh * 2 + 0.6, fh - 1.4, 2.8, '#f6efe0', 'shutters', false, shutter);
+      // a wing with its own hipped roof, bougainvillea on the walls, pots and a vine pergola
+      const wx = (W / 2 + 3) * (r(7) < 0.5 ? 1 : -1);
+      if (Math.abs(hx + wx) < PW - 3.5) {
+        add('box', 'plaster', wx, 0.45, -1.2, 6, fh, D * 0.66, wallC);
+        add('hip', 'roof', wx, 0.45 + fh, -1.2, 6.8, 2, D * 0.74, roofC);
+        windowsOn(add, ['front'], wx, -1.2, 6, D * 0.66, 1.2, fh - 1.6, 3, '#f6efe0', 'shutters', false, shutter);
       }
-      add('box', 'stone', 0, H * 0.3, D / 2 + 0.6, W * 0.4, 0.18, 1.2, '#e8e0cc');
-      // stone balustrade: a top rail on short posts
-      add('box', 'stone', 0, H * 0.3 + 0.9, D / 2 + 1.15, W * 0.4, 0.14, 0.2, '#ece4d0');
-      for (let k = 0; k < 7; k++) add('cyl', 'stone', -W * 0.2 + (k * W * 0.4) / 6, H * 0.3 + 0.18, D / 2 + 1.15, 0.16, 0.72, 0.16, '#ece4d0');
-      // terracotta pots and a pergola with climbing plants
-      for (const k of [0, 1, 2]) add('cyl', 'roof', -W / 2 + 1 + k * 1.2, 0, D / 2 + 1.4, 0.7, 0.8, 0.7, '#b8603e');
-      add('box', 'wood', wx, 2.6, D * 0.35 + 1.6, 5, 0.18, 3, '#7a5236');
-      add('box', 'leaf', wx, 2.75, D * 0.35 + 1.6, 4.6, 0.3, 2.6, '#4f7a34');
+      // bougainvillea climbing the front corners, flat against the wall
+      for (const x of [-W / 2 + 0.6, W / 2 - 0.6]) {
+        for (let k = 0; k < 4; k++) add('sphere', 'leaf', x + (r(120 + k) - 0.5) * 0.9, 0.6 + k * 1.15, D / 2 + 0.25, 1.1 - k * 0.12, 1, 0.45, k % 2 ? '#c8348a' : '#d84a9a');
+        add('box', 'leaf', x, 0.4, D / 2 + 0.2, 0.9, fh * 1.4, 0.25, '#3f6e30');
+      }
+      for (let k = 0; k < 4; k++) add('cyl', 'roof', -W / 2 + 0.8 + k * 1.2, 0, D / 2 + 3.4, 0.8, 0.9, 0.8, '#b8603e');
       break;
     }
     case 'courtyard': {
-      // Gulf-style courtyard house: thick sand walls with crenellations, a dome, a wind tower
-      const wallC = new THREE.Color('#dcc298').offsetHSL(0, 0, (r(5) - 0.5) * 0.05);
-      add('box', 'plaster', 0, 0, 0, W, H * 0.7, D, wallC);
-      const merlons = Math.floor(W / 1.4);
-      for (let k = 0; k < merlons; k++) {
-        const lx = -W / 2 + 0.7 + k * (W - 1.4) / Math.max(1, merlons - 1);
-        add('box', 'plaster', lx, H * 0.7, D / 2 - 0.2, 0.6, 0.7, 0.4, wallC);
-        add('box', 'plaster', lx, H * 0.7, -D / 2 + 0.2, 0.6, 0.7, 0.4, wallC);
-      }
-      add('cyl', 'plaster', -W * 0.15, H * 0.7, -0.5, 5, 1.2, 5, wallC);
-      const domeKind = Math.floor(r(6) * 3);
-      add('hemi', domeKind === 0 ? 'gold' : 'plaster', -W * 0.15, H * 0.7 + 1.2, -0.5, 5.2, 4.4, 5.2, ['#d8b25a', '#f2ebdd', '#3f9a9a'][domeKind]);
-      add('sphere', 'gold', -W * 0.15, H * 0.7 + 3.6, -0.5, 0.4, 0.8, 0.4, '#e2c070');
-      // wind tower (barjeel) with slatted vents
-      const tx = W * 0.32;
-      add('box', 'plaster', tx, H * 0.7, -D * 0.2, 2.6, 5, 2.6, wallC.clone().offsetHSL(0, 0, 0.03));
-      for (let s = 0; s < 4; s++) {
-        const a = (s * Math.PI) / 2;
-        for (const o of [-0.6, 0, 0.6]) add('box', 'dark', tx + Math.sin(a) * 1.32 + Math.cos(a) * o, H * 0.7 + 2.2, -D * 0.2 + Math.cos(a) * 1.32 - Math.sin(a) * o, 0.25, 2.4, 0.08, '#3a2a1e', a);
-      }
-      add('box', 'plaster', tx, H * 0.7 + 5, -D * 0.2, 3, 0.4, 3, wallC);
-      // tall arched portal (iwan) with carved wooden doors, mashrabiya screens
-      add('box', 'plaster', 0, 0, D / 2 + 0.4, 4.6, H * 0.85, 0.8, wallC.clone().offsetHSL(0, 0, -0.03));
-      archWindow(add, 0, 0.1, D / 2 + 0.82, 2.6, H * 0.62, 'dark', '#2a1c12');
-      add('box', 'wood', 0, 0.1, D / 2 + 0.84, 2.2, 2.9, 0.06, '#7a4e2a');
+      // a U-shaped house round a courtyard: crenellated sand walls, domes, wind towers, an arcade
+      const wallC = new THREE.Color(['#dcc298', '#e4cfa6', '#d2b484'][Math.floor(r(5) * 3)]);
+      const bz = -D * 0.3;
+      const bd = D * 0.4;
+      const sw = W * 0.24;
+      add('box', 'stone', 0, 0, 0, W + 0.6, 0.45, D + 0.6, '#cfb48a');
+      add('box', 'plaster', 0, 0.45, bz, W, H * 0.78, bd, wallC);
+      for (const s of [-1, 1]) add('box', 'plaster', s * (W / 2 - sw / 2), 0.45, 0, sw, H * 0.64, D, wallC);
+      merlons(add, 0, 0.45 + H * 0.78, bz - bd / 2 + 0.2, W, 0, wallC);
+      merlons(add, 0, 0.45 + H * 0.78, bz + bd / 2 - 0.2, W * 0.5, 0, wallC);
       for (const s of [-1, 1]) {
-        add('box', 'wood', s * W * 0.32, H * 0.3, D / 2 + 0.04, 1.8, 2, 0.1, '#8a5e36');
-        archWindow(add, s * W * 0.32, 0.4, D / 2 + 0.03, 1.2, 2.2);
+        merlons(add, s * (W / 2 - 0.2), 0.45 + H * 0.64, 0, D, Math.PI / 2, wallC);
+        merlons(add, s * (W / 2 - sw + 0.2), 0.45 + H * 0.64, D * 0.1, D * 0.75, Math.PI / 2, wallC);
       }
-      fountain(pa, poolSide * 7.2, 8.6, 3.2);
-      out.lights.push([plot.wx(poolSide * 7.2, 8.6), plot.wz(poolSide * 7.2, 8.6)]);
+      // courtyard: marble floor, arcades along the wings, a fountain and palms
+      add('box', 'marble', 0, 0.45, D * 0.2, W - sw * 2, 0.06, D * 0.6, '#ece4d4');
+      fountain(add, 0, D * 0.2, 2.8, true);
+      out.lights.push([house.wx(0, D * 0.2), house.wz(0, D * 0.2)]);
+      for (const s of [-1, 1]) {
+        const ax = s * (W / 2 - sw - 1.2);
+        for (let k = 0; k <= 4; k++) add('cyl', 'plaster', ax, 0.45, -bd * 0.2 + (k * (D / 2 + bd * 0.2)) / 4.2, 0.45, 3, 0.45, wallC.clone().offsetHSL(0, 0, 0.04));
+        add('box', 'plaster', ax, 3.45, D * 0.18, 0.6, 0.6, D * 0.72, wallC);
+        add('box', 'plaster', s * (W / 2 - sw - 0.6), 3.45, D * 0.18, 1.2, 0.3, D * 0.72, wallC.clone().offsetHSL(0, 0, -0.04));
+        if (warm) palm(add, s * (W / 2 - sw - 3), D * 0.32, 5 + r(150 + s) * 2, r, 160 + s * 5, 0.45);
+      }
+      // domes: a great one on the hall, small ones on the wings
+      const domeKind = Math.floor(r(6) * 3);
+      const domeM: DMat = domeKind === 0 ? 'gold' : 'plaster';
+      const domeC = ['#d8b25a', '#f2ebdd', '#3f9a9a'][domeKind];
+      add('cyl', 'plaster', 0, 0.45 + H * 0.78, bz, 5.4, 1.6, 5.4, wallC);
+      for (let k = 0; k < 8; k++) archWindow(add, Math.sin((k * Math.PI) / 4) * 2.72, 0.45 + H * 0.78 + 0.2, bz + Math.cos((k * Math.PI) / 4) * 2.72, 0.6, 1.2, 'glass', '#24303c', (k * Math.PI) / 4);
+      add('hemi', domeM, 0, 0.45 + H * 0.78 + 1.6, bz, 5.8, 5, 5.8, domeC);
+      add('sphere', 'gold', 0, 0.45 + H * 0.78 + 4.3, bz, 0.4, 0.9, 0.4, '#e2c070');
+      for (const s of [-1, 1]) {
+        add('cyl', 'plaster', s * (W / 2 - sw / 2), 0.45 + H * 0.64, D / 2 - 2, 2.4, 0.8, 2.4, wallC);
+        add('hemi', domeM, s * (W / 2 - sw / 2), 0.45 + H * 0.64 + 0.8, D / 2 - 2, 2.6, 2.4, 2.6, domeC);
+      }
+      // wind towers with slatted vents
+      for (const s of [-1, 1]) {
+        const tx = s * W * 0.34;
+        add('box', 'plaster', tx, 0.45 + H * 0.78, bz, 2.4, 4.6, 2.4, wallC.clone().offsetHSL(0, 0, 0.03));
+        for (let f = 0; f < 4; f++) {
+          const a = (f * Math.PI) / 2;
+          for (const o of [-0.55, 0, 0.55]) add('box', 'dark', tx + Math.sin(a) * 1.22 + Math.cos(a) * o, 0.45 + H * 0.78 + 2, bz + Math.cos(a) * 1.22 - Math.sin(a) * o, 0.22, 2.2, 0.08, '#3a2a1e', a);
+        }
+        add('box', 'plaster', tx, 0.45 + H * 0.78 + 4.6, bz, 2.8, 0.35, 2.8, wallC);
+      }
+      // arched windows behind carved screens on the outer walls, mashrabiya oriels upstairs
+      for (const s of [-1, 1]) {
+        windowsOn(add, [s > 0 ? 'right' : 'left'], s * (W / 2 - sw / 2), 0, sw, D, 1.2, 2.4, 3, wallC.getStyle(), 'arch');
+        add('box', 'wood', s * (W / 2 + 0.5), 0.45 + H * 0.36, D * 0.1, 1, 2.4, 2.8, '#8a5e36');
+        add('box', 'wood', s * (W / 2 + 0.5), 0.45 + H * 0.36 + 2.4, D * 0.1, 1.3, 0.25, 3.1, '#6a4428');
+      }
+      windowsOn(add, ['front'], 0, bz, W * 0.5, bd, 1.4, 2.6, 2.6, wallC.getStyle(), 'arch');
+      windowsOn(add, ['back'], 0, bz, W, bd, 1.4, 2.6, 3, wallC.getStyle(), 'arch');
+      // a grand arched gateway joining the wings at the front
+      add('box', 'plaster', 0, 0.45, D / 2 - 0.4, 5.4, H * 0.74, 1.2, wallC.clone().offsetHSL(0, 0, -0.03));
+      archWindow(add, 0, 0.5, D / 2 + 0.22, 3, H * 0.56, 'dark', '#2a1c12');
+      add('box', 'wood', 0, 0.5, D / 2 + 0.24, 2.6, 3.2, 0.06, '#7a4e2a');
+      merlons(add, 0, 0.45 + H * 0.74, D / 2 - 0.4, 5.4, 0, wallC);
+      for (const s of [-1, 1]) {
+        add('box', 'plaster', s * (sw / 2 + W * 0.14), 0.45, D / 2 - 0.4, W * 0.28 - 2.4, 2.6, 0.6, wallC);
+        add('sphere', 'glow', s * 2.2, 2.8, D / 2 + 0.4, 0.35, 0.5, 0.35, '#ffc070');
+      }
       break;
     }
     case 'classical': {
-      // symmetrical mansion: two storeys, lower wings, a columned portico under a pediment
+      // neo-Palladian: rusticated base, string course, cornice and balustrade, cupola, portico, wings
       const ivory = new THREE.Color(['#f2ece0', '#efe3c4', '#e4e8ec', '#f3e6dc'][Math.floor(r(12) * 4)]);
-      add('box', 'plaster', 0, 0, 0, W * 0.62, H, D, ivory);
-      for (const s of [-1, 1]) {
-        add('box', 'plaster', s * W * 0.4, 0, -0.6, W * 0.2, H * 0.62, D * 0.85, ivory);
-        add('box', 'stone', s * W * 0.4, H * 0.62, -0.6, W * 0.22, 0.35, D * 0.88, '#ddd6c6');
-        for (const k of [0, 1]) archWindow(add, s * W * 0.4, 0.4, D * 0.425 - 0.6 + 0.03, 1.1, 2.4 + k * 0);
+      const stoneC = '#ddd6c6';
+      const cw = W * 0.56;
+      add('box', 'stone', 0, 0, 0, W + 0.8, 0.6, D + 0.8, '#d4ccbc');
+      add('box', 'plaster', 0, 0.6, 0, cw, H - 0.6, D, ivory);
+      for (let k = 1; k <= 3; k++) add('box', 'stone', 0, 0.6 + (k * (fh - 0.4)) / 4, D / 2 + 0.02, cw + 0.04, 0.06, 0.06, '#cfc6b4');
+      add('box', 'stone', 0, 0.6 + fh - 0.2, 0, cw + 0.3, 0.25, D + 0.3, stoneC);
+      add('box', 'stone', 0, H - 0.1, 0, cw + 0.8, 0.5, D + 0.8, stoneC);
+      balustrade(add, 0, H + 0.4, D / 2 + 0.2, cw + 0.6, 0, '#e8e2d6');
+      balustrade(add, 0, H + 0.4, -D / 2 - 0.2, cw + 0.6, 0, '#e8e2d6');
+      for (const s of [-1, 1]) for (const t of [-1, 1]) {
+        add('box', 'stone', s * (cw / 2 + 0.2), H + 0.4, t * (D / 2 + 0.2), 0.6, 1.1, 0.6, stoneC);
+        add('sphere', 'stone', s * (cw / 2 + 0.2), H + 1.75, t * (D / 2 + 0.2), 0.6, 0.8, 0.6, '#e2dccd');
       }
-      add('box', 'stone', 0, H, 0, W * 0.64, 0.45, D + 0.2, '#ddd6c6');
-      add('gable', 'roof', 0, H + 0.45, 0, D * 0.9, 1.8, W * 0.62, '#5a6068', Math.PI / 2);
-      // portico: steps, six columns, entablature, pediment facing the street
-      const pw = W * 0.5;
-      add('box', 'marble', 0, 0, D / 2 + 1.8, pw + 1.2, 0.5, 3.6, '#ebe6dc');
+      add('hip', 'roof', 0, H + 0.4, 0, cw * 0.9, 1.6, D * 0.85, '#5a6068');
+      // cupola on the roof
+      add('cyl', 'plaster', 0, H + 1.6, 0, 3.2, 1.8, 3.2, ivory);
+      for (let k = 0; k < 8; k++) add('cyl', 'stone', Math.cos((k * Math.PI) / 4) * 1.65, H + 1.6, Math.sin((k * Math.PI) / 4) * 1.65, 0.2, 1.8, 0.2, stoneC);
+      add('hemi', 'roof', 0, H + 3.4, 0, 3.6, 3, 3.6, '#4a7a7a');
+      add('sphere', 'gold', 0, H + 4.9, 0, 0.35, 0.6, 0.35, '#e2c070');
+      // wings with their own cornice and balustrade
+      for (const s of [-1, 1]) {
+        const wx = s * (cw / 2 + W * 0.11);
+        add('box', 'plaster', wx, 0.6, -0.8, W * 0.22, fh * 1.4, D * 0.82, ivory);
+        add('box', 'stone', wx, 0.6 + fh * 1.4, -0.8, W * 0.22 + 0.5, 0.35, D * 0.82 + 0.5, stoneC);
+        balustrade(add, wx, 0.6 + fh * 1.4 + 0.35, -0.8 + D * 0.41 + 0.15, W * 0.22, 0, '#e8e2d6');
+        windowsOn(add, ['front'], wx, -0.8, W * 0.22, D * 0.82, 1.3, fh * 1.4 - 1.6, 2.6, '#f8f4ec', 'pediment');
+        windowsOn(add, [s > 0 ? 'right' : 'left'], wx, -0.8, W * 0.22, D * 0.82, 1.3, fh * 1.4 - 1.6, 3, '#f8f4ec');
+      }
+      // windows: tall below, pedimented above, all round
+      windowsOn(add, ['front'], 0, 0, cw, D, 1.3, fh - 1.8, 2.4, '#f8f4ec', 'none', true);
+      windowsOn(add, ['front', 'back'], 0, 0, cw, D, 0.6 + fh + 0.4, fh - 1.6, 2.4, '#f8f4ec', 'pediment');
+      windowsOn(add, ['back'], 0, 0, cw, D, 1.3, fh - 1.8, 2.4, '#f8f4ec');
+      if (floors === 3) windowsOn(add, ['front', 'back'], 0, 0, cw, D, 0.6 + fh * 2 + 0.3, fh - 1.8, 2.4, '#f8f4ec');
+      // portico: steps, columns with bases and capitals, entablature, pediment
+      const pw = cw * 0.8;
+      for (let k = 0; k < 3; k++) add('box', 'marble', 0, 0, D / 2 + 3.4 - k * 0.5, pw + 2 - k * 0.4, 0.2 + k * 0.2, 1.2 + k * 0.6, '#ebe6dc');
       const cols = r(13) < 0.5 ? 4 : 6;
       for (let k = 0; k < cols; k++) {
         const lx = -pw / 2 + (k * pw) / (cols - 1);
-        add('cyl', 'marble', lx, 0.5, D / 2 + 3, 0.7, H - 0.5, 0.7, '#f6f2ea');
-        add('box', 'marble', lx, 0.5, D / 2 + 3, 0.95, 0.3, 0.95, '#e6e0d4');
+        add('box', 'marble', lx, 0.6, D / 2 + 2.6, 1, 0.35, 1, '#e6e0d4');
+        add('cyl', 'marble', lx, 0.95, D / 2 + 2.6, 0.75, H - 1.9, 0.75, '#f6f2ea');
+        add('box', 'marble', lx, H - 0.95, D / 2 + 2.6, 1.05, 0.35, 1.05, '#e6e0d4');
       }
-      add('box', 'marble', 0, H, D / 2 + 1.8, pw + 1, 0.7, 3.4, '#ebe6dc');
-      add('gable', 'marble', 0, H + 0.7, D / 2 + 2.6, pw + 1.2, 2.2, 1.8, '#efe9de');
-      for (const lx of [-pw * 0.3, pw * 0.3]) for (const ly of [0.6, H * 0.55]) glass(lx, ly, D / 2 + 0.03, 1.2, 2.2);
-      add('box', 'wood', 0, 0.5, D / 2 + 0.04, 1.8, 3, 0.08, '#5a3a22');
-      fountain(pa, poolSide * 7.2, 8.6, 3.8, true);
-      out.lights.push([plot.wx(poolSide * 7.2, 8.6), plot.wz(poolSide * 7.2, 8.6)]);
+      add('box', 'marble', 0, H - 0.6, D / 2 + 1.5, pw + 1.2, 0.9, 3, '#ebe6dc');
+      add('gable', 'marble', 0, H + 0.3, D / 2 + 2.3, pw + 1.4, 2.4, 1.6, '#efe9de');
+      add('box', 'wood', 0, 0.6, D / 2 + 0.04, 1.9, 3.2, 0.08, '#4a2e1c');
+      add('arch', 'glass', 0, 3.8, D / 2 + 0.04, 1.9, 0.95, 0.08, '#24303c');
       break;
     }
     case 'pavilion': {
-      // single-storey glass pavilion under a floating roof plane, a stone core, a reflecting pool
-      const h1 = H * 0.5;
-      add('box', 'stone', -W * 0.3, 0, -D * 0.1, W * 0.25, h1 + 0.6, D * 0.7, ['#8a8278', '#c8b8a0', '#4a4844'][Math.floor(r(16) * 3)]);
-      add('box', 'glass', 0, 0.15, 0, W * 0.94, h1 - 0.2, D * 0.9, '#2c3a46');
-      add('box', 'plaster', 0, h1, 0, W + 3.2, 0.35, D + 2.6, '#f4f4f0');
-      add('box', 'dark', 0, h1 - 0.08, 0, W + 3, 0.1, D + 2.4, '#3a3e44');
-      for (const s of [-1, 1]) for (const t of [-1, 1]) add('cyl', 'metal', s * (W / 2 + 1.1), 0, t * (D / 2 + 0.9), 0.18, h1, 0.18, '#d8d8d8');
-      // a small rooftop studio
-      add('box', 'glass', W * 0.2, h1 + 0.35, -D * 0.2, W * 0.35, H * 0.4, D * 0.4, '#2c3a46');
-      add('box', 'plaster', W * 0.2, h1 + 0.35 + H * 0.4, -D * 0.2, W * 0.4, 0.25, D * 0.45, '#f4f4f0');
-      // a stone terrace in front of the glass, under the roof overhang
-      add('box', 'marble', 0, 0, D / 2 + 0.9, W + 2.8, 0.12, 1.8, '#e6e4de');
+      // two glass volumes crossing at right angles, white roof plates, a stone wall, a deck
+      const g1 = fh + 0.2;
+      add('box', 'wood', 0, 0, 1.2, W + 3, 0.4, D + 4, '#a07a52');
+      add('box', 'stone', -W * 0.32, 0.4, -D * 0.1, W * 0.2, H * 0.9, D * 0.8, ['#8a8278', '#c8b8a0', '#4a4844'][Math.floor(r(16) * 3)]);
+      add('box', 'glass', W * 0.05, 0.4, 0, W * 0.86, g1, D * 0.72, '#2c3a46');
+      for (let k = 0; k <= 8; k++) add('box', 'metal', W * 0.05 - W * 0.43 + (k * W * 0.86) / 8, 0.4, D * 0.36 + 0.03, 0.06, g1, 0.06, '#d8d8d8');
+      add('box', 'plaster', 0, 0.4 + g1, 0, W + 2.4, 0.35, D + 1.6, '#f4f4f0');
+      add('box', 'glow', 0, 0.4 + g1 - 0.06, D / 2 + 0.6, W + 2, 0.05, 0.1, '#ffe6c0');
+      const g2y = 0.75 + g1;
+      add('box', 'glass', W * 0.22, g2y, 0.6, W * 0.42, fh, D * 1.3, '#2c3a46');
+      add('box', 'plaster', W * 0.22, g2y + fh, 0.6, W * 0.46 + 0.6, 0.3, D * 1.3 + 0.8, '#f4f4f0');
+      for (let k = 0; k <= 6; k++) add('box', 'metal', W * 0.22 - W * 0.21 + (k * W * 0.42) / 6, g2y, 0.6 + D * 0.65 + 0.03, 0.06, fh, 0.06, '#d8d8d8');
+      for (const s of [-1, 1]) for (const t of [-1, 1]) add('cyl', 'metal', s * (W / 2 + 0.8), 0.4, t * (D / 2 + 0.4), 0.2, g1, 0.2, '#e0e0e0');
+      // fire pit and lounge on the deck
+      add('cyl', 'stone', -W * 0.1, 0.4, D / 2 + 2.2, 1.6, 0.45, 1.6, '#6a6560');
+      add('cyl', 'glow', -W * 0.1, 0.85, D / 2 + 2.2, 1, 0.08, 1, '#ff9a40');
+      for (const s of [-1, 1]) add('box', 'cloth', -W * 0.1 + s * 2, 0.4, D / 2 + 2.2, 0.9, 0.45, 2.2, '#e8e2d8');
+      windowsOn(add, ['back'], W * 0.05, 0, W * 0.86, D * 0.72, 0.8, g1 - 0.8, 2.2, '#d8d8d8');
+      break;
+    }
+    case 'tropical': {
+      // timber pavilions under deep, steep roofs round a water garden
+      const timber = '#7a5236';
+      const roofC = ['#6a5440', '#7a5e44', '#58624e'][Math.floor(r(19) * 3)];
+      add('box', 'stone', 0, 0, 0, W + 1, 0.7, D + 1, '#8a8070');
+      add('box', 'glass', 0, 0.7, 0, W * 0.82, fh + 0.6, D * 0.78, '#2c3a40');
+      for (let k = 0; k <= 6; k++) for (const t of [-1, 1]) add('box', 'wood', -W * 0.41 + (k * W * 0.82) / 6, 0.7, t * D * 0.39, 0.25, fh + 0.6, 0.25, timber);
+      add('box', 'wood', 0, 0.7 + fh + 0.6, 0, W * 0.9, 0.4, D * 0.86, timber);
+      add('hip', 'roof', 0, 1.7 + fh, 0, W * 1.3, H * 0.55, D * 1.35, roofC);
+      // a second pavilion joined by a covered walk
+      const sx = (W / 2 + 4) * (r(20) < 0.5 ? 1 : -1);
+      if (Math.abs(hx + sx) < PW - 4) {
+        add('box', 'stone', sx, 0, -1, 6.4, 0.7, 6.4, '#8a8070');
+        add('box', 'glass', sx, 0.7, -1, 5, fh, 5, '#2c3a40');
+        add('hip', 'roof', sx, 0.7 + fh, -1, 7.6, H * 0.4, 7.6, roofC);
+        add('box', 'wood', sx / 2, 2.8, -1, Math.abs(sx) - 4, 0.25, 2.2, timber);
+      }
+      // a pond with stepping stones, lilies and stone lanterns before the house
+      add('box', 'water', 0, 0.05, D / 2 + 2.6, W * 0.6, 0.12, 3, '#2f7a88');
+      out.lights.push([house.wx(0, D / 2 + 2.6), house.wz(0, D / 2 + 2.6)]);
+      for (let k = 0; k < 4; k++) add('cyl', 'stone', -W * 0.2 + k * W * 0.13, 0.05, D / 2 + 2.6 + (k % 2 ? 0.5 : -0.5), 1, 0.2, 1, '#9a948a');
+      for (let k = 0; k < 6; k++) add('cyl', 'leaf', -W * 0.27 + r(170 + k) * W * 0.54, 0.16, D / 2 + 1.6 + r(180 + k) * 2, 0.6, 0.04, 0.6, '#4f8a3a');
+      for (const s of [-1, 1]) {
+        add('box', 'stone', s * W * 0.38, 0, D / 2 + 2.6, 0.6, 1, 0.6, '#9a948a');
+        add('box', 'glow', s * W * 0.38, 1, D / 2 + 2.6, 0.5, 0.5, 0.5, '#ffd090');
+        add('cone', 'stone', s * W * 0.38, 1.5, D / 2 + 2.6, 1, 0.5, 1, '#8a847a');
+      }
+      for (let k = 0; k < 5; k++) add('sphere', 'leaf', -W / 2 + k * (W / 4), 0, -D / 2 - 1.2, 2.2, 2.4, 1.6, k % 2 ? '#3a7a3a' : '#4f8a3a');
       break;
     }
   }
+  void front;
 }
 
 /** Round fountain: basin, water, a central column, and on grand ones an upper bowl. */
@@ -533,6 +834,74 @@ function temple(out: DistrictData, b: Building, y0: number) {
   }
   for (let k = 0; k < 10; k++) add('sphere', 'glow', -4.5 + k, 5.6, mz + 4.3, 0.18, 0.18, 0.18, '#ffb050');
   out.lights.push([b.x, b.z]);
+}
+
+function church(out: DistrictData, b: Building, y0: number, warm: boolean) {
+  const r = hashRand(b.tone * 1000 + 11);
+  const { add } = frame(out, b.x, b.z, y0, b.door);
+  const S = b.w / 2;
+  const stone = new THREE.Color(r(1) < 0.5 ? '#d8cdb8' : '#c8bca4');
+  const slate = '#4a5058';
+  // churchyard: lawn, a path to the door, a low wall, yews
+  add('box', 'lawn', 0, 0, 0, S * 2, 0.14, S * 2, '#5a8a3c');
+  add('box', 'stone', 0, 0.02, S * 0.6, 2.6, 0.16, S * 0.8, '#cfc6b4');
+  for (const [lx, lz, sx, sz] of [[0, -S, S * 2, 0.5], [-S, 0, 0.5, S * 2], [S, 0, 0.5, S * 2]] as const) add('box', 'stone', lx, 0, lz, sx, 1.1, sz, stone);
+  for (const s of [-1, 1]) add('box', 'stone', s * (S / 2 + 1.5), 0, S, S - 3, 1.1, 0.5, stone);
+  // nave with buttresses and tall pointed windows, a steep slate roof
+  const nw = 8.5;
+  const nl = S * 1.35;
+  const nz = -S * 0.15;
+  add('box', 'stone', 0, 0, nz, nw, 9, nl, stone);
+  add('gable', 'roof', 0, 9, nz, nw * 1.02, 5.5, nl * 0.98, slate);
+  for (let k = 0; k < 5; k++) {
+    const z = nz - nl / 2 + (nl / 5) * (k + 0.5);
+    for (const s of [-1, 1]) {
+      add('box', 'stone', s * (nw / 2 + 0.5), 0, z - nl / 10, 1, 7, 1.1, stone.clone().offsetHSL(0, 0, -0.04));
+      archWindow(add, s * (nw / 2 + 0.03), 2.2, z, 1.3, 5, 'glass', ['#3a4a8a', '#8a2a3a', '#2a6a4a', '#8a6a2a'][Math.floor(r(10 + k) * 4)], (s * Math.PI) / 2);
+    }
+  }
+  // apse at the east end
+  add('cyl', 'stone', 0, 0, nz - nl / 2, nw * 0.9, 8, nw * 0.9, stone);
+  add('cone', 'roof', 0, 8, nz - nl / 2, nw * 0.95, 3.5, nw * 0.95, slate);
+  // west front: a tower with a belfry and a tall spire, a rose window, a pointed portal
+  const tz = nz + nl / 2 + 2;
+  add('box', 'stone', 0, 0, tz, 5.2, 20, 5.2, stone);
+  for (let f = 0; f < 4; f++) {
+    const a = (f * Math.PI) / 2;
+    archWindow(add, Math.sin(a) * 2.62, 14.5, tz + Math.cos(a) * 2.62, 1.4, 3.6, 'dark', '#1e1e22', a);
+    add('cone', 'roof', Math.sin(a) * 2.2 + Math.cos(a) * 2.2, 20, tz + Math.cos(a) * 2.2 - Math.sin(a) * 2.2, 0.9, 2.4, 0.9, slate);
+  }
+  add('box', 'stone', 0, 20, tz, 5.8, 0.6, 5.8, stone.clone().offsetHSL(0, 0, -0.05));
+  add('cone', 'roof', 0, 20.6, tz, 5, 16, 5, slate);
+  add('box', 'gold', 0, 36.4, tz, 0.18, 2.2, 0.18, '#d8b25a');
+  add('box', 'gold', 0, 37.6, tz, 1.1, 0.18, 0.18, '#d8b25a');
+  archWindow(add, 0, 0.2, tz + 2.62, 2.4, 5.2, 'dark', '#3a2416');
+  add('cyl', 'glass', 0, 7.6, tz + 2.62, 2.6, 0.12, 2.6, '#6a4a9a', 0, Math.PI / 2);
+  add('sphere', 'glow', 0, 5.8, tz + 3.2, 0.3, 0.3, 0.3, '#ffd090');
+  for (let k = 0; k < 4; k++) add('cone', 'leaf', (k < 2 ? -1 : 1) * (S - 2.2), 0, S * 0.5 - (k % 2) * 5, 1.4, 5, 1.4, '#2f4e2a');
+  if (warm) palm(add, S - 2.4, -S + 2.4, 6, r, 40);
+}
+
+function park(out: DistrictData, b: Building, y0: number, warm: boolean) {
+  const r = hashRand(b.tone * 1000 + 13);
+  const { add } = frame(out, b.x, b.z, y0, b.door);
+  const S = b.w / 2;
+  // a pocket park: lawn, crossing paths, a fountain, trees, benches, beds and lamps
+  add('box', 'lawn', 0, 0, 0, S * 2, 0.14, S * 2, '#5f9a40');
+  add('box', 'stone', 0, 0.03, 0, S * 2, 0.14, 2.6, '#d6cfc0');
+  add('box', 'stone', 0, 0.03, 0, 2.6, 0.14, S * 2, '#d6cfc0');
+  fountain(add, 0, 0, 5.2, true);
+  out.lights.push([b.x, b.z]);
+  for (const s of [-1, 1]) for (const t of [-1, 1]) {
+    const cx = s * S * 0.5;
+    const cz = t * S * 0.5;
+    if (warm && r(s + t * 3 + 5) < 0.5) palm(add, cx, cz, 7 + r(s * 2 + t + 9) * 2, r, 20 + s * 3 + t * 7);
+    else roundTree(add, cx, cz, 6 + r(s + t + 11) * 2, '#4f7a34', r, 30 + s * 4 + t * 9);
+    flowerBed(add, cx * 0.9, cz * 0.35 + t * 1.5, S * 0.55, 0, r, 50 + s * 5 + t * 11);
+    add('box', 'wood', s * 2.6, 0.45, t * (S * 0.55), 1.8, 0.12, 0.6, '#8a6a4a', Math.PI / 2);
+    add('cyl', 'metal', s * 1.9, 0, t * 3.4, 0.14, 3.6, 0.14, '#2a2e34');
+    add('sphere', 'glow', s * 1.9, 3.7, t * 3.4, 0.4, 0.4, 0.4, '#ffe2b0');
+  }
 }
 
 // ───────────────────────── Boulevards ─────────────────────────

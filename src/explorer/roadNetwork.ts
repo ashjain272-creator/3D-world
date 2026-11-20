@@ -67,7 +67,7 @@ export function generateHighways(layout: Layout, t: TerrainData): HighwayData | 
   const ax = pickAvenue(true, [2, -2, 3, -3, 1, -1]);
   const az = pickAvenue(false, [-2, 2, -3, 3, -1, 1]);
 
-  const ringR = R + 32;
+  const ringR = R + 26;
   const ringY = (x: number, z: number) => Math.max(y0 + 8, t.height(x, z) + 6);
   // ── ring road (level 1)
   const ring: THREE.Vector3[] = [];
@@ -102,12 +102,12 @@ export function generateHighways(layout: Layout, t: TerrainData): HighwayData | 
   for (let k = 0; k < 4; k++) {
     const a = Math.PI / 4 + (k * Math.PI) / 2;
     const pts: THREE.Vector3[] = [];
-    for (let d = 0; d <= 100; d += 10) {
+    for (let d = 0; d <= 80; d += 10) {
       const r = ringR + d;
-      const tangent = (d / 100) * 0.35;
+      const tangent = (d / 80) * 0.35;
       const x = Math.cos(a + tangent) * r;
       const z = Math.sin(a + tangent) * r;
-      const f = d / 100;
+      const f = d / 80;
       pts.push(new THREE.Vector3(x, ringY(x, z) * (1 - f) + (t.height(x, z) + 0.3) * f, z));
     }
     if (pts[pts.length - 1].distanceTo(new THREE.Vector3()) < t.size * 0.47) roads.push(finishRoad('ramp', pts, 9, 1, false, true));

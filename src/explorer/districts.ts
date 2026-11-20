@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Building, Layout } from './layout';
+import { footballStadium, nbaArena } from './venues';
 
 /**
  * Architecture for the special districts of futuristic cities: mansions in five
@@ -7,8 +8,8 @@ import type { Building, Layout } from './layout';
  * mall, a mosque and a temple, and palm-lined boulevards. Everything is built
  * from a handful of instanced shapes so a whole district costs a few draw calls.
  */
-export type DShape = 'box' | 'cyl' | 'cone' | 'hemi' | 'sphere' | 'gable' | 'arch' | 'palmTrunk' | 'fronds' | 'oct' | 'hip';
-export type DMat = 'plaster' | 'stone' | 'roof' | 'glass' | 'water' | 'gold' | 'metal' | 'leaf' | 'bark' | 'glow' | 'wood' | 'lawn' | 'cloth' | 'dark' | 'marble';
+export type DShape = 'box' | 'cyl' | 'cone' | 'hemi' | 'sphere' | 'gable' | 'arch' | 'palmTrunk' | 'fronds' | 'oct' | 'hip' | 'ring' | 'dArc' | 'threeArc';
+export type DMat = 'plaster' | 'stone' | 'roof' | 'glass' | 'water' | 'gold' | 'metal' | 'leaf' | 'bark' | 'glow' | 'wood' | 'lawn' | 'cloth' | 'dark' | 'marble' | 'crowd' | 'pitch' | 'court' | 'net' | 'skylight';
 
 export interface DPiece {
   shape: DShape;
@@ -73,6 +74,12 @@ export function generateDistricts(layout: Layout, y0: number, warm: boolean): Di
         break;
       case 'park':
         park(out, b, y0, warm);
+        break;
+      case 'stadium':
+        footballStadium(out, frame(out, b.x, b.z, y0, b.door).add, b, warm);
+        break;
+      case 'arena':
+        nbaArena(frame(out, b.x, b.z, y0, b.door).add, b);
         break;
     }
   }

@@ -31,6 +31,11 @@ const SHAPES: Record<DShape, THREE.BufferGeometry> = {
     return new THREE.ExtrudeGeometry(s, { depth: 1.1, bevelEnabled: false }).translate(0, 0, -0.55);
   })(),
   arch: archGeo,
+  // pitch and court markings: thin rings lying flat, a full circle and two arcs centred on +x
+  ring: new THREE.RingGeometry(0.494, 0.5, 72).rotateX(-Math.PI / 2),
+  // the penalty-area D (106 degrees) and the NBA three-point arc (136 degrees)
+  dArc: new THREE.RingGeometry(0.494, 0.5, 28, 1, -0.927, 1.854).rotateX(-Math.PI / 2),
+  threeArc: new THREE.RingGeometry(0.4966, 0.5, 40, 1, -1.187, 2.374).rotateX(-Math.PI / 2),
   // hipped roof: a four-sided pyramid on a unit square base
   hip: new THREE.ConeGeometry(Math.SQRT1_2, 1, 4).rotateY(Math.PI / 4).translate(0, 0.5, 0),
   palmTrunk: palmTrunkGeo(0),
@@ -40,6 +45,77 @@ const SHAPES: Record<DShape, THREE.BufferGeometry> = {
 type Quality = 'low' | 'medium' | 'high';
 
 const glassNight = { value: 0 };
+const crowdLight = { value: 0.08 };
+
+/**
+ * Stadium seating: every row box is filled with fans. Top faces are split into 0.55 m seats;
+ * each seat holds a fan (most of them), in a random shirt or the club colour, with a head, or is
+ * an empty seat in the row colour. Risers show the seat backs.
+ */
+function crowdMaterial(): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85 });
+  m.customProgramCacheKey = () => 'district-crowd';
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uCrowdLight = crowdLight;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vCW;')
+      .replace(
+        '#include <worldpos_vertex>',
+        `#include <worldpos_vertex>
+        {
+          vec4 cw = vec4(transformed, 1.0);
+          #ifdef USE_INSTANCING
+            cw = instanceMatrix * cw;
+          #endif
+          vCW = (modelMatrix * cw).xyz;
+        }`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uCrowdLight;\nvarying vec3 vCW;\nfloat chash(vec3 p){ vec3 q = fract(p * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }')
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          vec3 seatCol = diffuseColor.rgb;
+          vec3 n = normalize(cross(dFdx(vCW), dFdy(vCW)));
+          float top = step(0.6, abs(n.y));
+          // seats along the row: whichever horizontal axis the row runs along
+          float alongRow = abs(n.x) > abs(n.z) ? vCW.z : vCW.x;
+          float seat = alongRow / 0.5;
+          float row = floor(vCW.y / 0.3);
+          float cellId = floor(seat);
+          float fs = fract(seat) - 0.5;
+          float h = chash(vec3(cellId, row, floor(top > 0.5 ? (abs(n.x) > abs(n.z) ? vCW.x : vCW.z) / 0.75 : 0.0)));
+          float fan = step(h, 0.9);
+          // muted, varied clothing, about a third of the crowd in club colours
+          vec3 shirt = 0.32 + 0.26 * cos(6.2832 * (h * 5.7 + vec3(0.0, 0.33, 0.67)));
+          shirt = mix(shirt, seatCol * 1.1, step(0.66, fract(h * 13.7)));
+          shirt = mix(shirt, vec3(0.08), step(0.85, fract(h * 7.3)));
+          vec3 skin = mix(vec3(0.36, 0.22, 0.15), vec3(0.86, 0.68, 0.55), fract(h * 31.3));
+          // top faces: shoulders and a head seen from above
+          vec2 g2 = vec2(fs, fract((abs(n.x) > abs(n.z) ? vCW.x : vCW.z) / 0.75) - 0.5);
+          float body = 1.0 - smoothstep(0.32, 0.4, length(g2 * vec2(1.0, 1.4)));
+          float head = 1.0 - smoothstep(0.1, 0.14, length(g2));
+          vec3 onTop = mix(seatCol * 0.55, mix(shirt, skin, head), fan * body);
+          // row fronts: torsos and heads above the seat backs
+          float yf = fract(vCW.y / 0.3);
+          float torso = step(abs(fs), 0.36) * fan;
+          vec3 riser = mix(seatCol * 0.5, seatCol * 0.25, step(0.42, abs(fs)));
+          riser = mix(riser, shirt, torso * step(yf, 0.75));
+          riser = mix(riser, skin, torso * step(0.75, yf) * step(abs(fs), 0.16));
+          diffuseColor.rgb = mix(riser, onTop, top);
+        }`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        totalEmissiveRadiance += diffuseColor.rgb * uCrowdLight;
+        {
+        }`,
+      );
+  };
+  return m;
+}
 /**
  * Window glass: dark and reflective by day. After dark each pane is lit or not by a hash of
  * its position, in warm or cool light, brightest near the ceiling, so a house reads as rooms
@@ -109,6 +185,12 @@ export function Districts({ data, quality }: { data: DistrictData; quality: Qual
       lawn: texturedMaterial('cloth', { color: '#ffffff', roughness: 1 }),
       glow: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }),
       dark: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9 }),
+      crowd: crowdMaterial(),
+      // the pitch and the court are floodlit after dark
+      pitch: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, emissive: new THREE.Color('#3f8a36'), emissiveIntensity: 0 }),
+      court: texturedMaterial('wood', { color: '#ffffff', roughness: 0.35, emissive: new THREE.Color('#8a6038'), emissiveIntensity: 0.2 }),
+      net: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false }),
+      skylight: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.45, depthWrite: false }),
     }),
     [],
   );
@@ -117,6 +199,10 @@ export function Districts({ data, quality }: { data: DistrictData; quality: Qual
     const n = nightUniform.value;
     glassNight.value = n;
     (mats.water as THREE.MeshStandardMaterial).emissiveIntensity = 0.12 + n * 0.6;
+    // floodlights: the pitch, the court and the crowd carry their own light after dark
+    (mats.pitch as THREE.MeshStandardMaterial).emissiveIntensity = n * 0.55;
+    (mats.court as THREE.MeshStandardMaterial).emissiveIntensity = 0.2 + n * 0.6;
+    crowdLight.value = 0.08 + n * 0.45;
   });
   const groups = useMemo(() => {
     const g = new Map<string, DPiece[]>();

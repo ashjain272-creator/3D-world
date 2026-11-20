@@ -62,10 +62,15 @@ export function generateHighways(layout: Layout, t: TerrainData): HighwayData | 
   let spacing = Infinity;
   for (const s of layout.streets) for (const v of [s.a[0], s.a[1]]) if (Math.abs(v) > 1) spacing = Math.min(spacing, Math.abs(v));
   if (!isFinite(spacing)) spacing = 40;
-  const clearOfLandmarks = (vertical: boolean, c: number) => layout.landmarks.every((l) => Math.abs((vertical ? l.x : l.z) - c) > l.radius + 10);
-  const pickAvenue = (vertical: boolean, prefer: number[]) => prefer.map((k) => k * spacing).find((c) => clearOfLandmarks(vertical, c) && Math.abs(c) < R - 20) ?? prefer[0] * spacing;
-  const ax = pickAvenue(true, [2, -2, 3, -3, 1, -1]);
-  const az = pickAvenue(false, [-2, 2, -3, 3, -1, 1]);
+  // expressways must not cross landmarks or pass over the stadium and arena roofs
+  const venues = layout.buildings.filter((b) => b.kind === 'stadium' || b.kind === 'arena');
+  const clearOfLandmarks = (vertical: boolean, c: number) =>
+    layout.landmarks.every((l) => Math.abs((vertical ? l.x : l.z) - c) > l.radius + 10) && venues.every((v) => Math.abs((vertical ? v.x : v.z) - c) > (vertical ? v.w : v.d) / 2 + 8);
+  // the first clear avenue; with stadiums in the way an expressway may have none, and is left out
+  // rather than being driven over a roof
+  const pickAvenue = (vertical: boolean, prefer: number[]) => prefer.map((k) => k * spacing).find((c) => clearOfLandmarks(vertical, c) && Math.abs(c) < R - 20) ?? null;
+  const ax = pickAvenue(true, [2, -2, 3, -3, 1, -1, 4, -4, 5, -5]);
+  const az = pickAvenue(false, [-2, 2, -3, 3, -1, 1, -4, 4, 5, -5]);
 
   const ringR = R + 26;
   const ringY = (x: number, z: number) => Math.max(y0 + 8, t.height(x, z) + 6);
@@ -95,8 +100,8 @@ export function generateHighways(layout: Layout, t: TerrainData): HighwayData | 
     }
     roads.push(finishRoad('express', pts, 13, 2, false, true));
   };
-  express(true, ax, 13);
-  express(false, az, 20);
+  if (ax !== null) express(true, ax, 13);
+  if (az !== null) express(false, az, 20);
 
   // ── ramps from the ring down to ground level in the countryside
   for (let k = 0; k < 4; k++) {
@@ -139,7 +144,7 @@ export function generateHighways(layout: Layout, t: TerrainData): HighwayData | 
       if (Math.hypot(p.x, p.z) < 34) continue;
       if (layout.landmarks.some((l) => Math.hypot(l.x - p.x, l.z - p.z) < l.radius + 3)) continue;
       // decks span parks and villa gardens without standing in them
-      if (layout.buildings.some((b) => (b.kind === 'park' || b.plot) && Math.abs(p.x - (b.plot?.x ?? b.x)) < (b.plot?.w ?? b.w) / 2 && Math.abs(p.z - (b.plot?.z ?? b.z)) < (b.plot?.d ?? b.d) / 2)) continue;
+      if (layout.buildings.some((b) => (b.kind === 'park' || b.kind === 'stadium' || b.kind === 'arena' || b.plot) && Math.abs(p.x - (b.plot?.x ?? b.x)) < (b.plot?.w ?? b.w) / 2 && Math.abs(p.z - (b.plot?.z ?? b.z)) < (b.plot?.d ?? b.d) / 2)) continue;
       const q = r.pts[i - 1];
       const ang = Math.atan2(p.x - q.x, p.z - q.z);
       pillars.push({ x: p.x, z: p.z, h, y: ground, w: r.width, ang });

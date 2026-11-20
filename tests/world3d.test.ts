@@ -214,7 +214,8 @@ describe('futuristic districts', () => {
       for (const k of ['villa', 'shop']) {
         const xs = l.buildings.filter((b) => b.kind === k);
         const quadrants = new Set(xs.map((b) => `${Math.sign(b.x)},${Math.sign(b.z)}`));
-        expect(quadrants.size).toBeGreaterThanOrEqual(k === 'villa' ? 3 : 2);
+        // (a city's arena can take the blocks of one of its two souk patches)
+        expect(quadrants.size).toBeGreaterThanOrEqual(k === 'villa' ? 3 : s.kind === 'capital' ? 2 : 1);
       }
     }
   });
@@ -251,6 +252,45 @@ describe('futuristic districts', () => {
     const styles = new Set<string>();
     for (const s of cities) for (const b of generateLayout(s).buildings) if (b.kind === 'villa') styles.add(villaStyle(b));
     expect(styles).toEqual(new Set(VILLA_STYLES));
+  });
+
+  it('builds a Premier League stadium and an NBA arena at real sizes', () => {
+    for (const s of cities.filter((c) => c.kind === 'capital' || c.kind === 'city')) {
+      const l = generateLayout(s);
+      const stadium = l.buildings.find((b) => b.kind === 'stadium');
+      const arena = l.buildings.find((b) => b.kind === 'arena');
+      expect(arena).toBeDefined();
+      if (s.kind === 'capital') expect(stadium).toBeDefined();
+      // room for a 105 x 68 m pitch plus stands, and a 28.65 x 15.24 m court plus a bowl
+      if (stadium) expect(Math.min(stadium.w, stadium.d)).toBeGreaterThan(130);
+      expect(Math.min(arena!.w, arena!.d)).toBeGreaterThan(120);
+      // no street runs through a venue and no expressway pillar stands in one
+      for (const v of [stadium, arena]) {
+        if (!v) continue;
+        for (const st of l.streets) {
+          const mx = (st.a[0] + st.b[0]) / 2;
+          const mz = (st.a[1] + st.b[1]) / 2;
+          expect(Math.abs(mx - v.x) < v.w / 2 - 2 && Math.abs(mz - v.z) < v.d / 2 - 2).toBe(false);
+        }
+        const p = w.planets[s.planetId];
+        const t = generateTerrain(p, s.regionIndex, p.regions[s.regionIndex].biome, settlementRadius(s) + 20);
+        const hw = generateHighways(l, t);
+        for (const pl of hw?.pillars ?? []) expect(Math.abs(pl.x - v.x) < v.w / 2 && Math.abs(pl.z - v.z) < v.d / 2).toBe(false);
+      }
+      const d = generateDistricts(l, 0, true);
+      const inV = (b: { x: number; z: number; w: number; d: number }) => d.pieces.filter((p) => Math.abs(p.x - b.x) < b.w / 2 && Math.abs(p.z - b.z) < b.d / 2);
+      // seats filled with the crowd, pitch and court markings, goals and hoops
+      if (stadium) {
+        const ps = inV(stadium);
+        expect(ps.filter((p) => p.mat === 'crowd').length).toBeGreaterThan(100);
+        expect(ps.some((p) => p.shape === 'dArc')).toBe(true);
+        expect(ps.filter((p) => p.mat === 'net').length).toBe(2);
+      }
+      const pa = inV(arena!);
+      expect(pa.filter((p) => p.mat === 'crowd').length).toBeGreaterThan(100);
+      expect(pa.filter((p) => p.shape === 'threeArc').length).toBe(2);
+      expect(pa.filter((p) => p.mat === 'court').length).toBeGreaterThan(4);
+    }
   });
 
   it('leaves other styles alone', () => {

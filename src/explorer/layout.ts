@@ -4,7 +4,7 @@ import type { ArchitectureStyle, Landmark, Settlement } from '../sim/types';
 export type BuildingKind =
   | 'tower' | 'block' | 'slab' | 'dome' | 'treehouse' | 'pod' | 'house' | 'hall' | 'windmill' | 'silo'
   // futuristic districts
-  | 'supertall' | 'villa' | 'shop' | 'mall' | 'mosque' | 'temple' | 'church' | 'park';
+  | 'supertall' | 'villa' | 'shop' | 'mall' | 'mosque' | 'temple' | 'church' | 'park' | 'stadium' | 'arena';
 
 /** Districts of a futuristic city (see `futuristic`). */
 export type District = 'downtown' | 'mixed' | 'souk' | 'villas';
@@ -70,7 +70,7 @@ export interface Layout {
 
 export function settlementRadius(s: Settlement): number {
   // futuristic cities are laid out in districts (downtown, villa estates, souk, mixed), which need room
-  if (s.style === 'futuristic') return s.kind === 'capital' ? 262 : s.kind === 'city' ? 215 : s.kind === 'town' ? 150 : 95;
+  if (s.style === 'futuristic') return s.kind === 'capital' ? 300 : s.kind === 'city' ? 215 : s.kind === 'town' ? 150 : 95;
   return s.kind === 'capital' ? 175 : s.kind === 'city' ? 145 : s.kind === 'town' ? 110 : 75;
 }
 
@@ -206,11 +206,53 @@ function futuristic(s: Settlement, rng: Rng): Layout {
   // the inner avenues, which carry the expressways
   const estates = new Set<string>();
   const claimed = new Set<string>();
+  // sports venues first, on whole groups of blocks with their inner streets closed: a Premier
+  // League-sized football stadium (5 x 4 blocks) and an NBA-sized arena (4 x 4) in capitals, the
+  // arena alone in cities. Never across the two central boulevards, never in the downtown core.
+  const venues: { kind: BuildingKind; i: number; j: number; wi: number; wj: number }[] = [];
+  const closedV = new Set<string>(); // vertical street segment at x = i*s between z = j*s and (j+1)*s
+  const closedH = new Set<string>(); // horizontal segment at z = j*s between x = i*s and (i+1)*s
+  const closeRect = (i: number, j: number, wi: number, wj: number) => {
+    for (let a = 0; a < wi; a++) for (let c = 0; c < wj; c++) claimed.add(`${i + a},${j + c}`);
+    for (let a = 1; a < wi; a++) for (let c = 0; c < wj; c++) closedV.add(`${i + a},${j + c}`);
+    for (let a = 0; a < wi; a++) for (let c = 1; c < wj; c++) closedH.add(`${i + a},${j + c}`);
+  };
+  const venuePlan: [BuildingKind, number, number][] = s.kind === 'capital' ? [['stadium', 5, 4], ['arena', 4, 4]] : s.kind === 'city' ? [['arena', 4, 4]] : [];
+  for (const [kind, wi0, wj0] of venuePlan) {
+    let best: { i: number; j: number; wi: number; wj: number } | null = null;
+    let bestScore = -Infinity;
+    for (const [wi, wj] of [[wi0, wj0], [wj0, wi0]])
+      for (let i = -n; i <= n - wi; i++)
+        for (let j = -n; j <= n - wj; j++) {
+          if (i < 0 && i + wi > 0) continue;
+          if (j < 0 && j + wj > 0) continue;
+          let ok = true;
+          for (let a = 0; a < wi && ok; a++)
+            for (let c = 0; c < wj && ok; c++) {
+              // venues may reach a little nearer the edge than ordinary blocks
+              const dc = Math.hypot((i + a + 0.5) * spacing, (j + c + 0.5) * spacing);
+              if (dc > R - 2 || dc < plaza.r + 4 || claimed.has(`${i + a},${j + c}`)) ok = false;
+            }
+          if (!ok) continue;
+          const cx = (i + wi / 2) * spacing;
+          const cz = (j + wj / 2) * spacing;
+          if (Math.hypot(cx, cz) < R * (s.kind === 'capital' ? 0.38 : 0.28)) continue;
+          // far from the other venue, and not hard against the edge
+          const apart = venues.length ? Math.min(...venues.map((v) => Math.hypot((v.i + v.wi / 2) * spacing - cx, (v.j + v.wj / 2) * spacing - cz))) : R;
+          const score = Math.min(apart, R * 0.9) - Math.abs(Math.hypot(cx, cz) - R * 0.6) * 0.5 + rng.range(0, 20);
+          if (score > bestScore) {
+            bestScore = score;
+            best = { i, j, wi, wj };
+          }
+        }
+    if (best) {
+      venues.push({ kind, ...best });
+      closeRect(best.i, best.j, best.wi, best.wj);
+    }
+  }
   // parks in three sizes: a central park of 2 x 2 blocks, long parks of 2 x 1 and pocket parks; the
   // streets inside a park are closed (never the two main boulevards through the centre)
   const parks: { i: number; j: number; wi: number; wj: number }[] = [];
-  const closedV = new Set<string>(); // vertical street segment at x = i*s between z = j*s and (j+1)*s
-  const closedH = new Set<string>(); // horizontal segment at z = j*s between x = i*s and (i+1)*s
   const parkPlan = s.kind === 'capital' ? [[2, 2], [2, 1], [1, 2], [1, 1], [1, 1], [1, 1]] : s.kind === 'city' ? [[2, 2], [2, 1], [1, 1], [1, 1]] : s.kind === 'town' ? [[2, 1], [1, 1], [1, 1]] : [[1, 1]];
   for (const [wi, wj] of parkPlan) {
     for (let tries = 0; tries < 200; tries++) {
@@ -230,9 +272,7 @@ function futuristic(s: Settlement, rng: Rng): Layout {
       const pz = (j + wj / 2) * spacing;
       if (parks.some((p) => Math.hypot((p.i + p.wi / 2) * spacing - px, (p.j + p.wj / 2) * spacing - pz) < R * 0.38)) continue;
       parks.push({ i, j, wi, wj });
-      for (let a = 0; a < wi; a++) for (let c = 0; c < wj; c++) claimed.add(`${i + a},${j + c}`);
-      for (let a = 1; a < wi; a++) for (let c = 0; c < wj; c++) closedV.add(`${i + a},${j + c}`);
-      for (let a = 0; a < wi; a++) for (let c = 1; c < wj; c++) closedH.add(`${i + a},${j + c}`);
+      closeRect(i, j, wi, wj);
       // the crossing in the middle of a 2 x 2 park disappears too
       break;
     }
@@ -387,6 +427,14 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     // the house stands at the back of the plot, leaving a motor court in front
     buildings.push({ x: px + side * (pw / 2 - w / 2 - 3), z: pz + pd / 2 - d / 2 - 2.5, w, d, h: rng.range(9.5, 12.5), rot: 0, kind: 'villa', role: 'home', tone: rng.next(), door: [px, j * spacing + 0.01], district: 'villas', plot: { x: px, z: pz, w: pw, d: pd } });
   }
+  for (const v of venues) {
+    const cx = (v.i + v.wi / 2) * spacing;
+    const cz = (v.j + v.wj / 2) * spacing;
+    // the venue faces the city centre: its main entrance is on the side nearest the plaza
+    const wide = v.wi >= v.wj;
+    const door: [number, number] = wide ? [cx, cz - Math.sign(cz || 1) * (v.wj * spacing) / 2] : [cx - Math.sign(cx || 1) * (v.wi * spacing) / 2, cz];
+    buildings.push({ x: cx, z: cz, w: v.wi * spacing - 10, d: v.wj * spacing - 10, h: v.kind === 'stadium' ? 38 : 31, rot: 0, kind: v.kind, role: 'civic', tone: rng.next(), door, district: districtOf(cx, cz) });
+  }
   for (const p of parks) {
     const pw = p.wi * spacing - 10;
     const pd = p.wj * spacing - 10;
@@ -538,19 +586,27 @@ function finish(
   s.landmarks.forEach((lm, i) => {
     let x = 0,
       z = 0;
+    const radius = landmarkRadius(lm.kind);
+    // stadiums, arenas and other whole-block landmarks are kept: a landmark that would land on one
+    // looks for another spot instead
+    const big = buildings.filter((b) => b.kind === 'stadium' || b.kind === 'arena' || b.kind === 'mosque' || b.kind === 'temple' || b.kind === 'church' || b.kind === 'mall');
+    const onBig = (x: number, z: number) => big.some((b) => Math.abs(b.x - x) < b.w / 2 + radius + 4 && Math.abs(b.z - z) < b.d / 2 + radius + 4);
     if (i > 0 || style === 'frontier') {
-      const a = rng.range(0, Math.PI * 2);
-      const r = i === 0 ? 0 : R * rng.range(0.35, 0.7);
-      x = Math.round((Math.cos(a) * r) / spacing) * spacing + spacing / 2;
-      z = Math.round((Math.sin(a) * r) / spacing) * spacing + spacing / 2;
-      if (i === 0) {
-        x = 0;
-        z = 0;
+      for (let tries = 0; tries < 30; tries++) {
+        const a = rng.range(0, Math.PI * 2);
+        const r = i === 0 ? 0 : R * rng.range(0.35, 0.7);
+        x = Math.round((Math.cos(a) * r) / spacing) * spacing + spacing / 2;
+        z = Math.round((Math.sin(a) * r) / spacing) * spacing + spacing / 2;
+        if (i === 0) {
+          x = 0;
+          z = 0;
+        }
+        if (!onBig(x, z)) break;
       }
     }
-    const radius = landmarkRadius(lm.kind);
     for (let k = buildings.length - 1; k >= 0; k--) {
       const b = buildings[k];
+      if (b.kind === 'stadium' || b.kind === 'arena') continue;
       if (Math.hypot(b.x - x, b.z - z) < radius + Math.max(b.w, b.d) / 2 + 3) buildings.splice(k, 1);
     }
     landmarks.push({ id: lm.id, name: lm.name, kind: lm.kind, description: lm.description, x, z, radius });

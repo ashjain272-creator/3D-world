@@ -339,6 +339,62 @@ What makes a Gulf city read as varied is its zoning. There is a supertall downto
 
   The fps comparison against the baseline was not re-run after this phase.
 
+## Phase 6: grander mansions, places of worship spread out, bigger cities
+
+Requested: "The mansions should look much better… distribute the buildings, mosques and all much better… all the temples, mosques and other religious things are in one area… if they don't fit, make the city bigger."
+
+**City size and distribution** (`layout.ts`, `terrain.ts`)
+- **Bigger cities.** Futuristic cities are larger: capital radius 175 → 262 m, city 145 → 215, town 110 → 150, outpost 75 → 95. Their terrain grows from 720 m to 960 m across, with resolution scaled so detail per metre is unchanged, so the framing mountains still start beyond the city. The ring road sits 26 m outside the city, and its countryside ramps were shortened to fit.
+- **Districts.** Two villa enclaves sit on opposite sides of the outer ring. There is a souk sector, downtown within 36 % of the radius, mixed blocks elsewhere, and pocket parks (four in a capital).
+- **Worship sites and malls.** They are placed by farthest-point spreading: each new site goes to the allowed block farthest from everything already placed. The allowed districts are:
+  - mosques: mixed, souk and villas;
+  - temples: mixed, villas and souk;
+  - the church: mixed and villas.
+
+  A capital gets 4 mosques, 2 temples, 1 church and 2 malls. A city gets 3, 1, 1 and 1.
+- **Reference capital (seed `vis-check-3`).** The plan in `docs/screenshots/districts/district-map.jpg` is drawn from the real layout:
+  - mosques stand in all four quarters (two in villa enclaves, one in the souk);
+  - one temple stands to the north and one to the north-east, and the church to the east;
+  - the nearest two worship sites are 130 m apart.
+- **Estates.** Villa estates occupy two neighbouring blocks with the street between them closed, never across the inner avenues that carry the expressways. Plots are about 60 × 24 m, with houses of 19–24 × 12–14 m and 9.5–12.5 m tall (up to three floors). Single-block villas remain where no pair fits.
+
+**Mansions rebuilt** (`districts.ts`), six styles:
+- **Common to every style.**
+  - Framed windows on every face, with a mullion and transom and a projecting sill.
+  - A stone plinth, flower beds and facade uplights.
+  - Striped lawns and walls with coping, or clipped hedges.
+  - Lamp piers along the frontage, gate piers with lamps or urns, iron gates.
+  - A kerbed drive with lamp posts and one or two cars, and trees along the back wall.
+- **Estates also have** a pool with a deck, loungers, an umbrella and a pool house, plus one of:
+  - a tennis court with lines and a net;
+  - a formal parterre of clipped hedges round a tiered fountain, with topiary cones and a flower bed;
+  - a marble gazebo with a table.
+- **The six styles:**
+  - **Modern:** floor-to-ceiling glazing with mullions, a cantilevered upper floor with timber or stone fins, thin roof planes with lit soffits, a glass penthouse on three-floor houses, a stone feature wall and an entrance canopy.
+  - **Mediterranean:** a hipped terracotta roof with eaves and a chimney, an arcaded loggia carrying a balustraded balcony, arched French doors, shuttered windows all round, a hipped wing, and bougainvillea climbing the corners.
+  - **Courtyard palace:** U-shaped round a marble courtyard with arcades, a tiered fountain and palms. It has crenellations, a great dome on a windowed drum, two small domes, two slatted wind towers, wooden oriels and a crenellated arched gateway.
+  - **Classical:** rustication, a string course, a cornice with a balustrade and urns, a cupola, and pedimented windows. A portico of four or six columns with bases and capitals stands on steps, and wings carry their own balustrades.
+  - **Glass pavilion:** two glass volumes crossing at right angles under white roof plates with a lit soffit, a stone wall, a timber deck and a fire pit with lounge seats.
+  - **Tropical** (new): timber-framed glass pavilions under deep hipped roofs, joined by a covered walk, with a lily pond, stepping stones and stone lanterns.
+- **Night.** Windows light up room by room, pools glow, and lamps line the walls and drives.
+
+**New buildings**
+- **Church:** a buttressed nave with stained-glass lancets, an apse, a west tower with belfry openings, pinnacles and a tall slate spire with a cross, a rose window, and a churchyard with yews.
+- **Pocket parks:** crossing paths, a tiered fountain, trees or palms, flower beds, benches and lamps.
+
+**Verification**
+- Tests (`tests/world3d.test.ts`):
+  - capitals have at least six worship sites, other big cities at least four;
+  - no two are closer than two blocks (72 m);
+  - they stand in at least two districts and at least three quarters of the city;
+  - estates exist;
+  - every villa has more than 80 pieces, all inside its plot;
+  - churches and parks are built;
+  - all six styles occur across the universe.
+- Screenshots of every style (estates and single plots), the church, a park, mosques, the temple, the skyline, night estates and the plan map are in `docs/screenshots/districts/`.
+- **Renderer cost** (futuristic capital, medium): 415 draw calls and 1.19M triangles per frame, against 390 and 579k before this phase. Software frame time stayed about 1.06 s.
+- **Not done:** the browser journey and the fps comparison against the baseline were not re-run after this phase. Garden walls still have no colliders.
+
 ## Limitations and unfinished items
 
 - **Frame-rate targets unproven** (55 fps at 5× in Universe; 60 fps with ≥ 150 figures on medium): no GPU in this environment. Measured relative to the baseline under software rendering, the current build is 2–3× slower at medium (see Phase 4).

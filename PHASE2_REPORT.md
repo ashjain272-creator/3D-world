@@ -463,6 +463,73 @@ Requested:
 - Organic domes read grey rather than cream in this light.
 - A few shots still have a nearby tower or the highway deck in the foreground. The camera angle search only checks building footprints.
 
+## Phase 8: a Premier League stadium and an NBA arena
+
+Requested: "Make a basketball NBA sized stadium, make a football Premier League sized stadium, and make them extremely detailed and good looking."
+
+**Placement** (`layout.ts`, `roadNetwork.ts`)
+- **Which cities get them.** Capitals get both venues, cities get the arena. The capital radius grows from 262 m to 300 m so the districts keep their space.
+- **Blocks.** The stadium reserves 5 × 4 blocks (170 × 134 m) and the arena 4 × 4 (134 × 134 m), with their inner streets closed. Neither may cross the two central boulevards or sit in the downtown core, and the two are kept apart.
+- **Landmarks.** A landmark that would land on a venue is moved elsewhere. Before, it deleted the venue.
+- **Expressways.** An expressway that cannot find a clear avenue is now left out rather than driven over a stadium roof. The first version had one crossing the pitch.
+- **Checked across seeds.** In five seeds every capital has both venues and every city has an arena.
+
+**Football stadium** (`venues.ts`)
+- **Pitch and markings.**
+  - A 105 × 68 m pitch with 18 mowing stripes and run-offs.
+  - Every marking: touch and goal lines, halfway line, centre circle and spot, both penalty areas (40.3 × 16.5 m), goal areas, penalty spots and both Ds.
+  - Goals with posts, crossbars and nets, and corner flags.
+- **Pitchside.**
+  - 22 players in two kits plus a referee and the ball.
+  - Two dugouts with perspex roofs and team seats, technical areas, the players' tunnel and TV cameras.
+  - A ring of LED advertising boards.
+- **Stands.**
+  - Four two-tier stands: a lower tier of 16 rows, a glazed and lit band of executive boxes, and an upper tier of 13 rows with an LED ribbon on its fascia.
+  - Aisles cut through the rows, vomitories, and back walls.
+  - Corner fills with giant screens above them.
+- **Roof.** Cantilevered over every stand on back columns, with trusses, a translucent leading edge, floodlight strips and a lit sign on the main stand.
+- **Outside.**
+  - A glazed ground floor under tall alternating fins with a lit band in club colours.
+  - Four glazed stair towers.
+  - A main entrance canopy with turnstiles and a lit crest, and flags in the fan zone.
+
+**NBA arena**
+- **Court and baskets.**
+  - A 28.65 × 15.24 m maple court on a team-colour apron.
+  - All NBA markings: sidelines and baselines, halfway line, centre circle, painted keys (4.88 × 5.79 m), free-throw circles, restricted arcs, three-point arcs (7.24 m) and the straight corner sections.
+  - Padded stanchions, glass backboards with red frames, rims, nets and shot clocks.
+- **Courtside.** A lit scorer's table, team benches, two rows of courtside seats, and ten players with a ball.
+- **Bowl.**
+  - Three tiers of 14, 8 and 10 rows, each set back and raised, with angled corner sections.
+  - Ribbon boards on the tier fronts.
+  - A glazed, lit suite level.
+- **Overhead.**
+  - A centre-hung scoreboard with four large screens, LED rings and a lower ring of small screens.
+  - Two catwalks with light rigs, and a dark ceiling with trusses.
+- **Outside.**
+  - A 40-segment glazed elliptical drum with metal panels, fins and a team-colour LED band, fully glazed over the main entrance.
+  - A roof with a lit rim and a glass lantern.
+  - An entrance canopy with a lit sign, a statue on a plinth, and banners round the building.
+
+**Crowd and lighting**
+- **Crowd shader.** A shader fills every seating row with fans: shoulders and heads seen from above, torsos and heads above the seat backs on the row fronts. About 10 % of seats are left empty. Clothing is muted and varied, with about a third of fans in club colours.
+- **Night.** The pitch, the court and the crowd carry their own floodlight after dark.
+
+**Verification**
+- **Tests** (`tests/world3d.test.ts`):
+  - every capital has a stadium and every capital and city an arena, at real sizes;
+  - no street runs through a venue and no expressway pillar stands in one;
+  - venues have more than 100 crowd rows;
+  - the stadium has its D arcs and two nets;
+  - the arena has two three-point arcs and its court.
+- **Full unit suite:** see the next line.
+- **Photos** in `docs/screenshots/venues/`:
+  - stadium: exterior, aerial, stands, goal, pitchside;
+  - arena: exterior, entrance, interior, court, scoreboard;
+  - night versions of the exteriors, the stands and the arena interior.
+- **Cost.** In the futuristic capital at medium, draw calls went from 415 to 513 per frame. Triangles are 1.09M per frame. The stadium is 1 937 instanced pieces and the arena 1 437. Frame time was not measured cleanly: the run overlapped the test suite.
+- **Not done:** the arena has a single collider for its whole footprint, so the player cannot walk inside; the interior photos use the free photo camera. The browser journey was not re-run.
+
 ## Limitations and unfinished items
 
 - **Frame-rate targets unproven** (55 fps at 5× in Universe; 60 fps with ≥ 150 figures on medium): no GPU in this environment. Measured relative to the baseline under software rendering, the current build is 2–3× slower at medium (see Phase 4).

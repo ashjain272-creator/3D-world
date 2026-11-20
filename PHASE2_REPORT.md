@@ -383,6 +383,7 @@ Requested: "The mansions should look much better… distribute the buildings, mo
 - **Pocket parks:** crossing paths, a tiered fountain, trees or palms, flower beds, benches and lamps.
 
 **Verification**
+- Full unit suite on the final code: **88 / 88** in 14 files (log: `logs/unit-tests-mansions.log`).
 - Tests (`tests/world3d.test.ts`):
   - capitals have at least six worship sites, other big cities at least four;
   - no two are closer than two blocks (72 m);

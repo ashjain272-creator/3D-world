@@ -1,0 +1,9 @@
+node scripts/fps-compare.mjs medium http://localhost:4174/=baseline http://localhost:4173/=current
+{"build":"baseline","quality":"medium","universe":{"fps":15.24,"p95FrameMs":83},"explorer":{"fps":2.87,"p95FrameMs":400}}
+{"build":"current","quality":"medium","universe":{"fps":4.58,"p95FrameMs":234},"explorer":{"fps":1.27,"p95FrameMs":967}}
+node scripts/fps-compare.mjs low http://localhost:4174/=baseline http://localhost:4173/=current
+{"build":"baseline","quality":"low","universe":{"fps":28.95,"p95FrameMs":50},"explorer":{"fps":6.69,"p95FrameMs":167}}
+{"build":"current","quality":"low","universe":{"fps":16.08,"p95FrameMs":67},"explorer":{"fps":2.27,"p95FrameMs":533}}
+after low quality moved to a 0.75 pixel ratio:
+{"build":"current-dpr075","quality":"low","universe":{"fps":21.48,"p95FrameMs":50},"explorer":{"fps":3.54,"p95FrameMs":317}}
+Software rendering (SwiftShader), 1440x900, seed fps-compare-7, simulation paused.

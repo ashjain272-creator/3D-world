@@ -396,6 +396,68 @@ Requested: "The mansions should look much better… distribute the buildings, mo
 - **Renderer cost** (futuristic capital, medium): 415 draw calls and 1.19M triangles per frame, against 390 and 579k before this phase. Software frame time stayed about 1.06 s.
 - **Not done:** the browser journey and the fps comparison against the baseline were not re-run after this phase. Garden walls still have no colliders.
 
+## Phase 7: real parks, neighbourhoods, better mansions, building photos
+
+Requested:
+- parks that look like parks, with swings, play equipment, picnics and different sizes;
+- distribution "better but still not good enough";
+- mansions that look better;
+- a picture of each type of building on its own.
+
+**Distribution** (`layout.ts`)
+- **Neighbourhoods instead of pie slices.** Each futuristic city scatters 3–13 neighbourhood seeds outside the downtown core: villa enclaves, souks, mixed areas and, in capitals, a second skyline cluster out in the ring. Every block belongs to the nearest seed, with a deterministic jitter so the borders are irregular. The villa and souk districts therefore come in several patches of different sizes in different parts of the city.
+- **Places of worship.** They are placed in one interleaved sequence (mosque, temple, mosque, church, …), each on the allowed block farthest from every landmark already placed.
+  - In the reference capital (seed `vis-check-3`) that gives 6 mosques, 3 temples and 2 churches across all four quarters, mixed with each other.
+  - The nearest two are 114 m apart.
+  - The plan is at `docs/screenshots/buildings/district-map.jpg`.
+- **Parks in three sizes.**
+
+  | Park | Blocks | Approx. size | Capital | City | Town | Outpost |
+  |---|---|---|---|---|---|---|
+  | Central | 2 × 2 | 62 × 62 m | 1 | 1 | – | – |
+  | Long | 2 × 1 | 62 × 26 m | 2 | 1 | 1 | – |
+  | Pocket | 1 × 1 | 26 × 26 m | 3 | 2 | 2 | 1 |
+
+  Streets inside a park are closed, there are no street lamps at the closed crossings, and highway pillars are kept out of parks and villa gardens.
+
+**Parks** (`districts.ts`)
+- **Every park:**
+  - a lawn with meadow patches;
+  - a winding path loop with entrances from each side;
+  - benches and lamps along the path;
+  - tree clusters (round trees, conifers, autumn trees, palms on warm worlds);
+  - flower beds and a low hedge with gaps at the entrances.
+- **Playgrounds** on a coloured safety surface behind a low fence:
+  - swings on A-frames, a slide tower with a roof and ladder;
+  - a seesaw, a roundabout, spring riders;
+  - on larger ones, a climbing frame and a sandpit with a bucket.
+- **Picnic areas** with picnic tables, blankets, hampers and a barbecue.
+- **By size:**
+  - pocket parks hold a playground or a picnic lawn;
+  - long parks hold a playground, a picnic area and a café kiosk with umbrella tables;
+  - the central park adds mounds, an irregular pond with reeds, lily pads, ducks and a footbridge, a basketball court or a five-a-side pitch, and a bandstand.
+
+**Mansions**
+- **Glass.** Glass is lighter, reflects the sky at grazing angles, and lights up room by room at night. Before, the glass houses read as dark slabs.
+- **Estates.** Houses now stand at the back of the plot behind a gravel motor court with kerbs, lamps, cars drawn up at the sides, and a tiered fountain or topiary island.
+- **Details:**
+  - stone quoins on Mediterranean and classical houses;
+  - chimneys and dormers;
+  - a belvedere tower with an open arcade on Mediterranean houses;
+  - a planted roof and a bronze band on modern houses;
+  - a teak deck, timber screens and planters on tropical houses.
+
+**Building photos.** A free photo camera (`commands.photo`) frames a single building, trying several angles and heights until the sight line clears other buildings, with the interface hidden. `docs/screenshots/buildings/` holds 39 photos, one per type:
+- **Futuristic, mansions:** six styles, each as a single villa and as an estate (12 photos).
+- **Futuristic, skyscrapers:** four supertall silhouettes (the twisted one did not appear in the reference capital; the "twin" shot shows the skyline from too far away to tell it apart), tower, block, slab.
+- **Futuristic, other:** souk shophouse, mall, mosque, temple, church, and the three park sizes.
+- **Organic:** six dome variants, the treehouse and the pod.
+- **Frontier:** house, hall, silo, windmill.
+
+**Problems still visible in the photos**
+- Organic domes read grey rather than cream in this light.
+- A few shots still have a nearby tower or the highway deck in the foreground. The camera angle search only checks building footprints.
+
 ## Limitations and unfinished items
 
 - **Frame-rate targets unproven** (55 fps at 5× in Universe; 60 fps with ≥ 150 figures on medium): no GPU in this environment. Measured relative to the baseline under software rendering, the current build is 2–3× slower at medium (see Phase 4).

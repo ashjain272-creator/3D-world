@@ -454,6 +454,11 @@ Requested:
 - **Organic:** six dome variants, the treehouse and the pod.
 - **Frontier:** house, hall, silo, windmill.
 
+**Verification.** Full unit suite **88 / 88** on this code (`logs/unit-tests-parks.log`). New checks:
+- parks come in more than one size, including one over 2 500 m²;
+- mosques are at most 60 % of the places of worship;
+- villas and souks appear in several quarters of the city.
+
 **Problems still visible in the photos**
 - Organic domes read grey rather than cream in this light.
 - A few shots still have a nearby tower or the highway deck in the foreground. The camera angle search only checks building footprints.

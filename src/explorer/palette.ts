@@ -28,7 +28,7 @@ export function cityPalette(civColor: string, style: string): CityPalette {
   // analogous wall tints: hue ±0.06, desaturated, a spread of values for rhythm
   const walls =
     style === 'futuristic'
-      ? [hsl(h, 0.1, 0.78), hsl(h + 0.05, 0.08, 0.66), hsl(h - 0.04, 0.12, 0.86), hsl(0.6, 0.06, 0.58), hsl(h + 0.02, 0.05, 0.92), hsl(comp, 0.07, 0.72), hsl(0.08, 0.1, 0.74)]
+      ? [hsl(h, 0.1, 0.78), hsl(h + 0.05, 0.08, 0.66), hsl(h - 0.04, 0.12, 0.86), hsl(0.6, 0.06, 0.58), hsl(h + 0.02, 0.05, 0.92), hsl(comp, 0.07, 0.72), hsl(0.08, 0.1, 0.74), hsl(0.1, 0.24, 0.72), hsl(0.06, 0.2, 0.6), hsl(0.6, 0.05, 0.34), hsl(0.12, 0.16, 0.82)]
       : [hsl(0.09, 0.32, 0.72), hsl(0.11, 0.28, 0.8), hsl(h, 0.14, 0.78), hsl(0.07, 0.36, 0.66), hsl(0.13, 0.22, 0.86), hsl(comp, 0.12, 0.76)];
   const stone = [hsl(0.1, 0.16, 0.66), hsl(0.09, 0.14, 0.58), hsl(0.11, 0.18, 0.74), hsl(0.08, 0.12, 0.52), hsl(h, 0.08, 0.62)];
   // roofs: warm terracotta / slate split, nudged towards the civ hue

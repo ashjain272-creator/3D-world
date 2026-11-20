@@ -188,6 +188,7 @@ export function SkyWeather({ planet, system, quality, warm = false, cold = false
         shadow-camera-near={10}
         shadow-camera-far={700}
         shadow-bias={-0.0004}
+        shadow-normalBias={quality === 'high' ? 0.03 : 0.06}
       />
       <directionalLight ref={moonLight} color="#8aa8ff" />
       <pointLight ref={cityGlow} color="#bcd0ff" distance={60} decay={1.4} intensity={0} />
@@ -341,7 +342,7 @@ function Aurora() {
         fragmentShader: /* glsl */ `
           uniform float uTime; uniform float uNight;
           varying vec2 vUv;
-          float h(float x) { return fract(sin(x * 91.7) * 43758.5); }
+          float h(float x) { x = fract(x * 0.1031); x *= x + 33.33; x *= x + x; return fract(x); }
           float n(float x) { float i = floor(x); float f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(h(i), h(i + 1.0), f); }
           void main() {
             float x = vUv.x * 60.0;

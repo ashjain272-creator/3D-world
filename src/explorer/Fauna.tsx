@@ -58,6 +58,7 @@ function Birds({ t, vultures, count }: { t: TerrainData; vultures: boolean; coun
   }, [t.seed, vultures, count]);
   const mat = useMemo(() => {
     const m = new THREE.MeshBasicMaterial({ color: vultures ? '#2a2420' : '#1e2228', side: THREE.DoubleSide, fog: true });
+    m.customProgramCacheKey = () => `bird|${vultures}`;
     m.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = { value: 0 };
       m.userData.shader = shader;
@@ -121,6 +122,7 @@ function Butterflies({ t, count }: { t: TerrainData; count: number }) {
   }, [t.seed, count]);
   const mat = useMemo(() => {
     const m = new THREE.MeshBasicMaterial({ color: '#ffffff', side: THREE.DoubleSide });
+    m.customProgramCacheKey = () => 'butterfly';
     m.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = { value: 0 };
       m.userData.shader = shader;

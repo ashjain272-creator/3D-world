@@ -117,7 +117,7 @@ uniform vec3 uDark;
 uniform vec3 uBand;
 varying vec2 vUv;
 varying vec3 vWorld;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float hash(vec2 p) { vec3 q3 = fract(vec3(p.xyx) * 0.1031); q3 += dot(q3, q3.yzx + 33.33); return fract((q3.x + q3.y) * q3.z); }
 float noise(vec2 p) {
   vec2 i = floor(p); vec2 f = fract(p);
   vec2 u = f * f * (3.0 - 2.0 * f);

@@ -8,7 +8,7 @@ import { getWorld } from '../state/store';
 import { explorerFeed } from '../state/runner';
 import type { ActivityType } from '../sim/types';
 import { npcPositions, playerState, useExplorer } from './explorerStore';
-import { routeBetween, type Layout } from './layout';
+import { lineOfSight, routeBetween, type Layout } from './layout';
 import { humanoidGeometry, humanoidMaterial, outfitFor } from './humanoid';
 
 /** One dressed figure material per simulated person: shirt in their occupation colour, everything else from their id. */
@@ -222,7 +222,15 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
     setNearby(nearest);
     if (now - lastScan.current > 0.5) {
       lastScan.current = now;
-      const close = dists.filter((x) => x.d < 30).sort((a, b) => a.d - b.d);
+      // labels only for people the camera can actually see, not those behind a building
+      const seen = (id: string) => {
+        const o = npcs.current.get(id);
+        if (!o) return false;
+        // too far from the camera to read: skip rather than draw a speck of text
+        if (camera.position.distanceTo(o.pos) > 34) return false;
+        return lineOfSight(layout.buildings, t.height, camera.position.x, camera.position.y, camera.position.z, o.pos.x, o.pos.y + 1.8, o.pos.z);
+      };
+      const close = dists.filter((x) => x.d < 30 && seen(x.id)).sort((a, b) => a.d - b.d);
       const next = close.slice(0, 1).map((x) => x.id);
       // a second label only when it cannot overlap the first on screen
       const first = close[0] && npcs.current.get(close[0].id);

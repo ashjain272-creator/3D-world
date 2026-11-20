@@ -467,3 +467,37 @@ export function resolveCollisionsGrid(g: ColliderGrid, x: number, z: number, r: 
   }
   return resolveCollisions(near, x, z, r);
 }
+
+/**
+ * True when nothing in `buildings` blocks the straight line from a to b.
+ * Footprints are boxes (or discs for rotated buildings) standing on `ground`.
+ * Used to hide name labels of people standing behind a building.
+ */
+export function lineOfSight(buildings: Building[], ground: (x: number, z: number) => number, ax: number, ay: number, az: number, bx: number, by: number, bz: number): boolean {
+  const len = Math.hypot(bx - ax, bz - az);
+  const steps = Math.max(2, Math.ceil(len / 1.5));
+  const minX = Math.min(ax, bx);
+  const maxX = Math.max(ax, bx);
+  const minZ = Math.min(az, bz);
+  const maxZ = Math.max(az, bz);
+  // only buildings whose bounds touch the segment's bounding box can block it
+  const near = buildings.filter((b) => {
+    const r = Math.max(b.w, b.d) * 0.75;
+    return b.x + r > minX && b.x - r < maxX && b.z + r > minZ && b.z - r < maxZ;
+  });
+  if (!near.length) return true;
+  const base = near.map((b) => ground(b.x, b.z));
+  // skip the ends: a person standing in a doorway is not hidden by their own wall
+  for (let i = 1; i < steps; i++) {
+    const f = i / steps;
+    const x = ax + (bx - ax) * f;
+    const z = az + (bz - az) * f;
+    const y = ay + (by - ay) * f;
+    for (let k = 0; k < near.length; k++) {
+      const b = near[k];
+      const inside = b.rot ? Math.hypot(x - b.x, z - b.z) < Math.min(b.w, b.d) / 2 : Math.abs(x - b.x) < b.w / 2 && Math.abs(z - b.z) < b.d / 2;
+      if (inside && y < base[k] + b.h) return false;
+    }
+  }
+  return true;
+}

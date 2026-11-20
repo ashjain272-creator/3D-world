@@ -2,6 +2,7 @@ import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
+import { Smoke } from './Smoke';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Building, BuildingKind, Layout, PlacedLandmark } from './layout';
 import { TiledInstances } from './lod';
@@ -45,9 +46,12 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
     float lit = step(1.0 - occ, apt);
     float blind = step(0.55, fract(apt * 5.3)) * step(0.5 + 0.3 * fract(apt * 9.1), f.y);
     float fr = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 2.5);
-    vec3 tint = mix(${v3(opts.glass)}, ${v3(opts.glass)} * vec3(1.25, 1.05, 0.8), step(0.66, fract(bh * 7.7)));
+    // each tower has its own glazing: the base tint, bronze, teal or deep blue
+    float gk = fract(bh * 7.7);
+    vec3 gMul = gk < 0.35 ? vec3(1.0) : gk < 0.55 ? vec3(1.7, 1.15, 0.6) : gk < 0.75 ? vec3(0.6, 1.35, 1.2) : gk < 0.9 ? vec3(0.62, 0.85, 1.6) : vec3(0.55, 0.55, 0.6);
+    vec3 tint = ${v3(opts.glass)} * gMul;
     vec3 skyRef = mix(uSky * 0.55, uSky * 1.1, f.y) * (0.15 + 0.85 * uDay);
-    vec3 glassCol = mix(tint, skyRef, 0.22 + 0.55 * fr);
+    vec3 glassCol = mix(tint, skyRef, (0.22 + 0.55 * fr) * (gk < 0.35 ? 1.0 : 0.75));
     // wall: floor slabs, piers, parapet, plinth, soft grime towards the street
     diffuseColor.rgb *= 1.0 - 0.2 * step(f.y, 0.07) * body;
     if (variant > 1.5) diffuseColor.rgb *= 0.86 + 0.14 * step(0.5, fract(cell.x * 0.5));
@@ -119,6 +123,7 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
     float flick = 0.88 + 0.12 * sin(uTime * (3.0 + r * 4.0) + r * 30.0) * sin(uTime * 1.7 + r * 11.0);
     totalEmissiveRadiance += ${v3(opts.lit)} * win * (1.0 - bar) * lit * (0.02 + uNight * 0.65) * flick * (0.45 + 0.55 * smoothstep(0.36, 0.8, f.y)) * (0.6 + 0.4 * fract(r * 3.7));
   `;
+  m.customProgramCacheKey = () => `window|${opts.style}|${opts.floor}|${opts.col}|${opts.lit}|${opts.density}|${opts.glass}`;
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uNight = nightUniform;
     shader.uniforms.uTime = env.uTime;
@@ -183,6 +188,7 @@ function windowMaterial(opts: { style: 'glass' | 'timber'; floor: number; col: n
 /** Ground surface with procedural wear: asphalt mottling, or cobbles for old towns. */
 function surfaceMaterial(color: string, roughness: number, cobbles: boolean) {
   const m = new THREE.MeshStandardMaterial({ color, roughness, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2 });
+  m.customProgramCacheKey = () => `street|${cobbles}|${detail.level}`;
   m.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\n${NOISE_GLSL}\n${BUMP_GLSL}\nfloat streetH(vec2 q) { ${cobbles ? 'vec2 c = q / 0.55; c.x += 0.5 * mod(floor(c.y), 2.0); vec2 cf = fract(c) - 0.5; return (1.0 - smoothstep(0.3, 0.5, max(abs(cf.x), abs(cf.y)))) + 0.2 * evn(q * 9.0);' : 'return evn(q * 9.0) * 0.6 + evn(q * 23.0) * 0.4;'} }`).replace(
@@ -204,7 +210,7 @@ function surfaceMaterial(color: string, roughness: number, cobbles: boolean) {
         vec2 cf = fract(c);
         float gap = max(step(cf.x, 0.1), step(cf.y, 0.12));
         diffuseColor.rgb *= (1.0 - 0.3 * gap) * (0.88 + 0.24 * eh21(floor(c)));`
-            : `roughnessFactor = mix(roughnessFactor, 0.25, smoothstep(0.62, 0.75, efbm(vWPos.xz * 0.08 + 9.0)));`
+            : `roughnessFactor = mix(roughnessFactor, 0.5, smoothstep(0.62, 0.8, efbm(vWPos.xz * 0.08 + 9.0)));`
         }
         normal = ebumpW(normal, sg, vec3(1.0, 0.0, 0.0), vec3(0.0, 0.0, 1.0), ${cobbles ? '0.035' : '0.012'} * efade(fw));
       }`,
@@ -221,6 +227,7 @@ function rngH(b: Building, lo: number, hi: number): number {
 /** Emissive sign panels: lit in their instance colour, much brighter at night. */
 function signMaterial(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.4 });
+  m.customProgramCacheKey = () => 'sign-panel';
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uNight = nightUniform;
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight;').replace(
@@ -295,7 +302,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       leaf: foliageMaterial(),
       bark: texturedMaterial('bark', { color: '#7a5e4a', roughness: 1 }),
       sign: signMaterial(),
-      street: surfaceMaterial(layout.style === 'futuristic' ? '#454b54' : layout.style === 'cloud' ? '#4a525e' : layout.style === 'organic' ? '#8a7a5a' : '#8f7c60', layout.style === 'futuristic' || layout.style === 'cloud' ? 0.55 : 1, layout.style === 'frontier' || layout.style === 'organic'),
+      street: surfaceMaterial(layout.style === 'futuristic' ? '#454b54' : layout.style === 'cloud' ? '#4a525e' : layout.style === 'organic' ? '#8a7a5a' : '#8f7c60', layout.style === 'futuristic' || layout.style === 'cloud' ? 0.74 : 1, layout.style === 'frontier' || layout.style === 'organic'),
       glow: new THREE.MeshStandardMaterial({ color: '#000000', emissive: new THREE.Color(civColor), emissiveIntensity: 1 }),
       warm: new THREE.MeshStandardMaterial({ color: '#2a1a0a', emissive: new THREE.Color('#ffb060'), emissiveIntensity: 1 }),
     }),
@@ -596,6 +603,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
         <Instanced key={v} items={items} geometry={v === 4 ? skirtGeo(v) : blobGeo(v, 1)} material={mats.leaf} castShadow={shadows} />
       ))}
       <LightPools lights={layout.lights} y={y0} style={layout.style} />
+      {quality !== 'low' && <Smoke sources={groups.smoke} perSource={18} />}
       <Instanced items={groups.signs} geometry={unitBox} material={mats.sign} />
       {layout.style === 'futuristic' && <SkyTraffic streets={layout.streets} y={y0} quality={quality} civColor={civColor} />}
       <ContactShadows buildings={layout.buildings} y={y0} />
@@ -659,6 +667,8 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style'], 
     rounds: [] as { m: THREE.Matrix4; c?: THREE.Color; x: number; z: number }[],
     glowBits: [] as { m: THREE.Matrix4 }[],
     signs: [] as { m: THREE.Matrix4; c: THREE.Color }[],
+    /** Chimney tops that smoke. */
+    smoke: [] as { x: number; y: number; z: number; s?: number }[],
   };
   const det = (x: number, y: number, z: number, sx: number, sy: number, sz: number, c: string, rot = 0) => g.details.push({ m: mat(x, y, z, sx, sy, sz, rot), c: new THREE.Color(c), x, z });
   const rnd = (x: number, y: number, z: number, sx: number, sy: number, sz: number, c: string) => g.rounds.push({ m: mat(x, y, z, sx, sy, sz), c: new THREE.Color(c), x, z });
@@ -718,8 +728,41 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style'], 
           // cornice
           det(b.x, y0 + b.h - 0.35, b.z, b.w + 0.5, 0.45, b.d + 0.5, pal.trim);
         }
+        // roof use: a garden with trees on low blocks, a helipad on some tall towers
+        const roofUse = b.kind !== 'tower' && b.h < 45 && u(31) < 0.4 ? 'garden' : b.h > 50 && b.h <= 80 && u(32) < 0.45 ? 'helipad' : 'plant';
+        if (roofUse === 'garden') {
+          det(b.x, roofY, b.z, rw * 0.86, 0.35, rd * 0.86, '#5e7a3a');
+          det(b.x, roofY, b.z - rd * 0.43, rw * 0.88, 0.9, 0.2, '#b8c0c8');
+          det(b.x, roofY, b.z + rd * 0.43, rw * 0.88, 0.9, 0.2, '#b8c0c8');
+          det(b.x - rw * 0.43, roofY, b.z, 0.2, 0.9, rd * 0.88, '#b8c0c8');
+          det(b.x + rw * 0.43, roofY, b.z, 0.2, 0.9, rd * 0.88, '#b8c0c8');
+          const trees = 2 + Math.floor(u(33) * 4);
+          for (let k = 0; k < trees; k++) {
+            const tx = b.x + (u(40 + k) - 0.5) * rw * 0.6;
+            const tz = b.z + (u(50 + k) - 0.5) * rd * 0.6;
+            const th = 1.6 + u(60 + k) * 1.6;
+            det(tx, roofY + 0.35, tz, 0.18, th, 0.18, '#5a4030');
+            const cs = 1.8 + u(70 + k) * 1.2;
+            g.canopies.push({ m: mat(tx, roofY + 0.35 + th, tz, cs, cs * (0.8 + u(80 + k) * 0.3), cs), c: new THREE.Color(u(90 + k) < 0.5 ? '#4f7a34' : '#6a8a3a') });
+          }
+          // a pergola for the residents
+          det(b.x + rw * 0.2, roofY + 2.4, b.z + rd * 0.2, rw * 0.3, 0.12, rd * 0.25, '#d8dde2');
+        } else if (roofUse === 'helipad') {
+          rnd(b.x, roofY, b.z, Math.min(rw, rd) * 0.8, 0.4, Math.min(rw, rd) * 0.8, '#3a3f46');
+          const r = Math.min(rw, rd) * 0.28;
+          det(b.x - r * 0.45, roofY + 0.4, b.z, r * 0.16, 0.04, r * 1.2, '#e8ecef');
+          det(b.x + r * 0.45, roofY + 0.4, b.z, r * 0.16, 0.04, r * 1.2, '#e8ecef');
+          det(b.x, roofY + 0.4, b.z, r * 0.9, 0.04, r * 0.16, '#e8ecef');
+          // perimeter lights glow after dark
+          for (let k = 0; k < 8; k++) {
+            const a = (k / 8) * Math.PI * 2;
+            g.glowBits.push({ m: mat(b.x + Math.cos(a) * Math.min(rw, rd) * 0.4, roofY + 0.4, b.z + Math.sin(a) * Math.min(rw, rd) * 0.4, 0.3, 0.12, 0.3) });
+          }
+        }
+        // red aviation lights on the corners of tall roofs
+        if (b.h > 40) for (const [cx, cz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) g.signs.push({ m: mat(b.x + cx * rw * 0.46, roofY, b.z + cz * rd * 0.46, 0.35, 0.35, 0.35), c: new THREE.Color('#ff3426') });
         // rooftop plant: units, a tank or a vent stack
-        const units = b.kind === 'tower' ? 1 : 2 + Math.floor(u(1) * 2);
+        const units = roofUse !== 'plant' ? 0 : b.kind === 'tower' ? 1 : 2 + Math.floor(u(1) * 2);
         for (let k = 0; k < units; k++) {
           const ux = b.x + (u(k + 2) - 0.5) * rw * 0.55;
           const uz = b.z + (u(k + 5) - 0.5) * rd * 0.55;
@@ -762,7 +805,12 @@ function buildGroups(buildings: Building[], y0: number, style: Layout['style'], 
         g.roofs.push({ m: mat(b.x, y0 + b.h, b.z, b.w * 1.08, b.h * 0.55, b.d, b.rot), c: tone(roofs) });
         // chimney, door with lintel and step, and a few crates by the wall
         const u = (k: number) => (((b.tone * 9973 + k * 137.7) % 1) + 1) % 1;
-        det(b.x + (u(1) - 0.5) * w * 0.5, y0 + b.h, b.z + (u(2) - 0.5) * d * 0.4, 0.9, b.h * 0.55 + 0.9, 0.9, '#6a4a3c');
+        const chx = b.x + (u(1) - 0.5) * w * 0.5;
+        const chz = b.z + (u(2) - 0.5) * d * 0.4;
+        det(chx, y0 + b.h, chz, 0.9, b.h * 0.55 + 0.9, 0.9, '#6a4a3c');
+        det(chx, y0 + b.h * 1.55 + 0.9, chz, 1.1, 0.2, 1.1, '#4e382c');
+        // about a third of the hearths are lit
+        if (u(3) < 0.35) g.smoke.push({ x: chx, y: y0 + b.h * 1.55 + 1.2, z: chz });
         const fr = front(b, w, d);
         det(fr.x + fr.sx * 0.06, y0, fr.z + fr.sz * 0.06, fr.alongX ? 0.18 : 1.3, 2.2, fr.alongX ? 1.3 : 0.18, u(7) < 0.55 ? accent(u(8)) : '#4a3222');
         if (u(9) < 0.6) {

@@ -68,6 +68,7 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
   // Ground: vertex colours broken up by procedural detail so it never reads as flat paint.
   const groundMat = useMemo(() => {
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+    m.customProgramCacheKey = () => m.uuid; // code bakes this terrain's look
     m.onBeforeCompile = (shader) => {
       shader.uniforms.envTime = env.uTime;
       shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vGN;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvGN = normal;');
@@ -158,6 +159,7 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
   const waterMat = useMemo(() => {
     if (t.look.frozen) return iceMaterial();
     const m = new THREE.MeshStandardMaterial({ color: waterColor, transparent: true, opacity: 0.86, roughness: 0.08, metalness: 0.1 });
+    m.customProgramCacheKey = () => m.uuid;
     m.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = env.uTime;
       shader.uniforms.uSky = env.uSky;
@@ -241,6 +243,7 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
 /** Frozen lake surface: pale blue ice with white crack lines and frosted patches. */
 function iceMaterial(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ color: '#cfe6f4', roughness: 0.12, metalness: 0.05 });
+  m.customProgramCacheKey = () => 'ice-surface';
   m.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\n${NOISE_GLSL}`).replace(

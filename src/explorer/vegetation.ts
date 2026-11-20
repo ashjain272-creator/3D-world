@@ -67,7 +67,7 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
   const kind = t.look.vegetation;
   const rng = new Rng(t.seed + 5);
   // floating platforms carry no plants or boulders
-  if (layout.style === 'cloud') return { parts: {}, structures: { pieces: [], ponds: [], colliders: [], footprints: [], palms: [] }, colliders: [], snow: 0, poi: { mushrooms: [], lilies: [] } };
+  if (layout.style === 'cloud') return { parts: {}, structures: { pieces: [], ponds: [], colliders: [], footprints: [], palms: [], smoke: [] }, colliders: [], snow: 0, poi: { mushrooms: [], lilies: [] } };
   const noise = createNoise2D(() => rng.next());
   const parts: Partial<Record<PartKey, PartItem[]>> = {};
   const poi: VegetationData['poi'] = { mushrooms: [], lilies: [] };

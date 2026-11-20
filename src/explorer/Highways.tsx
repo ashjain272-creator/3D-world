@@ -84,12 +84,13 @@ function buildDecks(roads: Road[]) {
 /** Asphalt with lane markings: solid edge lines, dashed lane dividers, double yellow at the median, wear and tyre tracks. */
 function asphaltMaterial(): THREE.MeshStandardMaterial {
   const m = new THREE.MeshStandardMaterial({ color: '#3a3e44', roughness: 0.8, metalness: 0.05, side: THREE.DoubleSide });
+  m.customProgramCacheKey = () => 'asphalt-deck';
   m.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float aWidth;\nattribute float aLanes;\nvarying vec2 vRoad;\nvarying float vW;\nvarying float vL;')
       .replace('#include <uv_vertex>', '#include <uv_vertex>\nvRoad = uv;\nvW = aWidth;\nvL = aLanes;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vRoad;\nvarying float vW;\nvarying float vL;\nfloat hh(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }')
+      .replace('#include <common>', '#include <common>\nvarying vec2 vRoad;\nvarying float vW;\nvarying float vL;\nfloat hh(vec2 p){ vec3 q3 = fract(vec3(p.xyx) * 0.1031); q3 += dot(q3, q3.yzx + 33.33); return fract((q3.x + q3.y) * q3.z); }')
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>

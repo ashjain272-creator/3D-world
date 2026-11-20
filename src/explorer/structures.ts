@@ -30,10 +30,12 @@ export interface StructureData {
   footprints: { x: number; z: number; r: number; kind?: string }[];
   /** Palm positions requested by oases. */
   palms: { x: number; z: number }[];
+  /** Smoke plume sources (campfires, hearths). */
+  smoke: { x: number; y: number; z: number; s?: number }[];
 }
 
 export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): StructureData {
-  const out: StructureData = { pieces: [], ponds: [], colliders: [], footprints: [], palms: [] };
+  const out: StructureData = { pieces: [], ponds: [], colliders: [], footprints: [], palms: [], smoke: [] };
   if (layout.style !== 'wild') return out;
   const kind = t.look.vegetation;
   const snow = t.look.snow ?? 0;
@@ -320,6 +322,14 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
     add('box', 'wood', mx, s.y + 0.4, mz, 3, 0.9, 1.4, '#7a5a3a');
     for (let k = 0; k < 6; k++) add('hemi', 'cloth', mx - 1.2 + k * 0.48, s.y + 1.3, mz, 0.45, 0.35, 0.45, vary(rng.pick(['#e8b030', '#c84a2a', '#6a9a3a', '#e8e0c0'])));
     circ(mx, mz, 1.8);
+    // a domed clay bread oven, still smoking
+    const ox = s.x - 5;
+    const oz = s.z - 3;
+    add('hemi', 'sandstone', ox, s.y - 0.2, oz, 2.6, 2.4, 2.6, vary('#c89868', 0.04));
+    add('box', 'dark', ox + 1.25, s.y + 0.1, oz, 0.12, 0.7, 0.8, '#1e120a');
+    add('box', 'glow', ox + 1.27, s.y + 0.15, oz, 0.06, 0.4, 0.55, '#ff9a40');
+    out.smoke.push({ x: ox, y: s.y + 1.1, z: oz, s: 0.9 });
+    circ(ox, oz, 1.4);
   };
 
   /** The bleached skeleton of something enormous, half swallowed by the sand. */
@@ -468,6 +478,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
     for (let k = 0; k < 3; k++) add('cyl', 'wood', s.x, s.y + 0.2, s.z, 0.25, 1.8, 0.25, '#4a3020', k * 1.05, Math.PI / 2 - 0.3);
     add('cone', 'glow', s.x, s.y + 0.1, s.z, 1.1, 1.8, 1.1, '#ff8a2a');
     add('cone', 'glow', s.x + 0.2, s.y + 0.1, s.z - 0.1, 0.6, 2.4, 0.6, '#ffd060');
+    out.smoke.push({ x: s.x, y: s.y + 2.2, z: s.z, s: 1.6 });
     circ(s.x, s.z, 1.6);
     // sled
     const sx = s.x + 4;

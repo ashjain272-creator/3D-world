@@ -10,6 +10,7 @@ import type { TerrainData } from './terrain';
 import { env, foliageMaterial, texturedMaterial } from './env';
 import { lilyGeo, blobGeo, crystalGeo, fernGeo, frondsGeo, hemiBase, logGeo, palmTrunkGeo, pyramidBase, ribbedGeo, rockGeo, skirtGeo, trunkGeo, tuftGeo, unitBoxBase, unitConeBase, unitCylBase, discBase } from './flora';
 import type { StructMat, StructPiece, StructShape } from './structures';
+import { Smoke } from './Smoke';
 
 type Quality = 'low' | 'medium' | 'high';
 
@@ -20,6 +21,7 @@ export function Vegetation({ data, t, layout, quality }: { data: VegetationData;
       <Parts data={data} quality={quality} />
       <Structures pieces={data.structures.pieces} quality={quality} />
       <Ponds ponds={data.structures.ponds} />
+      {quality !== 'low' && <Smoke sources={data.structures.smoke} perSource={30} />}
       {quality !== 'low' && <GroundCover t={t} layout={layout} data={data} quality={quality} />}
     </group>
   );
@@ -262,6 +264,8 @@ function GroundCover({ t, layout, data, quality }: { t: TerrainData; layout: Lay
 function snowCapped(m: THREE.MeshStandardMaterial, snow: number): THREE.MeshStandardMaterial {
   if (snow < 0.3) return m;
   const prev = m.onBeforeCompile;
+  const prevKey = m.customProgramCacheKey.bind(m);
+  m.customProgramCacheKey = () => `${prevKey()}|snowcap${snow.toFixed(2)}`;
   m.onBeforeCompile = (shader, renderer) => {
     prev.call(m, shader, renderer);
     shader.fragmentShader = shader.fragmentShader.replace(

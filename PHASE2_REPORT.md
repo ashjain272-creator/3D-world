@@ -283,6 +283,53 @@ Commits `a997643` → `27ba4d1`.
   | Forest | 338 | 244k |
   | Desert | 201 | 300k |
 
+## Phase 5: districts in futuristic cities
+
+Requested: "look at cities like Dubai… areas with skyscrapers, areas with mansions, areas with loads of shops… flyovers, highways, mosques, temples… the mansions should all look amazing and have some variety."
+
+What makes a Gulf city read as varied is its zoning. There is a supertall downtown with one signature tower, a corridor of towers along the expressways, low old souk quarters of arcaded shophouses with wind towers, malls, villa districts of walled plots with pools and palms, and mosques and temples set among them. Futuristic cities now follow that pattern. The layout is deterministic per settlement, and every building records its district. Screenshots are in `docs/screenshots/districts/`.
+
+- **Zoning** (`layout.ts`). The grid is split by ring and sector, with a random rotation per city:
+  - downtown inside 40 % of the radius;
+  - a villa sector in the outer ring;
+  - a souk sector;
+  - mixed towers and blocks elsewhere.
+
+  Each capital or city gets one mall (in the souk), one mosque and one temple on whole blocks. Downtown plots are whole blocks. Its tallest buildings become supertalls, and the first one beside the central plaza is the city's signature tower: 230–260 m in a capital.
+- **Supertalls** (five silhouettes, `City.tsx`), all with a lobby podium and a red aviation light:
+  - a Y-plan needle that steps back seven times under a spire;
+  - a tower twisting through 90°;
+  - a curved sail with lit edges;
+  - twin towers joined by a sky bridge;
+  - an octagonal tower with a crown of lit fins.
+- **Facade fix.** The window shader now measures floors from street level in futuristic cities. Before, every stacked tier of a set-back tower began with a shopfront band in mid-air.
+- **Mansions** (five styles, `districts.ts`):
+  - modern, with a cantilevered upper volume, floor-to-ceiling glazing, a timber or stone screen and a glass balustrade;
+  - Mediterranean, with a tiled hip roof and wing, arched windows, shutters, a balustraded balcony, pots and a pergola;
+  - Gulf courtyard house, with crenellated sand walls, a gold, white or turquoise dome, a slatted wind tower, an arched portal and carved doors behind wooden screens;
+  - classical, with a portico of four or six columns under a pediment, lower wings and a tiered fountain;
+  - glass pavilion, with a floating roof plane on slim columns, a stone core and a rooftop studio.
+
+  Every plot has a lawn, a garden wall or clipped hedge, gate piers with lamps, a driveway with a parked car, a pool with deck, loungers and an umbrella, and palms (conifers on cold worlds). Wall, roof and dome colours, column counts and accents vary per house. At night the panes light up room by room, in warm or cool light, and the pools glow.
+- **Souk.** Terraces of two or three shophouses with arcades, glowing shopfronts and coloured signs, goods set out on the pavement, arched upper windows behind wooden screens, crenellated parapets, wind towers on about half the roofs, awnings and lanterns.
+- **Mall.** A stone-clad block with bands, a ribbed glass atrium dome, a glazed portal under a canopy, signage, and a plaza of palms in planters.
+- **Mosque.** Courtyard walls with an arched gate, a prayer hall with arched windows, a great dome on a windowed drum, four corner domes, a tall arched iwan, two or four minarets with lit balconies and gold finials, an ablution fountain and palms.
+- **Temple.** A stepped plinth, a pillared hall under a stepped roof, and a sanctum with a nine-course shikhara tower with ribbed buttresses, a cap, a gold finial and a saffron flag. Four corner shrines and a row of lamps surround it.
+- **Boulevards.** Palms in planters line the wide avenues on warm worlds.
+
+**Verification**
+- New tests in `tests/world3d.test.ts`:
+  - large futuristic cities contain villas, a souk and a mosque, and each kind sits in its own district;
+  - at most one mall, mosque and temple per city;
+  - deterministic district geometry with more than 500 pieces in a capital;
+  - a lit pool or fountain for every villa;
+  - palms only on warm worlds;
+  - every villa piece stays inside its plot;
+  - all five villa styles occur across the universe;
+  - other city styles are untouched.
+- Screenshots (day, and night for villas, souk, mosque and skyline) are listed in the file names under `docs/screenshots/districts/`. The temple and skyline were checked from several angles. Supertalls can only be judged from a distance, so the skyline shots are the evidence for them.
+- **Not checked:** frame rate after this phase. A capital now has about 700 more instanced pieces, grouped into a few dozen draw calls.
+
 ## Limitations and unfinished items
 
 - **Frame-rate targets unproven** (55 fps at 5× in Universe; 60 fps with ≥ 150 figures on medium): no GPU in this environment. Measured relative to the baseline under software rendering, the current build is 2–3× slower at medium (see Phase 4).

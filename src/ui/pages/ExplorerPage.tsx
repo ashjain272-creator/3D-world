@@ -3,7 +3,7 @@ import { ExplorerScene } from '../../explorer/ExplorerScene';
 import { Minimap } from '../../explorer/Minimap';
 import { TOPICS, respond, type Topic } from '../../explorer/dialogue';
 import { playerState, sceneDebug, useExplorer } from '../../explorer/explorerStore';
-import { buildColliderGrid, generateLayout, settlementRadius, wildLayout } from '../../explorer/layout';
+import { buildColliderGrid, generateLayout, settlementRadius, wildLayout, groundWildLayout } from '../../explorer/layout';
 import { generateVegetation } from '../../explorer/vegetation';
 import { generateCloudCity } from '../../explorer/cloudCity';
 import { generateHighways } from '../../explorer/roadNetwork';
@@ -77,23 +77,8 @@ function Explorer({ target }: { target: Target }) {
   const layout = useMemo(() => {
     if (cloudCity) return cloudCity.layout;
     if (settlement) return generateLayout(settlement);
-    const wild = wildLayout(planet.id, regionIndex, terrain.seed, region.name);
-    // never arrive standing in a lake or on a cliff: walk outwards to the nearest dry, level ground
-    const dry = (x: number, z: number) => (terrain.waterLevel === null || terrain.height(x, z) > terrain.waterLevel + 1) && terrain.slope(x, z) < 0.45;
-    if (!dry(wild.spawn.x, wild.spawn.z)) {
-      search: for (let r = 12; r < 300; r += 12) {
-        for (let k = 0; k < 16; k++) {
-          const a = (k / 16) * Math.PI * 2 + r * 0.05;
-          const x = wild.spawn.x + Math.cos(a) * r;
-          const z = wild.spawn.z + Math.sin(a) * r;
-          if (dry(x, z)) {
-            wild.spawn = { ...wild.spawn, x, z };
-            break search;
-          }
-        }
-      }
-    }
-    return wild;
+    // never arrive standing in a lake or on a cliff, and keep landmarks out of the water
+    return groundWildLayout(wildLayout(planet.id, regionIndex, terrain.seed, region.name), terrain);
   }, [cloudCity, settlement, planet.id, regionIndex, terrain, region.name]);
   const quality = useApp((s) => s.settings.quality);
   const vegetation = useMemo(() => generateVegetation(terrain, layout, quality), [terrain, layout, quality]);

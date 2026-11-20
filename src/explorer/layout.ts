@@ -501,3 +501,34 @@ export function lineOfSight(buildings: Building[], ground: (x: number, z: number
   }
   return true;
 }
+
+/**
+ * Move a wild layout's spawn point and landmarks onto dry, walkable ground: the
+ * layout is generated without terrain, so a monolith could otherwise stand in a lake.
+ */
+export function groundWildLayout(l: Layout, t: { height: (x: number, z: number) => number; slope: (x: number, z: number) => number; waterLevel: number | null }): Layout {
+  const dry = (x: number, z: number, maxSlope: number) => (t.waterLevel === null || t.height(x, z) > t.waterLevel + 1) && t.slope(x, z) < maxSlope;
+  const nearest = (x0: number, z0: number, maxSlope: number, step: number): [number, number] => {
+    if (dry(x0, z0, maxSlope)) return [x0, z0];
+    for (let r = step; r < 300; r += step) {
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2 + r * 0.05;
+        const x = x0 + Math.cos(a) * r;
+        const z = z0 + Math.sin(a) * r;
+        if (dry(x, z, maxSlope)) return [x, z];
+      }
+    }
+    return [x0, z0];
+  };
+  const [sx, sz] = nearest(l.spawn.x, l.spawn.z, 0.45, 12);
+  const landmarks = l.landmarks.map((p) => {
+    // keep landmarks clear of the arrival point too
+    const [x, z] = nearest(p.x, p.z, 0.6, 8);
+    return { ...p, x, z };
+  });
+  const colliders = l.colliders.map((c) => {
+    const m = l.landmarks.findIndex((p) => p.kind === 'monolith' && p.x === c.x && p.z === c.z);
+    return m >= 0 ? { ...c, x: landmarks[m].x, z: landmarks[m].z } : c;
+  });
+  return { ...l, spawn: { ...l.spawn, x: sx, z: sz }, landmarks, colliders };
+}

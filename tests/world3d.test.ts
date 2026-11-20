@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { generateLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
+import { generateLayout, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
 import { generateTerrain, type TerrainData } from '../src/explorer/terrain';
 import { generateVegetation } from '../src/explorer/vegetation';
 import { deckSampler, generateHighways, sampleRoad } from '../src/explorer/roadNetwork';
@@ -18,7 +18,7 @@ function wildScenes(w: World, biomes: Biome[]): { biome: Biome; t: TerrainData; 
       const r = p.regions.find((x) => x.biome === biome && !Object.values(w.settlements).some((s) => s.planetId === p.id && s.regionIndex === x.index));
       if (!r) continue;
       const t = generateTerrain(p, r.index, r.biome, 0);
-      out.push({ biome, t, layout: wildLayout(p.id, r.index, t.seed, r.name) });
+      out.push({ biome, t, layout: groundWildLayout(wildLayout(p.id, r.index, t.seed, r.name), t) });
       break;
     }
   }
@@ -59,6 +59,16 @@ describe('explorer wilds: vegetation and structures', () => {
       }
       // every collider of a structure sits inside one of the footprints (nothing stray in the open)
       for (const c of v.structures.colliders) expect(v.structures.footprints.some((f) => Math.hypot(f.x - c.x, f.z - c.z) <= f.r + 16)).toBe(true);
+    }
+  });
+
+  it('puts the spawn point and landmarks on dry ground', () => {
+    for (const s of scenes) {
+      if (s.t.waterLevel === null) continue;
+      expect(s.t.height(s.layout.spawn.x, s.layout.spawn.z)).toBeGreaterThan(s.t.waterLevel + 1);
+      for (const l of s.layout.landmarks) expect(s.t.height(l.x, l.z)).toBeGreaterThan(s.t.waterLevel + 1);
+      const mono = s.layout.landmarks.find((l) => l.kind === 'monolith')!;
+      expect(s.layout.colliders.some((c) => c.x === mono.x && c.z === mono.z)).toBe(true);
     }
   });
 

@@ -522,7 +522,7 @@ Requested: "Make a basketball NBA sized stadium, make a football Premier League 
   - venues have more than 100 crowd rows;
   - the stadium has its D arcs and two nets;
   - the arena has two three-point arcs and its court.
-- **Full unit suite:** see the next line.
+- **Full unit suite:** **89 / 89** in 14 files on this code (`logs/unit-tests-venues.log`).
 - **Photos** in `docs/screenshots/venues/`:
   - stadium: exterior, aerial, stands, goal, pitchside;
   - arena: exterior, entrance, interior, court, scoreboard;

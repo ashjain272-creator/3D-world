@@ -2,7 +2,7 @@ import { useFrame } from '@react-three/fiber';
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { TiledInstances, type LodLevel } from './lod';
-import { foliageMaterial, texturedMaterial } from './env';
+import { env, foliageMaterial, texturedMaterial } from './env';
 import { frondsGeo, palmTrunkGeo } from './flora';
 import { nightUniform } from './City';
 import type { DMat, DPiece, DShape, DistrictData } from './districts';
@@ -46,10 +46,12 @@ const glassNight = { value: 0 };
  * rather than one glowing slab.
  */
 function windowGlass(): THREE.MeshStandardMaterial {
-  const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.12, metalness: 0.55 });
+  const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.08, metalness: 0.15 });
   m.customProgramCacheKey = () => 'district-window-glass';
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uNight = glassNight;
+    shader.uniforms.uSky = env.uSky;
+    shader.uniforms.uDay = env.uDay;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vPane;\nvarying float vUp;')
       .replace(
@@ -63,7 +65,7 @@ function windowGlass(): THREE.MeshStandardMaterial {
         #endif`,
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying vec3 vPane;\nvarying float vUp;\nfloat paneHash(vec3 p){ vec3 q = fract(p * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }')
+      .replace('#include <common>', '#include <common>\nuniform float uNight;\nuniform vec3 uSky;\nuniform float uDay;\nvarying vec3 vPane;\nvarying float vUp;\nfloat paneHash(vec3 p){ vec3 q = fract(p * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }')
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
@@ -73,6 +75,10 @@ function windowGlass(): THREE.MeshStandardMaterial {
           vec3 lamp = hsh > 0.85 ? vec3(0.75, 0.85, 1.0) : mix(vec3(1.0, 0.68, 0.38), vec3(1.0, 0.82, 0.6), fract(hsh * 7.3));
           float ceiling = 0.45 + 0.55 * smoothstep(0.0, 1.0, vUp);
           totalEmissiveRadiance += lamp * lit * ceiling * uNight * (0.35 + 0.3 * fract(hsh * 13.1));
+          // sky reflection: brighter at grazing angles and towards the top of the pane, so glass
+          // reads as glass instead of a dark slab without an environment map
+          float fres = pow(1.0 - abs(dot(normalize(vViewPosition), normal)), 2.0);
+          totalEmissiveRadiance += uSky * uDay * (0.12 + 0.35 * fres) * (0.7 + 0.3 * vUp);
         }`,
       );
   };

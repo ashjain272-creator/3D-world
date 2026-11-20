@@ -14,7 +14,11 @@ export const playerState = {
 };
 
 /** One-shot commands for the controller (used by automation and "travel to" actions). */
-export const playerCommands: { teleport: { x: number; z: number; yaw?: number; top?: boolean } | null; view: { pitch?: number; dist?: number } | null } = {
+/**
+ * Scripted player and camera control (tests and screenshot scripts). `photo` holds a free camera
+ * position and target until cleared, for framing a single building.
+ */
+export const playerCommands: { teleport: { x: number; z: number; yaw?: number; top?: boolean } | null; view: { pitch?: number; dist?: number } | null; photo?: { pos: [number, number, number]; target: [number, number, number]; fov?: number } | null } = {
   teleport: null,
   view: null,
 };

@@ -112,7 +112,7 @@ function palm(add: Add, lx: number, lz: number, h: number, r: (k: number) => num
 }
 
 /** Arched opening: a dark recess with a semicircular head, flush with a wall facing +lz. */
-function archWindow(add: Add, lx: number, ly: number, lz: number, w: number, h: number, mat: DMat = 'glass', color = '#2a3644', rot = 0) {
+function archWindow(add: Add, lx: number, ly: number, lz: number, w: number, h: number, mat: DMat = 'glass', color = '#6f8ea6', rot = 0) {
   add('box', mat, lx, ly, lz, w, h - w / 2, 0.12, color, rot);
   add('arch', mat, lx, ly + h - w / 2, lz, w, w / 2, 0.12, color, rot);
 }
@@ -129,10 +129,10 @@ function win(add: Add, x: number, y: number, z: number, w: number, h: number, ro
   const nx = Math.sin(rot);
   const nz = Math.cos(rot);
   if (extra === 'arch') {
-    archWindow(add, x, y, z, w, h, 'glass', '#24303c', rot);
+    archWindow(add, x, y, z, w, h, 'glass', '#6f8ea6', rot);
     add('arch', 'plaster', x + nx * 0.03, y + h - w / 2, z + nz * 0.03, w + 0.3, (w + 0.3) / 2, 0.12, frameCol, rot);
   } else {
-    add('box', 'glass', x, y, z, w, h, 0.1, '#24303c', rot);
+    add('box', 'glass', x, y, z, w, h, 0.1, '#6f8ea6', rot);
     add('box', 'plaster', x + nx * 0.04, y + h, z + nz * 0.04, w + 0.28, 0.16, 0.2, frameCol, rot);
     for (const s of [-1, 1]) add('box', 'plaster', x + tx * s * (w / 2 + 0.07) + nx * 0.04, y, z + tz * s * (w / 2 + 0.07) + nz * 0.04, 0.14, h, 0.2, frameCol, rot);
     // a mullion and transom divide the pane
@@ -210,6 +210,29 @@ function lounger(add: Add, x: number, z: number, rot: number) {
   add('box', 'cloth', x, 0.37, z, 0.7, 0.08, 1.8, '#f4f2ee', rot);
 }
 
+/** Stone quoins: alternating long and short blocks up the four corners of a box. */
+function quoins(add: Add, cx: number, cz: number, W: number, D: number, y: number, H: number, col: string) {
+  const n = Math.floor(H / 0.62);
+  for (const s of [-1, 1]) for (const t of [-1, 1]) for (let k = 0; k < n; k++) {
+    const long = k % 2 === 0;
+    add('box', 'stone', cx + s * (W / 2 - (long ? 0.35 : 0.22) + 0.04), y + k * 0.62, cz + t * (D / 2 - (long ? 0.22 : 0.35) + 0.04), long ? 0.78 : 0.52, 0.56, long ? 0.52 : 0.78, col);
+  }
+}
+
+/** A dormer window on a roof slope facing +z (local), at height y. */
+function dormer(add: Add, x: number, y: number, z: number, col: string, roof: string) {
+  add('box', 'plaster', x, y, z, 1.5, 1.5, 1.4, col);
+  add('box', 'glass', x, y + 0.25, z + 0.71, 0.9, 1, 0.06, '#6f8ea6');
+  add('gable', 'roof', x, y + 1.5, z, 1.9, 0.8, 1.6, roof);
+}
+
+/** A chimney stack with a stone cap and two pots. */
+function chimney(add: Add, x: number, y: number, z: number, h: number, col: string | THREE.Color) {
+  add('box', 'plaster', x, y, z, 1.2, h, 0.8, col);
+  add('box', 'stone', x, y + h, z, 1.4, 0.2, 1, '#cfc6b4');
+  for (const s of [-0.3, 0.3]) add('cyl', 'roof', x + s, y + h + 0.2, z, 0.3, 0.5, 0.3, '#a8583a');
+}
+
 function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
   const r = hashRand(b.tone * 1000 + b.x * 0.37 + b.z * 0.11);
   const style = villaStyle(b);
@@ -278,11 +301,34 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
   for (const s of [-1, 1]) pa('box', 'metal', gx + s * gw * 0.25, 0.1, PD, gw * 0.48, 2, 0.08, '#24242a');
   const fz = hz + D / 2 + (style === 'classical' ? 3.6 : 0);
   const driveLen = Math.max(1, PD - fz);
-  pa('box', 'stone', gx, 0.03, (PD + fz) / 2, estate ? 4.4 : 3.6, 0.16, driveLen, '#d6cfc0');
-  for (const s of [-1, 1]) pa('box', 'stone', gx + s * (estate ? 2.3 : 1.9), 0.03, (PD + fz) / 2, 0.25, 0.22, driveLen, '#b8b0a0');
-  for (let z = fz + 1.5; z < PD - 1; z += 3.5) for (const s of [-1, 1]) pa('cyl', 'glow', gx + s * (estate ? 2.6 : 2.2), 0, z, 0.16, 0.6, 0.16, '#ffe0a8');
-  if (driveLen > 5) carProp(pa, gx - (estate ? 1 : 0), fz + Math.min(driveLen - 2.6, 3.2), r);
-  if (estate && driveLen > 5) carProp(pa, gx + 1.2, fz + Math.min(driveLen - 2.6, 3.2) + 0.4, (k) => r(k + 7));
+  if (estate) {
+    // motor court: a gravel forecourt across the whole front, kerbed, with a fountain or a clipped
+    // topiary island in the middle and the cars drawn up at the sides
+    const cw = Math.min(W + 6, 2 * (PW - Math.abs(gx)) - 2.4);
+    pa('box', 'stone', gx, 0.03, (PD + fz) / 2, cw, 0.16, driveLen, '#ddd2b8');
+    for (const s of [-1, 1]) pa('box', 'stone', gx + s * (cw / 2), 0.03, (PD + fz) / 2, 0.3, 0.24, driveLen, '#b8b0a0');
+    const iz = fz + driveLen * 0.55;
+    if (style !== 'classical' && driveLen > 7) {
+      if (r(21) < 0.6) {
+        fountain(pa, gx, iz, 3.6, true);
+        out.lights.push([plot.wx(gx, iz), plot.wz(gx, iz)]);
+      } else {
+        pa('cyl', 'stone', gx, 0, iz, 4.4, 0.4, 4.4, '#cfc6b4');
+        pa('cyl', 'lawn', gx, 0.3, iz, 4, 0.14, 4, '#5f8f3c');
+        pa('sphere', 'leaf', gx, 0.4, iz, 2, 2, 2, '#3a6a2e');
+        for (let k = 0; k < 6; k++) pa('cone', 'leaf', gx + Math.cos(k) * 1.6, 0.4, iz + Math.sin(k) * 1.6, 0.5, 1.1, 0.5, '#335e2a');
+      }
+    }
+    for (const s of [-1, 1]) {
+      if (driveLen > 5) carProp(pa, gx + s * (cw / 2 - 1.8), fz + driveLen * 0.5, (k) => r(k + (s > 0 ? 7 : 0)));
+      for (let z = fz + 1; z < PD - 0.5; z += 3) pa('cyl', 'glow', gx + s * (cw / 2 - 0.5), 0, z, 0.16, 0.6, 0.16, '#ffe0a8');
+    }
+  } else {
+    pa('box', 'stone', gx, 0.03, (PD + fz) / 2, 3.6, 0.16, driveLen, '#d6cfc0');
+    for (const s of [-1, 1]) pa('box', 'stone', gx + s * 1.9, 0.03, (PD + fz) / 2, 0.25, 0.22, driveLen, '#b8b0a0');
+    for (let z = fz + 1.5; z < PD - 1; z += 3.5) for (const s of [-1, 1]) pa('cyl', 'glow', gx + s * 2.2, 0, z, 0.16, 0.6, 0.16, '#ffe0a8');
+    if (driveLen > 5) carProp(pa, gx, fz + Math.min(driveLen - 2.6, 3.2), r);
+  }
 
   // ── garden: pool (and on estates a pool house, a tennis court or a formal garden, a gazebo)
   const gx0 = hx + gardenSide * (W / 2 + 2);
@@ -302,7 +348,7 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
     // pool house at the far end
     const phx = gcx + gardenSide * (poolL / 2 + 0.2);
     pa('box', 'plaster', phx, 0, pz - 0.2, 3.2, 3, 4.6, wallCol);
-    pa('box', 'glass', phx - gardenSide * 1.62, 0.2, pz - 0.2, 0.1, 2.4, 3.8, '#24303c', Math.PI / 2);
+    pa('box', 'glass', phx - gardenSide * 1.62, 0.2, pz - 0.2, 0.1, 2.4, 3.8, '#6f8ea6', Math.PI / 2);
     pa('box', 'dark', phx, 3, pz - 0.2, 4, 0.25, 5.4, '#5a5e64');
     const feature = r(18);
     tennis = feature < 0.45 && gW >= 24;
@@ -353,8 +399,9 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
     const t = (k + 0.5) / trees;
     const lx = -PW + 1.6 + t * (PW * 2 - 3.2);
     const lz = -PD + 1.5;
-    // no trees on the tennis court
+    // no trees on the tennis court or behind a house that stands at the back of its plot
     if (tennis && (lx - gx0) * (lx - gx1) < 0) continue;
+    if (Math.abs(lx - hx) < W / 2 + 2 && hz - D / 2 < -PD + 4) continue;
     if (warm && k % 2 === 0) palm(pa, lx, lz, 6 + r(30 + k) * 3.5, r, 40 + k * 5);
     else if (style === 'mediterranean' || style === 'classical') pa('cone', 'leaf', lx, 0, lz, 1.2, 5.5 + r(30 + k) * 2, 1.2, '#2f5a2c');
     else roundTree(pa, lx, lz, 4.5 + r(30 + k) * 2, warm ? '#6a8a4a' : '#3f6a34', r, 70 + k * 3);
@@ -371,14 +418,14 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
       add('box', 'stone', 0, 0, 0, W + 0.6, 0.45, D + 0.6, '#d8d4cc');
       add('box', 'plaster', 0, 0.45, 0, W, fh, D, '#f3f2ee');
       // floor-to-ceiling glazing with slim mullions
-      add('box', 'glass', -W * 0.08, 0.6, D / 2 + 0.03, W * 0.72, fh - 0.4, 0.1, '#24303c');
+      add('box', 'glass', -W * 0.08, 0.6, D / 2 + 0.03, W * 0.72, fh - 0.4, 0.1, '#6f8ea6');
       for (let k = 0; k <= 6; k++) add('box', 'metal', -W * 0.08 - W * 0.36 + (k * W * 0.72) / 6, 0.6, D / 2 + 0.06, 0.08, fh - 0.4, 0.08, '#2a2a2e');
       const ux = W * 0.14 * (r(4) < 0.5 ? 1 : -1);
       const uw = W * 0.74;
       const ud = D * 0.9;
       const uy = 0.45 + fh;
       add('box', 'plaster', ux, uy, 1.4, uw, fh, ud, '#f7f7f4');
-      add('box', 'glass', ux + uw * 0.12, uy + fh * 0.32, 1.4 + ud / 2 + 0.03, uw * 0.62, fh * 0.42, 0.1, '#24303c');
+      add('box', 'glass', ux + uw * 0.12, uy + fh * 0.32, 1.4 + ud / 2 + 0.03, uw * 0.62, fh * 0.42, 0.1, '#6f8ea6');
       // timber or stone fins over part of the upper floor
       const finM: DMat = r(14) < 0.5 ? 'wood' : 'stone';
       for (let k = 0; k < 9; k++) add('box', finM, ux - uw * 0.46 + k * 0.42, uy + 0.2, 1.4 + ud / 2 + 0.2, 0.12, fh - 0.4, 0.4, finM === 'wood' ? '#9a6a42' : '#bcb2a0');
@@ -390,10 +437,14 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
       }
       if (floors === 3) {
         // a glass penthouse with a roof terrace
-        add('box', 'glass', ux - uw * 0.15, uy + fh + 0.3, 0.6, uw * 0.45, fh * 0.9, ud * 0.55, '#2a3846');
+        add('box', 'glass', ux - uw * 0.15, uy + fh + 0.3, 0.6, uw * 0.45, fh * 0.9, ud * 0.55, '#6f8ea6');
         add('box', 'plaster', ux - uw * 0.15, uy + fh * 1.9 + 0.3, 0.6, uw * 0.55, 0.25, ud * 0.65, '#efefec');
         add('box', 'glass', ux + uw * 0.2, uy + fh + 0.3, 1.4 + ud / 2 + 0.1, uw * 0.5, 1, 0.06, '#9ec4d8');
       }
+      // a planted roof on the lower volume and a bronze band along the upper floor
+      add('box', 'lawn', -ux * 1.6, uy + 0.32, 0, W - uw - 0.2, 0.12, D - 0.6, '#6a9a44');
+      for (let k = 0; k < 5; k++) add('sphere', 'leaf', -ux * 1.6 + (r(30 + k) - 0.5) * (W - uw - 1), uy + 0.45, (r(40 + k) - 0.5) * (D - 2), 0.9, 0.6, 0.9, '#4f7a34');
+      add('box', 'metal', ux, uy + fh - 0.5, 1.4 + ud / 2 + 0.05, uw + 0.2, 0.35, 0.1, '#8a6a3a');
       // terrace rail on the exposed ground roof, a stone feature wall, an entrance canopy
       add('box', 'glass', -ux * 1.6, uy + 0.25, D / 2 - 0.1, W - uw + 0.6, 1, 0.06, '#9ec4d8');
       add('box', 'stone', -W / 2 - 0.5, 0, 1, 1, H * 0.82, D + 3, ['#5a5650', '#b8a890', '#3a3e44'][Math.floor(r(15) * 3)]);
@@ -411,9 +462,23 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
       add('box', 'plaster', 0, 0.45, 0, W, H - 0.45, D, wallC);
       add('box', 'plaster', 0, H - 0.35, 0, W + 0.6, 0.35, D + 0.6, wallC.clone().offsetHSL(0, 0, 0.04));
       add('hip', 'roof', 0, H, 0, W * 1.12, H * 0.3, D * 1.16, roofC);
-      // chimney
-      add('box', 'plaster', W * 0.3, H, -D * 0.2, 1, H * 0.34 + 0.6, 1, wallC);
-      add('box', 'roof', W * 0.3, H + H * 0.34 + 0.6, -D * 0.2, 1.3, 0.25, 1.3, roofC);
+      chimney(add, W * 0.3, H, -D * 0.2, H * 0.34 + 0.6, wallC);
+      chimney(add, -W * 0.32, H, D * 0.1, H * 0.3 + 0.6, wallC);
+      quoins(add, 0, 0, W, D, 0.45, H - 0.8, '#efe4cc');
+      // a belvedere tower at a back corner: an open loggia under its own hipped roof
+      {
+        const tx = (W / 2 - 1.8) * (r(22) < 0.5 ? 1 : -1);
+        const tz = -D / 2 + 1.8;
+        add('box', 'plaster', tx, 0.45, tz, 3.6, H + 2.2, 3.6, wallC);
+        quoins(add, tx, tz, 3.6, 3.6, 0.45, H + 2.2, '#efe4cc');
+        for (let f = 0; f < 4; f++) {
+          const a = (f * Math.PI) / 2;
+          archWindow(add, tx + Math.sin(a) * 1.82, H + 0.2, tz + Math.cos(a) * 1.82, 1.1, 1.9, 'dark', '#2a2420', a);
+        }
+        add('box', 'plaster', tx, H + 2.65, tz, 4.2, 0.3, 4.2, wallC.clone().offsetHSL(0, 0, 0.04));
+        add('hip', 'roof', tx, H + 2.95, tz, 4.6, 1.8, 4.6, roofC);
+      }
+      if (!estate || r(23) < 0.6) for (const k of [-1, 1]) dormer(add, k * W * 0.22, H + 0.4, D * 0.18, wallC.getStyle(), roofC);
       // arcaded loggia across the front with a balcony above
       const bays = W > 15 ? 5 : 3;
       const lw = W * 0.7;
@@ -474,7 +539,7 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
       const domeM: DMat = domeKind === 0 ? 'gold' : 'plaster';
       const domeC = ['#d8b25a', '#f2ebdd', '#3f9a9a'][domeKind];
       add('cyl', 'plaster', 0, 0.45 + H * 0.78, bz, 5.4, 1.6, 5.4, wallC);
-      for (let k = 0; k < 8; k++) archWindow(add, Math.sin((k * Math.PI) / 4) * 2.72, 0.45 + H * 0.78 + 0.2, bz + Math.cos((k * Math.PI) / 4) * 2.72, 0.6, 1.2, 'glass', '#24303c', (k * Math.PI) / 4);
+      for (let k = 0; k < 8; k++) archWindow(add, Math.sin((k * Math.PI) / 4) * 2.72, 0.45 + H * 0.78 + 0.2, bz + Math.cos((k * Math.PI) / 4) * 2.72, 0.6, 1.2, 'glass', '#6f8ea6', (k * Math.PI) / 4);
       add('hemi', domeM, 0, 0.45 + H * 0.78 + 1.6, bz, 5.8, 5, 5.8, domeC);
       add('sphere', 'gold', 0, 0.45 + H * 0.78 + 4.3, bz, 0.4, 0.9, 0.4, '#e2c070');
       for (const s of [-1, 1]) {
@@ -527,6 +592,8 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
         add('sphere', 'stone', s * (cw / 2 + 0.2), H + 1.75, t * (D / 2 + 0.2), 0.6, 0.8, 0.6, '#e2dccd');
       }
       add('hip', 'roof', 0, H + 0.4, 0, cw * 0.9, 1.6, D * 0.85, '#5a6068');
+      quoins(add, 0, 0, cw, D, 0.6, H - 0.8, '#e2dccd');
+      for (const s of [-1, 1]) chimney(add, s * cw * 0.32, H + 0.4, -D * 0.15, 2.4, ivory);
       // cupola on the roof
       add('cyl', 'plaster', 0, H + 1.6, 0, 3.2, 1.8, 3.2, ivory);
       for (let k = 0; k < 8; k++) add('cyl', 'stone', Math.cos((k * Math.PI) / 4) * 1.65, H + 1.6, Math.sin((k * Math.PI) / 4) * 1.65, 0.2, 1.8, 0.2, stoneC);
@@ -559,7 +626,7 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
       add('box', 'marble', 0, H - 0.6, D / 2 + 1.5, pw + 1.2, 0.9, 3, '#ebe6dc');
       add('gable', 'marble', 0, H + 0.3, D / 2 + 2.3, pw + 1.4, 2.4, 1.6, '#efe9de');
       add('box', 'wood', 0, 0.6, D / 2 + 0.04, 1.9, 3.2, 0.08, '#4a2e1c');
-      add('arch', 'glass', 0, 3.8, D / 2 + 0.04, 1.9, 0.95, 0.08, '#24303c');
+      add('arch', 'glass', 0, 3.8, D / 2 + 0.04, 1.9, 0.95, 0.08, '#6f8ea6');
       break;
     }
     case 'pavilion': {
@@ -567,12 +634,12 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
       const g1 = fh + 0.2;
       add('box', 'wood', 0, 0, 1.2, W + 3, 0.4, D + 4, '#a07a52');
       add('box', 'stone', -W * 0.32, 0.4, -D * 0.1, W * 0.2, H * 0.9, D * 0.8, ['#8a8278', '#c8b8a0', '#4a4844'][Math.floor(r(16) * 3)]);
-      add('box', 'glass', W * 0.05, 0.4, 0, W * 0.86, g1, D * 0.72, '#2c3a46');
+      add('box', 'glass', W * 0.05, 0.4, 0, W * 0.86, g1, D * 0.72, '#6f8ea6');
       for (let k = 0; k <= 8; k++) add('box', 'metal', W * 0.05 - W * 0.43 + (k * W * 0.86) / 8, 0.4, D * 0.36 + 0.03, 0.06, g1, 0.06, '#d8d8d8');
       add('box', 'plaster', 0, 0.4 + g1, 0, W + 2.4, 0.35, D + 1.6, '#f4f4f0');
       add('box', 'glow', 0, 0.4 + g1 - 0.06, D / 2 + 0.6, W + 2, 0.05, 0.1, '#ffe6c0');
       const g2y = 0.75 + g1;
-      add('box', 'glass', W * 0.22, g2y, 0.6, W * 0.42, fh, D * 1.3, '#2c3a46');
+      add('box', 'glass', W * 0.22, g2y, 0.6, W * 0.42, fh, D * 1.3, '#6f8ea6');
       add('box', 'plaster', W * 0.22, g2y + fh, 0.6, W * 0.46 + 0.6, 0.3, D * 1.3 + 0.8, '#f4f4f0');
       for (let k = 0; k <= 6; k++) add('box', 'metal', W * 0.22 - W * 0.21 + (k * W * 0.42) / 6, g2y, 0.6 + D * 0.65 + 0.03, 0.06, fh, 0.06, '#d8d8d8');
       for (const s of [-1, 1]) for (const t of [-1, 1]) add('cyl', 'metal', s * (W / 2 + 0.8), 0.4, t * (D / 2 + 0.4), 0.2, g1, 0.2, '#e0e0e0');
@@ -588,15 +655,19 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
       const timber = '#7a5236';
       const roofC = ['#6a5440', '#7a5e44', '#58624e'][Math.floor(r(19) * 3)];
       add('box', 'stone', 0, 0, 0, W + 1, 0.7, D + 1, '#8a8070');
-      add('box', 'glass', 0, 0.7, 0, W * 0.82, fh + 0.6, D * 0.78, '#2c3a40');
+      add('box', 'glass', 0, 0.7, 0, W * 0.82, fh + 0.6, D * 0.78, '#6f8ea6');
       for (let k = 0; k <= 6; k++) for (const t of [-1, 1]) add('box', 'wood', -W * 0.41 + (k * W * 0.82) / 6, 0.7, t * D * 0.39, 0.25, fh + 0.6, 0.25, timber);
       add('box', 'wood', 0, 0.7 + fh + 0.6, 0, W * 0.9, 0.4, D * 0.86, timber);
+      // a teak deck all round and sliding timber screens over part of the glass
+      add('box', 'wood', 0, 0.62, 0, W + 2.6, 0.12, D + 2.6, '#a07a52');
+      for (let k = 0; k < 10; k++) add('box', 'wood', -W * 0.38 + k * 0.32, 0.75, D * 0.39 + 0.15, 0.14, fh + 0.4, 0.08, '#8a6440');
+      for (let k = 0; k < 4; k++) add('cyl', 'roof', W / 2 + 0.8, 0.7, -D / 2 + 1 + k * 2.2, 0.8, 0.9, 0.8, '#7a5a3a');
       add('hip', 'roof', 0, 1.7 + fh, 0, W * 1.3, H * 0.55, D * 1.35, roofC);
       // a second pavilion joined by a covered walk
       const sx = (W / 2 + 4) * (r(20) < 0.5 ? 1 : -1);
       if (Math.abs(hx + sx) < PW - 4) {
         add('box', 'stone', sx, 0, -1, 6.4, 0.7, 6.4, '#8a8070');
-        add('box', 'glass', sx, 0.7, -1, 5, fh, 5, '#2c3a40');
+        add('box', 'glass', sx, 0.7, -1, 5, fh, 5, '#6f8ea6');
         add('hip', 'roof', sx, 0.7 + fh, -1, 7.6, H * 0.4, 7.6, roofC);
         add('box', 'wood', sx / 2, 2.8, -1, Math.abs(sx) - 4, 0.25, 2.2, timber);
       }
@@ -631,7 +702,7 @@ function fountain(add: Add, lx: number, lz: number, d: number, tiered = false) {
 function carProp(add: Add, lx: number, lz: number, r: (k: number) => number) {
   const col = ['#f2f2f0', '#1a1c20', '#8a8f96', '#7a1a1a', '#1e3a5a', '#c8b07a'][Math.floor(r(50) * 6)];
   add('box', 'metal', lx, 0.35, lz, 1.9, 0.75, 4.5, col);
-  add('box', 'glass', lx, 1.05, lz - 0.2, 1.65, 0.55, 2.4, '#1c2630');
+  add('box', 'glass', lx, 1.05, lz - 0.2, 1.65, 0.55, 2.4, '#6f8ea6');
   for (const s of [-1, 1]) for (const t of [-1, 1]) add('cyl', 'dark', lx + s * 0.82, 0.33, lz + t * 1.45, 0.66, 0.26, 0.66, '#151515', 0, 0, (s * Math.PI) / 2);
 }
 
@@ -700,7 +771,7 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
   add('cyl', 'stone', 0, H, 0, 13, 1.4, 13, '#d8cfbd');
   add('hemi', 'glass', 0, H + 1.4, 0, 12, 7, 12, '#7ab0c8');
   for (let k = 0; k < 8; k++) add('box', 'metal', 0, H + 1.4, 0, 0.18, 7.2, 12.2, '#c8ccd0', (k * Math.PI) / 8);
-  add('box', 'glass', 0, 0.2, S / 2 + 0.05, 10, H * 0.8, 0.2, '#2e4250');
+  add('box', 'glass', 0, 0.2, S / 2 + 0.05, 10, H * 0.8, 0.2, '#6f8ea6');
   add('box', 'plaster', 0, H * 0.82, S / 2 + 2.5, 13, 0.4, 5, '#f2f0ea');
   for (const s of [-1, 1]) add('cyl', 'metal', s * 6, 0, S / 2 + 4.6, 0.3, H * 0.82, 0.3, '#c8ccd0');
   add('box', 'glow', 0, H * 0.82 + 0.5, S / 2 + 0.2, 9, 1.2, 0.12, r(1) < 0.5 ? '#ffd27a' : '#7ae0ff');
@@ -746,13 +817,13 @@ function mosque(out: DistrictData, b: Building, y0: number, warm: boolean) {
   const hd = S * 1.0;
   const hz = -S * 0.3;
   add('box', 'plaster', 0, 0, hz, hw, 8, hd, white);
-  for (let k = 0; k < 5; k++) archWindow(add, -hw / 2 + (hw / 5) * (k + 0.5), 1.2, hz + hd / 2 + 0.03, 1.5, 4.2, 'glass', '#2a3a44');
+  for (let k = 0; k < 5; k++) archWindow(add, -hw / 2 + (hw / 5) * (k + 0.5), 1.2, hz + hd / 2 + 0.03, 1.5, 4.2, 'glass', '#6f8ea6');
   add('box', 'stone', 0, 8, hz, hw + 0.4, 0.5, hd + 0.4, '#e2dccd');
   // a great dome on a drum, four smaller domes at the corners
   add('cyl', 'plaster', 0, 8.5, hz, 9, 2.6, 9, white);
   for (let k = 0; k < 12; k++) {
     const a = (k / 12) * Math.PI * 2;
-    archWindow(add, Math.sin(a) * 4.52, 8.9, hz + Math.cos(a) * 4.52, 0.8, 1.7, 'glass', '#2a3a44', a);
+    archWindow(add, Math.sin(a) * 4.52, 8.9, hz + Math.cos(a) * 4.52, 0.8, 1.7, 'glass', '#6f8ea6', a);
   }
   add('hemi', domeM, 0, 11.1, hz, 9.4, 8.6, 9.4, domeC);
   add('cone', 'gold', 0, 15.2, hz, 0.7, 2.4, 0.7, '#d8b25a');
@@ -882,26 +953,322 @@ function church(out: DistrictData, b: Building, y0: number, warm: boolean) {
   if (warm) palm(add, S - 2.4, -S + 2.4, 6, r, 40);
 }
 
+// ───────────────────────── Parks ─────────────────────────
+
+const PLAY_COLS = ['#e8402e', '#f2b81e', '#2e8ae8', '#3ab85a', '#e86ab8'];
+
+/** Fenced playground: safety surface, swings, a slide tower, a seesaw, a climbing frame, a roundabout, a sandpit. */
+function playground(add: Add, x: number, z: number, rot: number, r: (k: number) => number, k: number, large: boolean) {
+  const c = Math.cos(rot);
+  const sn = Math.sin(rot);
+  // local offsets inside the playground, turned by rot
+  const P = (lx: number, lz: number): [number, number] => [x + lx * c + lz * sn, z - lx * sn + lz * c];
+  const col = (i: number) => PLAY_COLS[Math.floor(r(k + i) * PLAY_COLS.length)];
+  const PW = large ? 7 : 5;
+  const PD = large ? 5.5 : 4.2;
+  add('box', 'cloth', x, 0.03, z, PW * 2, 0.14, PD * 2, r(k) < 0.5 ? '#b8563e' : '#3a6aa8', rot);
+  // low timber fence with a gap for the gate
+  for (const [lx, lz, sx, sz] of [[0, -PD, PW * 2, 0.08], [-PW, 0, 0.08, PD * 2], [PW, 0, 0.08, PD * 2], [-PW / 2 - 1, PD, PW - 2, 0.08], [PW / 2 + 1, PD, PW - 2, 0.08]] as const) {
+    const [fx, fz] = P(lx, lz);
+    add('box', 'wood', fx, 0.7, fz, sx, 0.1, sz, '#8a6440', rot);
+    add('box', 'wood', fx, 0.35, fz, sx, 0.08, sz, '#8a6440', rot);
+  }
+  // swings: an A-frame at each end, a top bar, two seats on chains
+  {
+    const [sx, sz] = P(-PW * 0.5, -PD * 0.45);
+    for (const e of [-1.8, 1.8]) for (const t of [-0.55, 0.55]) {
+      const [ax, az] = P(-PW * 0.5 + e, -PD * 0.45 + t);
+      add('cyl', 'metal', ax, 0, az, 0.12, 2.6, 0.12, col(1), rot, t > 0 ? -0.22 : 0.22);
+    }
+    add('box', 'metal', sx, 2.45, sz, 3.8, 0.14, 0.14, col(1), rot);
+    for (const o of [-0.8, 0.8]) {
+      const [cx, cz] = P(-PW * 0.5 + o, -PD * 0.45);
+      for (const t of [-0.22, 0.22]) {
+        const [hx, hz] = P(-PW * 0.5 + o + t, -PD * 0.45);
+        add('cyl', 'metal', hx, 0.55, hz, 0.03, 1.9, 0.03, '#9a9a9a', rot);
+      }
+      add('box', 'cloth', cx, 0.5, cz, 0.6, 0.06, 0.3, '#2a2a2a', rot);
+    }
+  }
+  // slide: a platform on posts with a roof, a ladder and a chute
+  {
+    const [tx, tz] = P(PW * 0.45, -PD * 0.35);
+    for (const a of [-0.6, 0.6]) for (const b2 of [-0.6, 0.6]) {
+      const [px, pz] = P(PW * 0.45 + a, -PD * 0.35 + b2);
+      add('cyl', 'metal', px, 0, pz, 0.12, 2.9, 0.12, col(2), rot);
+    }
+    add('box', 'wood', tx, 1.6, tz, 1.4, 0.12, 1.4, '#a07a52', rot);
+    add('cone', 'cloth', tx, 2.9, tz, 2, 1, 2, col(3), rot + Math.PI / 4);
+    const [lx2, lz2] = P(PW * 0.45, -PD * 0.35 - 0.95);
+    for (const s of [-0.3, 0.3]) {
+      const [rx, rz] = P(PW * 0.45 + s, -PD * 0.35 - 0.95);
+      add('box', 'metal', rx, 0, rz, 0.06, 1.7, 0.06, '#9a9a9a', rot, -0.25);
+    }
+    for (let h = 0.35; h < 1.6; h += 0.4) add('box', 'metal', lx2, h, lz2 + 0.06 * h, 0.6, 0.05, 0.05, '#9a9a9a', rot);
+    const [cx, cz] = P(PW * 0.45, -PD * 0.35 + 1.9);
+    add('box', 'plaster', cx, 0.15, cz, 0.7, 0.08, 3.1, col(4), rot, 0.5);
+  }
+  // seesaw and a roundabout
+  {
+    const [sx, sz] = P(-PW * 0.45, PD * 0.4);
+    add('box', 'metal', sx, 0, sz, 0.3, 0.45, 0.3, '#5a5a5a', rot);
+    add('box', 'wood', sx, 0.45, sz, 3, 0.1, 0.3, col(5), rot, 0, 0.18);
+    const [rx, rz] = P(PW * 0.1, PD * 0.45);
+    add('cyl', 'metal', rx, 0.1, rz, 2.2, 0.12, 2.2, col(6), rot);
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2;
+      add('cyl', 'metal', rx + Math.cos(a) * 0.8, 0.22, rz + Math.sin(a) * 0.8, 0.06, 0.6, 0.06, '#d8d8d8');
+    }
+  }
+  // climbing frame and a sandpit on the larger playgrounds
+  if (large) {
+    const [gx, gz] = P(PW * 0.62, PD * 0.35);
+    for (let a = -1; a <= 1; a++) for (let b2 = -1; b2 <= 1; b2++) {
+      const [bx, bz] = P(PW * 0.62 + a * 0.7, PD * 0.35 + b2 * 0.7);
+      add('cyl', 'metal', bx, 0, bz, 0.07, 1.8, 0.07, col(7), rot);
+    }
+    for (const h of [0.9, 1.8]) for (const a of [-0.7, 0, 0.7]) {
+      const [bx, bz] = P(PW * 0.62 + a, PD * 0.35);
+      add('box', 'metal', bx, h, bz, 0.06, 0.06, 1.4, col(7), rot);
+      const [cx, cz] = P(PW * 0.62, PD * 0.35 + a);
+      add('box', 'metal', cx, h, cz, 1.4, 0.06, 0.06, col(7), rot);
+    }
+    void gx;
+    void gz;
+    const [px, pz] = P(-PW * 0.05, -PD * 0.1);
+    add('box', 'wood', px, 0, pz, 3.4, 0.35, 2.6, '#8a6440', rot);
+    add('box', 'cloth', px, 0.1, pz, 3, 0.28, 2.2, '#e8d4a0', rot);
+    add('cone', 'cloth', px + 0.6, 0.38, pz - 0.3, 0.6, 0.4, 0.6, '#d8c090');
+    add('box', 'plaster', px - 0.7, 0.38, pz + 0.4, 0.3, 0.25, 0.3, col(8), rot);
+  }
+  // spring riders
+  for (const o of [-1.2, 1.2]) {
+    const [qx, qz] = P(o, -PD * 0.1 + (large ? 2.4 : 0));
+    add('cyl', 'metal', qx, 0, qz, 0.16, 0.4, 0.16, '#5a5a5a');
+    add('sphere', 'plaster', qx, 0.7, qz, 0.5, 0.45, 0.8, col(9 + o), rot);
+  }
+}
+
+/** Picnic tables, blankets with baskets, a barbecue. */
+function picnic(add: Add, x: number, z: number, r: (k: number) => number, k: number, tables: number) {
+  for (let i = 0; i < tables; i++) {
+    const a = r(k + i) * Math.PI * 2;
+    const d = 2 + r(k + i + 10) * 3.5;
+    const tx = x + Math.cos(a) * d;
+    const tz = z + Math.sin(a) * d;
+    const rot = r(k + i + 20) * Math.PI;
+    add('box', 'wood', tx, 0.72, tz, 1.9, 0.08, 0.8, '#9a7450', rot);
+    for (const s of [-0.62, 0.62]) add('box', 'wood', tx + Math.sin(rot) * s, 0.42, tz + Math.cos(rot) * s, 1.9, 0.06, 0.3, '#8a6440', rot);
+    for (const s of [-0.75, 0.75]) add('box', 'wood', tx + Math.cos(rot) * s, 0, tz - Math.sin(rot) * s, 0.08, 0.72, 1.3, '#7a5636', rot);
+  }
+  const blankets = ['#d83a3a', '#3a7ad8', '#f2c81e', '#3ab86a', '#e8e0d0', '#c84aa0'];
+  for (let i = 0; i < tables + 2; i++) {
+    const a = r(k + i + 40) * Math.PI * 2;
+    const d = 4 + r(k + i + 50) * 4;
+    const bx = x + Math.cos(a) * d;
+    const bz = z + Math.sin(a) * d;
+    const rot = r(k + i + 60) * Math.PI;
+    add('box', 'cloth', bx, 0.15, bz, 2, 0.03, 1.6, blankets[Math.floor(r(k + i + 70) * blankets.length)], rot);
+    add('box', 'cloth', bx, 0.16, bz, 2, 0.03, 0.25, '#f4f2ee', rot);
+    add('box', 'wood', bx + 0.5, 0.18, bz + 0.3, 0.5, 0.35, 0.35, '#a0784a', rot);
+    if (r(k + i + 80) < 0.5) add('sphere', 'plaster', bx - 0.5, 0.3, bz - 0.2, 0.3, 0.3, 0.3, '#e83a3a');
+  }
+  add('cyl', 'dark', x + 5, 0, z - 4, 0.6, 0.9, 0.6, '#2a2a2a');
+  add('cyl', 'metal', x + 5, 0.9, z - 4, 0.9, 0.08, 0.9, '#5a5a5a');
+}
+
+/** An irregular pond: overlapping discs of water, reeds, lily pads, ducks and a footbridge. */
+function pond(out: DistrictData, add: Add, wx: (x: number, z: number) => number, wz: (x: number, z: number) => number, x: number, z: number, size: number, r: (k: number) => number, k: number) {
+  const discs: [number, number, number][] = [[x, z, size]];
+  for (let i = 0; i < 4; i++) {
+    const a = r(k + i) * Math.PI * 2;
+    discs.push([x + Math.cos(a) * size * 0.45, z + Math.sin(a) * size * 0.35, size * (0.55 + r(k + i + 5) * 0.3)]);
+  }
+  for (const [dx, dz, ds] of discs) {
+    add('cyl', 'stone', dx, 0, dz, ds + 0.8, 0.12, ds * 0.8 + 0.8, '#b8b0a0');
+    add('cyl', 'water', dx, 0.06, dz, ds, 0.1, ds * 0.8, '#3f8aa0');
+  }
+  out.lights.push([wx(x, z), wz(x, z)]);
+  for (let i = 0; i < 14; i++) {
+    const [dx, dz, ds] = discs[i % discs.length];
+    const a = r(k + 20 + i) * Math.PI * 2;
+    add('cone', 'leaf', dx + Math.cos(a) * ds * 0.5, 0, dz + Math.sin(a) * ds * 0.4, 0.5, 1.4 + r(k + 30 + i), 0.5, '#5a7a3a');
+  }
+  for (let i = 0; i < 8; i++) add('cyl', 'leaf', x + (r(k + 40 + i) - 0.5) * size, 0.13, z + (r(k + 50 + i) - 0.5) * size * 0.6, 0.7, 0.03, 0.7, '#4f8a3a');
+  for (let i = 0; i < 3; i++) add('sphere', 'plaster', x + (r(k + 60 + i) - 0.5) * size * 0.6, 0.22, z + (r(k + 70 + i) - 0.5) * size * 0.4, 0.3, 0.25, 0.42, '#f4f2ee');
+  // a timber footbridge across the middle
+  add('box', 'wood', x, 0.35, z, 1.8, 0.15, size * 1.2, '#8a6440');
+  for (const s of [-0.85, 0.85]) add('box', 'wood', x + s, 0.5, z, 0.08, 0.8, size * 1.2, '#7a5636');
+}
+
 function park(out: DistrictData, b: Building, y0: number, warm: boolean) {
   const r = hashRand(b.tone * 1000 + 13);
-  const { add } = frame(out, b.x, b.z, y0, b.door);
-  const S = b.w / 2;
-  // a pocket park: lawn, crossing paths, a fountain, trees, benches, beds and lamps
-  add('box', 'lawn', 0, 0, 0, S * 2, 0.14, S * 2, '#5f9a40');
-  add('box', 'stone', 0, 0.03, 0, S * 2, 0.14, 2.6, '#d6cfc0');
-  add('box', 'stone', 0, 0.03, 0, 2.6, 0.14, S * 2, '#d6cfc0');
-  fountain(add, 0, 0, 5.2, true);
-  out.lights.push([b.x, b.z]);
-  for (const s of [-1, 1]) for (const t of [-1, 1]) {
-    const cx = s * S * 0.5;
-    const cz = t * S * 0.5;
-    if (warm && r(s + t * 3 + 5) < 0.5) palm(add, cx, cz, 7 + r(s * 2 + t + 9) * 2, r, 20 + s * 3 + t * 7);
-    else roundTree(add, cx, cz, 6 + r(s + t + 11) * 2, '#4f7a34', r, 30 + s * 4 + t * 9);
-    flowerBed(add, cx * 0.9, cz * 0.35 + t * 1.5, S * 0.55, 0, r, 50 + s * 5 + t * 11);
-    add('box', 'wood', s * 2.6, 0.45, t * (S * 0.55), 1.8, 0.12, 0.6, '#8a6a4a', Math.PI / 2);
-    add('cyl', 'metal', s * 1.9, 0, t * 3.4, 0.14, 3.6, 0.14, '#2a2e34');
-    add('sphere', 'glow', s * 1.9, 3.7, t * 3.4, 0.4, 0.4, 0.4, '#ffe2b0');
+  const { add, wx, wz } = frame(out, b.x, b.z, y0, b.door);
+  const W = b.w / 2;
+  const D = b.d / 2;
+  const area = b.w * b.d;
+  const size: 'pocket' | 'long' | 'central' = area > 2500 ? 'central' : area > 1000 ? 'long' : 'pocket';
+  const taken: [number, number, number][] = [];
+  const isFree = (x: number, z: number, rad: number) => taken.every(([tx, tz, tr]) => Math.hypot(tx - x, tz - z) > tr + rad);
+  // lawn with soft meadow patches and grassy mounds
+  add('box', 'lawn', 0, 0, 0, W * 2, 0.14, D * 2, '#5f9a40');
+  for (let i = 0; i < Math.round(area / 180); i++) {
+    const x = (r(i) - 0.5) * W * 1.7;
+    const z = (r(i + 100) - 0.5) * D * 1.7;
+    add('cyl', 'lawn', x, 0.02, z, 4 + r(i + 200) * 6, 0.14, 3 + r(i + 300) * 5, r(i + 400) < 0.5 ? '#6aa848' : '#55893a');
   }
+  if (size !== 'pocket') for (let i = 0; i < (size === 'central' ? 3 : 1); i++) {
+    const x = (r(i + 500) - 0.5) * W * 1.2;
+    const z = (r(i + 510) - 0.5) * D * 1.2;
+    add('hemi', 'lawn', x, -0.2, z, 9 + r(i + 520) * 6, 2 + r(i + 530) * 1.4, 7 + r(i + 540) * 5, '#64a044');
+    taken.push([x, z, 5]);
+  }
+  // a winding path loop with entrances from the street sides
+  const a = W - 3.6;
+  const c = D - 3.6;
+  const n = Math.max(16, Math.round((a + c) * 1.2));
+  const ph = r(600) * 6;
+  const pts: [number, number][] = [];
+  for (let k = 0; k < n; k++) {
+    const t = (k / n) * Math.PI * 2;
+    const f = 1 + 0.1 * Math.sin(3 * t + ph) + 0.05 * Math.sin(5 * t + ph * 2);
+    pts.push([Math.cos(t) * a * f * 0.92, Math.sin(t) * c * f * 0.92]);
+  }
+  for (let k = 0; k < n; k++) {
+    const [x0, z0] = pts[k];
+    const [x1, z1] = pts[(k + 1) % n];
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    const ang = Math.atan2(x1 - x0, z1 - z0);
+    add('box', 'stone', (x0 + x1) / 2, 0.04, (z0 + z1) / 2, 2, 0.14, len + 0.3, '#d8cdb4', ang);
+    add('cyl', 'stone', x0, 0.04, z0, 2, 0.14, 2, '#d8cdb4');
+    // benches and lamps along the loop
+    if (k % 4 === 0) {
+      const nx = Math.cos(ang);
+      const nz = -Math.sin(ang);
+      add('box', 'wood', x0 + nx * 1.7, 0.45, z0 + nz * 1.7, 1.7, 0.1, 0.5, '#8a6440', ang + Math.PI / 2);
+      add('box', 'wood', x0 + nx * 1.95, 0.55, z0 + nz * 1.95, 1.7, 0.45, 0.08, '#8a6440', ang + Math.PI / 2);
+    }
+    if (k % 4 === 2) {
+      add('cyl', 'metal', x0 - Math.cos(ang) * 1.5, 0, z0 + Math.sin(ang) * 1.5, 0.12, 3.6, 0.12, '#2a2e34');
+      add('sphere', 'glow', x0 - Math.cos(ang) * 1.5, 3.7, z0 + Math.sin(ang) * 1.5, 0.38, 0.38, 0.38, '#ffe2b0');
+    }
+  }
+  for (const [ex, ez] of [[0, D], [0, -D], [W, 0], [-W, 0]] as const) {
+    const [px, pz] = pts.reduce((best, p) => (Math.hypot(p[0] - ex, p[1] - ez) < Math.hypot(best[0] - ex, best[1] - ez) ? p : best));
+    const len = Math.hypot(ex - px, ez - pz);
+    add('box', 'stone', (ex + px) / 2, 0.04, (ez + pz) / 2, 2.2, 0.14, len, '#d8cdb4', Math.atan2(ex - px, ez - pz));
+  }
+  // what the park holds depends on its size
+  if (size === 'pocket') {
+    if (r(700) < 0.6) {
+      playground(add, 0, 0, r(701) * 0.6 - 0.3, r, 710, false);
+      taken.push([0, 0, 7]);
+    } else {
+      picnic(add, 0, 0, r, 720, 3);
+      taken.push([0, 0, 6]);
+    }
+  } else if (size === 'long') {
+    const along = W > D;
+    const p1: [number, number] = along ? [-W * 0.5, 0] : [0, -D * 0.5];
+    const p2: [number, number] = along ? [W * 0.5, 0] : [0, D * 0.5];
+    playground(add, p1[0], p1[1], along ? 0 : Math.PI / 2, r, 730, true);
+    taken.push([p1[0], p1[1], 9]);
+    picnic(add, p2[0], p2[1], r, 740, 4);
+    taken.push([p2[0], p2[1], 7]);
+    cafe(add, 0, 0, r, 750);
+    taken.push([0, 0, 5]);
+  } else {
+    pond(out, add, wx, wz, -W * 0.28, D * 0.22, 7, r, 760);
+    taken.push([-W * 0.28, D * 0.22, 12]);
+    playground(add, W * 0.36, -D * 0.36, 0.2, r, 770, true);
+    taken.push([W * 0.36, -D * 0.36, 9]);
+    picnic(add, -W * 0.36, -D * 0.38, r, 780, 5);
+    taken.push([-W * 0.36, -D * 0.38, 8]);
+    if (r(790) < 0.5) {
+      // basketball court
+      const cx = W * 0.34;
+      const cz = D * 0.36;
+      add('box', 'cloth', cx, 0.03, cz, 13, 0.14, 21, '#c0663e');
+      for (const lz of [-10, 10, 0]) add('box', 'plaster', cx, 0.05, cz + lz, 12.4, 0.13, 0.1, '#f4f4f0');
+      for (const lx of [-6.2, 6.2]) add('box', 'plaster', cx + lx, 0.05, cz, 0.1, 0.13, 20.4, '#f4f4f0');
+      add('cyl', 'plaster', cx, 0.05, cz, 3.6, 0.13, 3.6, '#f4f4f0');
+      add('cyl', 'cloth', cx, 0.06, cz, 3.4, 0.13, 3.4, '#c0663e');
+      for (const s of [-1, 1]) {
+        add('cyl', 'metal', cx, 0, cz + s * 10.6, 0.16, 3.2, 0.16, '#3a3e44');
+        add('box', 'plaster', cx, 2.8, cz + s * 10.3, 1.8, 1.1, 0.06, '#f4f4f0');
+        add('cyl', 'metal', cx, 3, cz + s * 9.95, 0.46, 0.04, 0.46, '#e8642a');
+      }
+    } else {
+      // a small football pitch with goals
+      const cx = W * 0.34;
+      const cz = D * 0.36;
+      add('box', 'lawn', cx, 0.03, cz, 14, 0.14, 22, '#4f9a3a');
+      for (const lz of [-11, 11, 0]) add('box', 'plaster', cx, 0.05, cz + lz, 14, 0.13, 0.12, '#f4f4f0');
+      for (const lx of [-7, 7]) add('box', 'plaster', cx + lx, 0.05, cz, 0.12, 0.13, 22, '#f4f4f0');
+      for (const s of [-1, 1]) {
+        for (const lx of [-2.4, 2.4]) add('box', 'plaster', cx + lx, 0, cz + s * 11, 0.12, 2, 0.12, '#f4f4f0');
+        add('box', 'plaster', cx, 2, cz + s * 11, 4.9, 0.12, 0.12, '#f4f4f0');
+      }
+    }
+    taken.push([W * 0.34, D * 0.36, 12]);
+    // bandstand and café
+    bandstand(add, W * 0.02, -D * 0.02, r);
+    taken.push([0, 0, 6]);
+    cafe(add, -W * 0.05, D * 0.62, r, 800);
+    taken.push([-W * 0.05, D * 0.62, 5]);
+  }
+  // trees in irregular clusters, shrubs and flower beds, kept off the features
+  const clusters = size === 'central' ? 16 : size === 'long' ? 9 : 4;
+  let k = 900;
+  for (let cl = 0; cl < clusters; cl++) {
+    const cx = (r(k++) - 0.5) * W * 1.8;
+    const cz = (r(k++) - 0.5) * D * 1.8;
+    const count = 3 + Math.floor(r(k++) * 5);
+    for (let i = 0; i < count; i++) {
+      const x = cx + (r(k++) - 0.5) * 7;
+      const z = cz + (r(k++) - 0.5) * 7;
+      if (Math.abs(x) > W - 1.5 || Math.abs(z) > D - 1.5 || !isFree(x, z, 2)) continue;
+      const roll = r(k++);
+      if (warm && roll < 0.3) palm(add, x, z, 6 + r(k++) * 3, r, k++);
+      else if (roll < 0.5) add('cone', 'leaf', x, 0, z, 1.6, 5 + r(k++) * 3, 1.6, '#2f5a2c');
+      else roundTree(add, x, z, 5 + r(k++) * 3, r(k++) < 0.15 ? '#c8862a' : r(k) < 0.5 ? '#4f7a34' : '#3f6a2c', r, k++);
+      taken.push([x, z, 1.5]);
+    }
+  }
+  for (let i = 0; i < (size === 'pocket' ? 2 : 5); i++) {
+    const x = (r(k++) - 0.5) * W * 1.6;
+    const z = (r(k++) - 0.5) * D * 1.6;
+    if (!isFree(x, z, 2)) continue;
+    flowerBed(add, x, z, 3 + r(k++) * 3, r(k++) * Math.PI, r, k++);
+  }
+  // edge planting: a low hedge with gaps at the entrances
+  for (const [lx, lz, sx, sz] of [[-W / 2 - 1.4, D, W - 2.8, 0.6], [W / 2 + 1.4, D, W - 2.8, 0.6], [-W / 2 - 1.4, -D, W - 2.8, 0.6], [W / 2 + 1.4, -D, W - 2.8, 0.6], [W, -D / 2 - 1.4, 0.6, D - 2.8], [W, D / 2 + 1.4, 0.6, D - 2.8], [-W, -D / 2 - 1.4, 0.6, D - 2.8], [-W, D / 2 + 1.4, 0.6, D - 2.8]] as const) add('box', 'leaf', lx, 0, lz, sx, 0.9, sz, '#3a6a2e');
+}
+
+function cafe(add: Add, x: number, z: number, r: (k: number) => number, k: number) {
+  add('box', 'wood', x, 0, z, 4, 2.8, 3, '#e8e0d0');
+  add('box', 'glass', x, 1, z + 1.52, 3, 1.2, 0.08, '#2a3640');
+  add('box', 'cloth', x, 2.5, z + 2, 4.4, 0.08, 1.4, AWNINGS[Math.floor(r(k) * AWNINGS.length)], 0, -0.3);
+  add('box', 'wood', x, 2.8, z, 4.4, 0.2, 3.4, '#7a5636');
+  for (let i = 0; i < 4; i++) {
+    const tx = x - 4.5 + (i % 2) * 9;
+    const tz = z + 1 + Math.floor(i / 2) * 3.5;
+    add('cyl', 'metal', tx, 0, tz, 0.8, 0.75, 0.8, '#f2f2ee');
+    add('cyl', 'metal', tx, 0, tz, 0.06, 2.3, 0.06, '#8a8a8a');
+    add('cone', 'cloth', tx, 2.1, tz, 2.6, 0.6, 2.6, AWNINGS[Math.floor(r(k + i + 1) * AWNINGS.length)]);
+    for (const s of [-0.7, 0.7]) add('box', 'metal', tx + s, 0.45, tz, 0.4, 0.06, 0.4, '#3a3e44');
+  }
+}
+
+function bandstand(add: Add, x: number, z: number, r: (k: number) => number) {
+  add('oct', 'stone', x, 0, z, 7, 0.8, 7, '#e2dccd');
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4;
+    add('cyl', 'metal', x + Math.cos(a) * 3.2, 0.8, z + Math.sin(a) * 3.2, 0.18, 3, 0.18, '#f4f4f0');
+  }
+  add('oct', 'plaster', x, 3.8, z, 7.6, 0.3, 7.6, '#f4f4f0');
+  add('cone', 'roof', x, 4.1, z, 8, 2.2, 8, r(810) < 0.5 ? '#3a6a5a' : '#a8442e');
+  add('sphere', 'gold', x, 6.4, z, 0.4, 0.6, 0.4, '#d8b25a');
 }
 
 // ───────────────────────── Boulevards ─────────────────────────

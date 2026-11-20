@@ -198,7 +198,17 @@ export function Player({ t, layout, colliders, onInteract, spawnKey, surface, bl
     }
     // camera
     const head = tmp.current.set(s.x, s.y + 1.8, s.z);
-    if (firstPerson) {
+    const photo = playerCommands.photo;
+    if (photo) {
+      camera.position.set(...photo.pos);
+      camera.lookAt(...photo.target);
+      const pc = camera as THREE.PerspectiveCamera;
+      const fov = photo.fov ?? 50;
+      if (pc.fov !== fov) {
+        pc.fov = fov;
+        pc.updateProjectionMatrix();
+      }
+    } else if (firstPerson) {
       camera.position.copy(head);
       const tx = s.x + Math.sin(s.yaw) * Math.cos(s.pitch - 0.25);
       const tz = s.z + Math.cos(s.yaw) * Math.cos(s.pitch - 0.25);

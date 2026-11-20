@@ -138,6 +138,8 @@ export function generateHighways(layout: Layout, t: TerrainData): HighwayData | 
       if (h < 2.5) continue;
       if (Math.hypot(p.x, p.z) < 34) continue;
       if (layout.landmarks.some((l) => Math.hypot(l.x - p.x, l.z - p.z) < l.radius + 3)) continue;
+      // decks span parks and villa gardens without standing in them
+      if (layout.buildings.some((b) => (b.kind === 'park' || b.plot) && Math.abs(p.x - (b.plot?.x ?? b.x)) < (b.plot?.w ?? b.w) / 2 && Math.abs(p.z - (b.plot?.z ?? b.z)) < (b.plot?.d ?? b.d) / 2)) continue;
       const q = r.pts[i - 1];
       const ang = Math.atan2(p.x - q.x, p.z - q.z);
       pillars.push({ x: p.x, z: p.z, h, y: ground, w: r.width, ang });

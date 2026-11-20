@@ -153,17 +153,49 @@ function futuristic(s: Settlement, rng: Rng): Layout {
   // two villa enclaves of walled estates in the outer ring, an old souk quarter of arcaded
   // shophouses, and mixed towers and blocks in between. Places of worship, malls and small parks
   // are spread across all of them.
-  const turn = rng.range(0, Math.PI * 2);
-  const sector = (x: number, z: number) => (((Math.atan2(z, x) - turn) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  // Neighbourhoods: seeds scattered over the city outside the downtown core, each a villa
+  // enclave, a souk quarter, a mixed area or (in capitals) a second skyline cluster. Every block
+  // belongs to the nearest seed, with jitter, so districts come in organic patches of many sizes.
+  const seedTypes: District[] =
+    s.kind === 'capital'
+      ? ['villas', 'villas', 'villas', 'villas', 'souk', 'souk', 'downtown', 'mixed', 'mixed', 'mixed', 'mixed', 'mixed', 'villas']
+      : s.kind === 'city'
+        ? ['villas', 'villas', 'villas', 'souk', 'souk', 'mixed', 'mixed', 'mixed', 'mixed', 'villas']
+        : s.kind === 'town'
+          ? ['villas', 'villas', 'souk', 'mixed', 'mixed', 'mixed']
+          : ['villas', 'mixed', 'souk'];
+  rng.shuffle(seedTypes);
+  const seeds: { x: number; z: number; type: District }[] = [];
+  for (let tries = 0; seeds.length < seedTypes.length && tries < 400; tries++) {
+    const a = rng.range(0, Math.PI * 2);
+    const rr = R * Math.sqrt(rng.range(0.16, 0.9));
+    const x = Math.cos(a) * rr;
+    const z = Math.sin(a) * rr;
+    const type = seedTypes[seeds.length];
+    // the second skyline sits out in the ring, well away from downtown
+    if (type === 'downtown' && rr < R * 0.62) continue;
+    if (seeds.some((q) => Math.hypot(q.x - x, q.z - z) < R * 0.3)) continue;
+    seeds.push({ x, z, type });
+  }
+  const jitter = (x: number, z: number) => {
+    const v = Math.sin(x * 0.0731 + z * 0.1197 + seeds.length) * 43758.5453;
+    return (v - Math.floor(v) - 0.5) * R * 0.22;
+  };
   const districtOf = (x: number, z: number): District => {
     const dc = Math.hypot(x, z);
-    const a = sector(x, z);
-    if (dc < R * 0.36) return 'downtown';
-    if (a < Math.PI * 0.55 && dc > R * 0.48) return 'villas';
-    if (a > Math.PI * 1.32 && a < Math.PI * 1.68 && dc > R * 0.58) return 'villas';
-    if (a > Math.PI * 0.78 && a < Math.PI * 1.18 && dc > R * 0.3) return 'souk';
-    return 'mixed';
+    if (dc < R * 0.34) return 'downtown';
+    let best: District = 'mixed';
+    let bd = Infinity;
+    for (const q of seeds) {
+      const d = Math.hypot(q.x - x, q.z - z) + jitter(x + q.x, z + q.z);
+      if (d < bd) {
+        bd = d;
+        best = q.type;
+      }
+    }
+    return best;
   };
+  const secondSkyline = seeds.find((q) => q.type === 'downtown');
   const cellOk = (i: number, j: number) => {
     const x = (i + 0.5) * spacing;
     const z = (j + 0.5) * spacing;
@@ -174,6 +206,37 @@ function futuristic(s: Settlement, rng: Rng): Layout {
   // the inner avenues, which carry the expressways
   const estates = new Set<string>();
   const claimed = new Set<string>();
+  // parks in three sizes: a central park of 2 x 2 blocks, long parks of 2 x 1 and pocket parks; the
+  // streets inside a park are closed (never the two main boulevards through the centre)
+  const parks: { i: number; j: number; wi: number; wj: number }[] = [];
+  const closedV = new Set<string>(); // vertical street segment at x = i*s between z = j*s and (j+1)*s
+  const closedH = new Set<string>(); // horizontal segment at z = j*s between x = i*s and (i+1)*s
+  const parkPlan = s.kind === 'capital' ? [[2, 2], [2, 1], [1, 2], [1, 1], [1, 1], [1, 1]] : s.kind === 'city' ? [[2, 2], [2, 1], [1, 1], [1, 1]] : s.kind === 'town' ? [[2, 1], [1, 1], [1, 1]] : [[1, 1]];
+  for (const [wi, wj] of parkPlan) {
+    for (let tries = 0; tries < 200; tries++) {
+      const i = Math.floor(rng.range(-n, n - wi + 1));
+      const j = Math.floor(rng.range(-n, n - wj + 1));
+      let ok = true;
+      for (let a = 0; a < wi && ok; a++) for (let c = 0; c < wj && ok; c++) {
+        const ci = i + a;
+        const cj = j + c;
+        if (!cellOk(ci, cj) || claimed.has(`${ci},${cj}`)) ok = false;
+        else if (Math.hypot((ci + 0.5) * spacing, (cj + 0.5) * spacing) < R * 0.2) ok = false;
+      }
+      if (!ok) continue;
+      if ((wi > 1 && i + 1 === 0) || (wj > 1 && j + 1 === 0)) continue;
+      // keep parks apart from each other
+      const px = (i + wi / 2) * spacing;
+      const pz = (j + wj / 2) * spacing;
+      if (parks.some((p) => Math.hypot((p.i + p.wi / 2) * spacing - px, (p.j + p.wj / 2) * spacing - pz) < R * 0.38)) continue;
+      parks.push({ i, j, wi, wj });
+      for (let a = 0; a < wi; a++) for (let c = 0; c < wj; c++) claimed.add(`${i + a},${j + c}`);
+      for (let a = 1; a < wi; a++) for (let c = 0; c < wj; c++) closedV.add(`${i + a},${j + c}`);
+      for (let a = 0; a < wi; a++) for (let c = 1; c < wj; c++) closedH.add(`${i + a},${j + c}`);
+      // the crossing in the middle of a 2 x 2 park disappears too
+      break;
+    }
+  }
   for (let j = -n; j < n; j++)
     for (let i = -n; i < n - 1; i++) {
       const xa = (i + 0.5) * spacing;
@@ -204,8 +267,9 @@ function futuristic(s: Settlement, rng: Rng): Layout {
       [1, 0],
       [0, 1],
     ]) {
-      // the street between the two halves of an estate is closed
-      if (di === 0 && estates.has(`${i - 1},${j}`)) continue;
+      // streets inside estates and parks are closed
+      if (di === 0 && (estates.has(`${i - 1},${j}`) || closedV.has(`${i},${j}`))) continue;
+      if (dj === 0 && closedH.has(`${i},${j}`)) continue;
       const b = idx.get(`${i + di},${j + dj}`);
       if (b !== undefined) {
         edges.push([a, b]);
@@ -242,10 +306,17 @@ function futuristic(s: Settlement, rng: Rng): Layout {
   };
   const count = (capital: number, city: number, town: number, outpost: number) => (s.kind === 'capital' ? capital : s.kind === 'city' ? city : s.kind === 'town' ? town : outpost);
   for (let k = 0; k < count(2, 1, 1, 0); k++) place('mall', k === 0 ? ['souk'] : ['mixed'], R * 0.3);
-  for (let k = 0; k < count(4, 3, 2, 1); k++) place('mosque', ['mixed', 'souk', 'villas'], R * 0.3);
-  for (let k = 0; k < count(2, 1, 1, 0); k++) place('temple', ['mixed', 'villas', 'souk'], R * 0.3);
-  for (let k = 0; k < count(1, 1, 0, 0); k++) place('church', ['mixed', 'villas'], R * 0.3);
-  for (let k = 0; k < count(4, 3, 2, 1); k++) place('park', ['mixed', 'downtown'], plaza.r + 20);
+  // places of worship in one interleaved sequence, each on the allowed block farthest from every
+  // landmark already placed, so the faiths are mixed and evenly spread over the whole city
+  const faiths: BuildingKind[] =
+    s.kind === 'capital'
+      ? ['mosque', 'temple', 'mosque', 'church', 'mosque', 'temple', 'mosque', 'church', 'mosque', 'temple', 'mosque']
+      : s.kind === 'city'
+        ? ['mosque', 'temple', 'mosque', 'church', 'mosque', 'temple', 'mosque']
+        : s.kind === 'town'
+          ? ['mosque', 'temple', 'mosque']
+          : ['mosque'];
+  for (const f of faiths) place(f, ['mixed', 'souk', 'villas', 'downtown'], R * 0.22);
 
   let signature = false;
   const sizes: Partial<Record<BuildingKind, [number, number]>> = { mall: [28, 15], mosque: [25, 12], temple: [23, 10], church: [22, 14], park: [24, 0.1] };
@@ -285,14 +356,16 @@ function futuristic(s: Settlement, rng: Rng): Layout {
       const w = lots === 1 ? rng.range(14, 22) : rng.range(9, 12);
       const d = lots === 1 ? rng.range(14, 22) : rng.range(14, 20);
       const ox = lots === 1 ? 0 : (l === 0 ? -1 : 1) * 6.5;
-      const tall = Math.pow(Math.max(0, centrality), 1.6);
+      // height falls off from downtown, and rises again around the second skyline
+      const second = secondSkyline && district === 'downtown' && dc > R * 0.34 ? Math.max(0, 1 - Math.hypot(cx - secondSkyline.x, cz - secondSkyline.z) / (R * 0.32)) * 0.85 : 0;
+      const tall = Math.pow(Math.max(0, centrality, second), 1.6);
       let h = rng.range(12, 26) + tall * rng.range(40, 120) * (s.kind === 'capital' ? 1 : 0.7);
       if (district === 'downtown') h *= 1.3;
       let kind: BuildingKind = h > 55 ? 'tower' : rng.chance(0.4) ? 'slab' : 'block';
       // downtown's tallest become sculpted supertalls; the first beside the plaza is the city's signature
       if (district === 'downtown' && h > 70 && big) {
         kind = 'supertall';
-        if (!signature && dc < plaza.r + spacing) {
+        if (!signature && dc < plaza.r + spacing && dc < R * 0.34) {
           signature = true;
           h = s.kind === 'capital' ? rng.range(230, 260) : rng.range(170, 200);
         }
@@ -311,10 +384,20 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     const w = rng.range(19, 24);
     const d = rng.range(12, 14);
     const side = rng.chance(0.5) ? 1 : -1;
-    buildings.push({ x: px + side * (pw / 2 - w / 2 - 3), z: pz + 1.2, w, d, h: rng.range(9.5, 12.5), rot: 0, kind: 'villa', role: 'home', tone: rng.next(), door: [px, j * spacing + 0.01], district: 'villas', plot: { x: px, z: pz, w: pw, d: pd } });
+    // the house stands at the back of the plot, leaving a motor court in front
+    buildings.push({ x: px + side * (pw / 2 - w / 2 - 3), z: pz + pd / 2 - d / 2 - 2.5, w, d, h: rng.range(9.5, 12.5), rot: 0, kind: 'villa', role: 'home', tone: rng.next(), door: [px, j * spacing + 0.01], district: 'villas', plot: { x: px, z: pz, w: pw, d: pd } });
   }
-  const lights: [number, number][] = nodes.filter(() => rng.chance(0.85));
-  return finish('futuristic', s, rng, R, buildings, streets, makeGraph(nodes, edges), [plaza], lights, spacing);
+  for (const p of parks) {
+    const pw = p.wi * spacing - 10;
+    const pd = p.wj * spacing - 10;
+    const cx = (p.i + p.wi / 2) * spacing;
+    const cz = (p.j + p.wj / 2) * spacing;
+    buildings.push({ x: cx, z: cz, w: pw, d: pd, h: 0.1, rot: 0, kind: 'park', role: 'civic', tone: rng.next(), door: [cx, p.j * spacing + 0.01], district: districtOf(cx, cz) });
+  }
+  const graph = makeGraph(nodes, edges);
+  // no street lamps at the closed crossings inside parks
+  const lights: [number, number][] = nodes.filter((_, k) => graph.adj[k].length > 0 && rng.chance(0.85));
+  return finish('futuristic', s, rng, R, buildings, streets, graph, [plaza], lights, spacing);
 }
 
 // ───────────────────────── Organic: rings of domes and living trees ─────────────────────────

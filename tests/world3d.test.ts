@@ -203,6 +203,19 @@ describe('futuristic districts', () => {
       expect(quadrants.size).toBeGreaterThanOrEqual(3);
       // mansion estates on double plots
       expect(l.buildings.some((b) => b.kind === 'villa' && b.plot && b.plot.w > 50)).toBe(true);
+      // a mix of faiths, not a city of mosques
+      const mosques = worship.filter((b) => b.kind === 'mosque').length;
+      expect(mosques).toBeLessThanOrEqual(Math.ceil(worship.length * 0.6));
+      // parks in more than one size, including a central park on four blocks
+      const parkSizes = new Set(l.buildings.filter((b) => b.kind === 'park').map((b) => Math.round(b.w * b.d)));
+      expect(parkSizes.size).toBeGreaterThanOrEqual(2);
+      expect(Math.max(...l.buildings.filter((b) => b.kind === 'park').map((b) => b.w * b.d))).toBeGreaterThan(2500);
+      // neighbourhoods: villas and souks each appear as several separate patches, not one wedge
+      for (const k of ['villa', 'shop']) {
+        const xs = l.buildings.filter((b) => b.kind === k);
+        const quadrants = new Set(xs.map((b) => `${Math.sign(b.x)},${Math.sign(b.z)}`));
+        expect(quadrants.size).toBeGreaterThanOrEqual(k === 'villa' ? 3 : 2);
+      }
     }
   });
 

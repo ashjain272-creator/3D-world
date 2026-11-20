@@ -4,6 +4,7 @@ import { generateLayout, groundWildLayout, lineOfSight, settlementRadius, wildLa
 import { generateTerrain, type TerrainData } from '../src/explorer/terrain';
 import { generateVegetation } from '../src/explorer/vegetation';
 import { deckSampler, generateHighways, sampleRoad } from '../src/explorer/roadNetwork';
+import { FUT_SPACING, VILLA_STYLES, generateDistricts, villaStyle } from '../src/explorer/districts';
 import type { Biome, World } from '../src/sim/types';
 import { freshWorld } from './helpers';
 
@@ -169,5 +170,62 @@ describe('line of sight', () => {
     expect(lineOfSight([b], flat, -20, 2, 12, 20, 2, 12)).toBe(true);
     expect(lineOfSight([b], flat, -20, 40, 0, 20, 40, 0)).toBe(true);
     expect(lineOfSight([], flat, -20, 2, 0, 20, 2, 0)).toBe(true);
+  });
+});
+
+describe('futuristic districts', () => {
+  const w = freshWorld();
+  const cities = Object.values(w.settlements).filter((s) => generateLayout(s).style === 'futuristic');
+
+  it('zones large futuristic cities into downtown, villas, souk and mixed districts', () => {
+    const big = cities.filter((s) => s.kind === 'capital' || s.kind === 'city');
+    expect(big.length).toBeGreaterThan(0);
+    for (const s of big) {
+      const l = generateLayout(s);
+      const kinds = new Set(l.buildings.map((b) => b.kind));
+      for (const k of ['villa', 'shop', 'mosque']) expect(kinds.has(k as never)).toBe(true);
+      // every building knows its district, and the kinds match the district
+      for (const b of l.buildings) {
+        expect(b.district).toBeDefined();
+        if (b.kind === 'villa') expect(b.district).toBe('villas');
+        if (b.kind === 'shop') expect(b.district).toBe('souk');
+        if (b.kind === 'supertall') expect(b.district).toBe('downtown');
+      }
+      // at most one each of the whole-block landmarks
+      for (const k of ['mall', 'mosque', 'temple']) expect(l.buildings.filter((b) => b.kind === k).length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('builds every villa style, a souk, worship sites and pools deterministically', () => {
+    const s = cities.find((c) => c.kind === 'capital') ?? cities[0];
+    const l = generateLayout(s);
+    const a = generateDistricts(l, 0, true);
+    const b = generateDistricts(l, 0, true);
+    expect(a.pieces.length).toBe(b.pieces.length);
+    expect(a.pieces[10].m.elements).toEqual(b.pieces[10].m.elements);
+    expect(a.pieces.length).toBeGreaterThan(500);
+    // pools and fountains are lit at night
+    expect(a.lights.length).toBeGreaterThanOrEqual(l.buildings.filter((x) => x.kind === 'villa').length);
+    // palms only on warm worlds
+    expect(a.pieces.some((p) => p.shape === 'fronds')).toBe(true);
+    expect(generateDistricts(l, 0, false).pieces.some((p) => p.shape === 'fronds')).toBe(false);
+    // villa pieces stay inside their plot (the street block)
+    for (const v of l.buildings.filter((x) => x.kind === 'villa')) {
+      const px = Math.floor(v.x / FUT_SPACING) * FUT_SPACING + FUT_SPACING / 2;
+      const pz = Math.floor(v.z / FUT_SPACING) * FUT_SPACING + FUT_SPACING / 2;
+      const own = a.pieces.filter((p) => Math.abs(p.x - px) < FUT_SPACING / 2 && Math.abs(p.z - pz) < FUT_SPACING / 2);
+      for (const p of own) expect(Math.max(Math.abs(p.x - px), Math.abs(p.z - pz))).toBeLessThan(12.2);
+    }
+  });
+
+  it('spreads mansions over all five styles across the universe', () => {
+    const styles = new Set<string>();
+    for (const s of cities) for (const b of generateLayout(s).buildings) if (b.kind === 'villa') styles.add(villaStyle(b));
+    expect(styles).toEqual(new Set(VILLA_STYLES));
+  });
+
+  it('leaves other styles alone', () => {
+    const other = Object.values(w.settlements).find((s) => generateLayout(s).style !== 'futuristic')!;
+    expect(generateDistricts(generateLayout(other), 0, true).pieces.length).toBe(0);
   });
 });

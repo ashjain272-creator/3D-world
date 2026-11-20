@@ -37,6 +37,46 @@ const SHAPES: Record<DShape, THREE.BufferGeometry> = {
 
 type Quality = 'low' | 'medium' | 'high';
 
+const glassNight = { value: 0 };
+/**
+ * Window glass: dark and reflective by day. After dark each pane is lit or not by a hash of
+ * its position, in warm or cool light, brightest near the ceiling, so a house reads as rooms
+ * rather than one glowing slab.
+ */
+function windowGlass(): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.12, metalness: 0.55 });
+  m.customProgramCacheKey = () => 'district-window-glass';
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uNight = glassNight;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vPane;\nvarying float vUp;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        vUp = position.y;
+        #ifdef USE_INSTANCING
+          vPane = instanceMatrix[3].xyz;
+        #else
+          vPane = vec3(0.0);
+        #endif`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying vec3 vPane;\nvarying float vUp;\nfloat paneHash(vec3 p){ vec3 q = fract(p * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }')
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        {
+          float hsh = paneHash(floor(vPane * 2.0));
+          float lit = step(0.38, hsh);
+          vec3 lamp = hsh > 0.85 ? vec3(0.75, 0.85, 1.0) : mix(vec3(1.0, 0.68, 0.38), vec3(1.0, 0.82, 0.6), fract(hsh * 7.3));
+          float ceiling = 0.45 + 0.55 * smoothstep(0.0, 1.0, vUp);
+          totalEmissiveRadiance += lamp * lit * ceiling * uNight * (0.35 + 0.3 * fract(hsh * 13.1));
+        }`,
+      );
+  };
+  return m;
+}
+
 /** Mansions, souk, mall, mosque, temple and boulevard palms of a futuristic city. */
 export function Districts({ data, quality }: { data: DistrictData; quality: Quality }) {
   const shadows = quality === 'high';
@@ -54,7 +94,7 @@ export function Districts({ data, quality }: { data: DistrictData; quality: Qual
       // partly dielectric with a warm glow of its own
       gold: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3, metalness: 0.45, emissive: new THREE.Color('#6a4a10'), emissiveIntensity: 0.35 }),
       // window glass: dark and reflective by day, warm interior light after dark
-      glass: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.12, metalness: 0.55, emissive: new THREE.Color('#ffb868'), emissiveIntensity: 0 }),
+      glass: windowGlass(),
       // pools and fountains glow turquoise from underwater lights at night
       water: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.04, metalness: 0.15, emissive: new THREE.Color('#2ab8e0'), emissiveIntensity: 0.12 }),
       leaf: foliageMaterial({ flat: true, double: true, sway: 0.06 }),
@@ -67,8 +107,8 @@ export function Districts({ data, quality }: { data: DistrictData; quality: Qual
   useEffect(() => () => Object.values(mats).forEach((m) => m.dispose()), [mats]);
   useFrame(() => {
     const n = nightUniform.value;
-    (mats.glass as THREE.MeshStandardMaterial).emissiveIntensity = n * 0.9;
-    (mats.water as THREE.MeshStandardMaterial).emissiveIntensity = 0.12 + n * 1.1;
+    glassNight.value = n;
+    (mats.water as THREE.MeshStandardMaterial).emissiveIntensity = 0.12 + n * 0.6;
   });
   const groups = useMemo(() => {
     const g = new Map<string, DPiece[]>();

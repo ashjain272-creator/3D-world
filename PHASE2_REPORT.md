@@ -318,6 +318,7 @@ What makes a Gulf city read as varied is its zoning. There is a supertall downto
 - **Boulevards.** Palms in planters line the wide avenues on warm worlds.
 
 **Verification**
+- Full unit suite: **88 / 88** in 14 files (the long simulation and retention tests included). The browser journey was not re-run after this phase.
 - New tests in `tests/world3d.test.ts`:
   - large futuristic cities contain villas, a souk and a mosque, and each kind sits in its own district;
   - at most one mall, mosque and temple per city;

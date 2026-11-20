@@ -132,7 +132,7 @@ export function Districts({ data, quality }: { data: DistrictData; quality: Qual
   return (
     <group>
       {groups.map((g) => (
-        <TiledInstances key={g.k} items={g.items} levels={g.levels} tileSize={90} name={`district-${g.k}`} />
+        <TiledInstances key={g.k} items={g.items} levels={g.levels} tileSize={240} name={`district-${g.k}`} />
       ))}
     </group>
   );

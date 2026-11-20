@@ -328,7 +328,15 @@ What makes a Gulf city read as varied is its zoning. There is a supertall downto
   - all five villa styles occur across the universe;
   - other city styles are untouched.
 - Screenshots (day, and night for villas, souk, mosque and skyline) are listed in the file names under `docs/screenshots/districts/`. The temple and skyline were checked from several angles. Supertalls can only be judged from a distance, so the skyline shots are the evidence for them.
-- **Not checked:** frame rate after this phase. A capital now has about 700 more instanced pieces, grouped into a few dozen draw calls.
+- **Renderer cost.** A capital's districts add 2 095 instanced pieces in 49 shape-and-material groups (a city 1 644, a town 887). At medium in the futuristic capital (`renderer.info`, same seed and view as Phase 4):
+
+  | Measure | Before districts | After |
+  |---|---|---|
+  | Draw calls per frame | 266 | 390 (505 before the district tiles were enlarged to 240 m) |
+  | Triangles per frame | 457k | 579k |
+  | Software frame time | about 0.70 s | about 1.07 s |
+
+  The fps comparison against the baseline was not re-run after this phase.
 
 ## Limitations and unfinished items
 

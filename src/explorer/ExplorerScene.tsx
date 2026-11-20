@@ -50,7 +50,7 @@ export function ExplorerScene(p: Props) {
       key={quality}
       shadows={quality !== 'low' ? { type: THREE.PCFSoftShadowMap } : false}
       camera={{ fov: 62, near: 0.3, far: 6000, position: [0, 40, 260] }}
-      dpr={quality === 'low' ? 1 : quality === 'medium' ? [1, 1.5] : [1, 2]}
+      dpr={quality === 'low' ? 0.75 : quality === 'medium' ? [1, 1.5] : [1, 2]}
       gl={{ antialias: quality !== 'low', powerPreference: 'high-performance', toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.9 }}
       data-testid="explorer-canvas"
       onCreated={(state) => {

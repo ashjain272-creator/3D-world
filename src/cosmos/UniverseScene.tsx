@@ -35,7 +35,7 @@ export function UniverseScene(props: Props) {
   return (
     <Canvas
       camera={{ position: [0, 420, 640], fov: 50, near: 0.1, far: 8000 }}
-      dpr={quality === 'low' ? 1 : quality === 'medium' ? [1, 1.5] : [1, 2]}
+      dpr={quality === 'low' ? 0.75 : quality === 'medium' ? [1, 1.5] : [1, 2]}
       gl={{ antialias: quality !== 'low', powerPreference: 'high-performance' }}
       data-testid="universe-canvas"
     >

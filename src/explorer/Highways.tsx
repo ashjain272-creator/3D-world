@@ -139,7 +139,9 @@ const poleGeo = new THREE.CylinderGeometry(0.12, 0.16, 1, 6).translate(0, 0.5, 0
 const lampGeo = new THREE.BoxGeometry(1, 1, 1);
 const carBody = new THREE.CapsuleGeometry(0.85, 2.6, 3, 8).rotateX(Math.PI / 2).scale(1, 0.62, 1);
 const carCabin = new THREE.CapsuleGeometry(0.6, 1.2, 3, 8).rotateX(Math.PI / 2).scale(1, 0.75, 1).translate(0, 0.55, -0.15);
-const lightGeo = new THREE.SphereGeometry(0.2, 6, 4);
+// flattened lamp lenses that sit flush with the nose and tail
+const lightGeo = new THREE.SphereGeometry(0.16, 8, 4).scale(1.3, 0.55, 0.35);
+const wheelGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.26, 10).rotateZ(Math.PI / 2);
 
 export function Highways({ data, quality, civColor }: { data: HighwayData; quality: Quality; civColor: string }) {
   const shadows = quality === 'high';
@@ -156,6 +158,7 @@ export function Highways({ data, quality, civColor }: { data: HighwayData; quali
       car: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3, metalness: 0.65 }),
       glass: new THREE.MeshStandardMaterial({ color: '#1a2230', roughness: 0.1, metalness: 0.8 }),
       carLight: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }),
+      tyre: new THREE.MeshStandardMaterial({ color: '#16181b', roughness: 0.9 }),
     }),
     [civColor],
   );
@@ -285,13 +288,15 @@ function Traffic({ roads, quality, mats }: { roads: Road[]; quality: Quality; ma
   const body = useRef<THREE.InstancedMesh>(null);
   const cabin = useRef<THREE.InstancedMesh>(null);
   const lights = useRef<THREE.InstancedMesh>(null);
+  const wheels = useRef<THREE.InstancedMesh>(null);
   const tmp = useMemo(() => ({ v: new THREE.Vector3(), m: new THREE.Matrix4(), q: new THREE.Quaternion(), one: new THREE.Vector3(1, 1, 1), up: new THREE.Vector3(0, 1, 0), p: new THREE.Vector3() }), []);
   const init = useRef(false);
   useFrame((_, rawDt) => {
     const b = body.current;
     const c = cabin.current;
     const l = lights.current;
-    if (!b || !c || !l) return;
+    const wh = wheels.current;
+    if (!b || !c || !l || !wh) return;
     const dt = Math.min(rawDt, 0.1);
     if (!init.current) {
       const head = new THREE.Color('#fff6e0');
@@ -322,7 +327,7 @@ function Traffic({ roads, quality, mats }: { roads: Road[]; quality: Quality; ma
       const off = r.lanes >= 2 || r.kind === 'street' ? 0.9 + laneW * (car.lane + 0.5) : 0;
       const nx = -Math.cos(ang);
       const nz = Math.sin(ang);
-      tmp.v.set(tmp.p.x + nx * off, tmp.p.y + 0.55, tmp.p.z + nz * off);
+      tmp.v.set(tmp.p.x + nx * off, tmp.p.y + 0.72, tmp.p.z + nz * off);
       tmp.q.setFromAxisAngle(tmp.up, ang);
       tmp.m.compose(tmp.v, tmp.q, tmp.one);
       b.setMatrixAt(i, tmp.m);
@@ -335,14 +340,21 @@ function Traffic({ roads, quality, mats }: { roads: Road[]; quality: Quality; ma
         tmp.m.compose(new THREE.Vector3(tmp.v.x + fx * along + sx * side, tmp.v.y + y, tmp.v.z + fz * along + sz * side), tmp.q, tmp.one);
         l.setMatrixAt(i * 4 + k, tmp.m);
       };
-      put(0, 2.05, 0.55, 0.05);
-      put(1, 2.05, -0.55, 0.05);
-      put(2, -2.05, 0.55, 0.1);
-      put(3, -2.05, -0.55, 0.1);
+      put(0, 2.1, 0.5, 0.0);
+      put(1, 2.1, -0.5, 0.0);
+      put(2, -2.1, 0.5, 0.08);
+      put(3, -2.1, -0.5, 0.08);
+      let k = 0;
+      for (const along of [1.35, -1.35])
+        for (const side of [0.8, -0.8]) {
+          tmp.m.compose(new THREE.Vector3(tmp.v.x + fx * along + sx * side, tmp.v.y - 0.36, tmp.v.z + fz * along + sz * side), tmp.q, tmp.one);
+          wh.setMatrixAt(i * 4 + k++, tmp.m);
+        }
     });
     b.instanceMatrix.needsUpdate = true;
     c.instanceMatrix.needsUpdate = true;
     l.instanceMatrix.needsUpdate = true;
+    wh.instanceMatrix.needsUpdate = true;
   });
   if (!cars.length) return null;
   return (
@@ -350,6 +362,7 @@ function Traffic({ roads, quality, mats }: { roads: Road[]; quality: Quality; ma
       <instancedMesh ref={body} args={[carBody, mats.car, cars.length]} frustumCulled={false} castShadow={quality === 'high'} />
       <instancedMesh ref={cabin} args={[carCabin, mats.glass, cars.length]} frustumCulled={false} />
       <instancedMesh ref={lights} args={[lightGeo, mats.carLight, cars.length * 4]} frustumCulled={false} />
+      <instancedMesh ref={wheels} args={[wheelGeo, mats.tyre, cars.length * 4]} frustumCulled={false} />
     </group>
   );
 }

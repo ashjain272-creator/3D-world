@@ -227,7 +227,7 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
         const o = npcs.current.get(id);
         if (!o) return false;
         // too far from the camera to read: skip rather than draw a speck of text
-        if (camera.position.distanceTo(o.pos) > 34) return false;
+        if (camera.position.distanceTo(o.pos) > 30) return false;
         return lineOfSight(layout.buildings, t.height, camera.position.x, camera.position.y, camera.position.z, o.pos.x, o.pos.y + 1.8, o.pos.z);
       };
       const close = dists.filter((x) => x.d < 30 && seen(x.id)).sort((a, b) => a.d - b.d);
@@ -271,7 +271,7 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
               </mesh>
             )}
             {(labelIds.includes(id) || world.player.followedCharacterId === id) && (
-              <Html center position={[0, 2.35, 0]} distanceFactor={14} style={{ pointerEvents: 'none' }} zIndexRange={[6, 0]}>
+              <Html center position={[0, 2.35, 0]} style={{ pointerEvents: 'none' }} zIndexRange={[6, 0]}>
                 <div className="npc-label">
                   <b>{c.givenName}</b>
                   <span>{explorerFeed.get(id)?.description ?? c.activity.description}</span>

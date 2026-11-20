@@ -81,6 +81,20 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
           diffuseColor.rgb *= 0.78 + 0.3 * broad + 0.16 * fine;
           // faint warm/cool drift so large fields are not one hue
           diffuseColor.rgb *= mix(vec3(1.05, 1.0, 0.92), vec3(0.94, 1.0, 1.04), efbm(vWPos.xz * 0.012 + 31.0));
+          // turf on green ground: clover and dry patches a few metres across, and a blade
+          // speckle near the camera that fades out before it can alias
+          {
+            vec3 bc = diffuseColor.rgb;
+            float green = smoothstep(0.02, 0.12, bc.g - max(bc.r, bc.b));
+            float patchN = efbm(vWPos.xz * 0.22 + 7.0);
+            vec3 dry = bc * vec3(1.22, 1.08, 0.7);
+            vec3 lush = bc * vec3(0.82, 1.04, 0.9);
+            vec3 turf = mix(lush, dry, smoothstep(0.42, 0.72, patchN));
+            float blades = evn(vWPos.xz * 22.0) * 0.6 + evn(vWPos.xz * 9.0) * 0.4;
+            float near = efade(max(length(fwidth(vWPos.xz)), 1e-4) * 2.5);
+            turf *= 1.0 + (blades - 0.5) * 0.28 * near;
+            diffuseColor.rgb = mix(bc, turf, green);
+          }
           // relief: clumpy turf on flats, strata and cracks on steep ground
           float steep = 1.0 - smoothstep(0.55, 0.85, abs(normalize(vGN).y));
           float fw = max(length(fwidth(vWPos.xz)), 1e-4);

@@ -19,6 +19,7 @@ import { Player } from './Player';
 import { SkyWeather } from './SkyWeather';
 import { PostFX } from '../ui/components/PostFX';
 import { setDetail } from './env';
+import { sceneDebug } from './explorerStore';
 import type { TerrainData } from './terrain';
 
 interface Props {
@@ -52,7 +53,12 @@ export function ExplorerScene(p: Props) {
       dpr={quality === 'low' ? 1 : quality === 'medium' ? [1, 1.5] : [1, 2]}
       gl={{ antialias: quality !== 'low', powerPreference: 'high-performance', toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.9 }}
       data-testid="explorer-canvas"
-      onCreated={() => requestAnimationFrame(() => requestAnimationFrame(() => p.onReady?.()))}
+      onCreated={(state) => {
+        // diagnostics hook for automated visual checks
+        (sceneDebug as { scene?: unknown; gl?: unknown }).scene = state.scene;
+        (sceneDebug as { scene?: unknown; gl?: unknown }).gl = state.gl;
+        requestAnimationFrame(() => requestAnimationFrame(() => p.onReady?.()));
+      }}
     >
       <Suspense fallback={null}>
         <SkyWeather planet={p.planet} system={p.system} quality={quality} warm={p.terrain.look.vegetation === 'cactus'} cold={(p.terrain.look.snow ?? 0) >= 0.45} bounce={(p.terrain.look.snow ?? 0) >= 0.45 ? '#dfe8f2' : p.terrain.look.mid} />
@@ -70,7 +76,7 @@ export function ExplorerScene(p: Props) {
         {p.settlement && <Inhabitants settlementId={p.settlement.id} layout={p.layout} t={p.terrain} onPick={p.onPick} />}
         {(p.settlement || p.cloud) && <Crowd layout={p.layout} t={p.terrain} population={p.settlement?.population ?? 3000} quality={quality} planetId={p.planet.id} />}
         <PostFX quality={quality} bloom={0.6} threshold={0.82} grade={1} />
-        <Player t={p.terrain} layout={p.layout} colliders={p.colliders} onInteract={p.onInteract} spawnKey={p.locationKey} />
+        <Player t={p.terrain} layout={p.layout} colliders={p.colliders} onInteract={p.onInteract} spawnKey={p.locationKey} surface={p.highways?.surface} blocked={p.highways?.blocked} />
       </Suspense>
     </Canvas>
   );

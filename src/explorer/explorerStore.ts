@@ -14,7 +14,7 @@ export const playerState = {
 };
 
 /** One-shot commands for the controller (used by automation and "travel to" actions). */
-export const playerCommands: { teleport: { x: number; z: number; yaw?: number } | null; view: { pitch?: number; dist?: number } | null } = {
+export const playerCommands: { teleport: { x: number; z: number; yaw?: number; top?: boolean } | null; view: { pitch?: number; dist?: number } | null } = {
   teleport: null,
   view: null,
 };
@@ -49,4 +49,4 @@ export const useExplorer = create<ExplorerUi>((set, get) => ({
 }));
 
 /** Diagnostics for automated checks: structure footprints in the current scene. */
-export const sceneDebug: { footprints: { x: number; z: number; r: number }[]; roads: { kind: string; pts: number[][] }[]; shore: number[] | null } = { footprints: [], roads: [], shore: null };
+export const sceneDebug: { footprints: { x: number; z: number; r: number; kind?: string }[]; roads: { kind: string; pts: number[][] }[]; shore: number[] | null; poi?: { mushrooms: [number, number][]; lilies: [number, number][] } } = { footprints: [], roads: [], shore: null };

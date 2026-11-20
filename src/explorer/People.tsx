@@ -9,18 +9,18 @@ import { explorerFeed } from '../state/runner';
 import type { ActivityType } from '../sim/types';
 import { npcPositions, playerState, useExplorer } from './explorerStore';
 import { routeBetween, type Layout } from './layout';
-import { texturedMaterial } from './env';
+import { humanoidGeometry, humanoidMaterial, outfitFor } from './humanoid';
 
-const headMat = texturedMaterial('skin', { color: '#e8d4bc', roughness: 0.75 }, 'object');
-const clothCache = new Map<string, THREE.MeshStandardMaterial>();
-/** One textured cloth material per occupation colour, shared by everyone wearing it. */
-function clothFor(color: string): THREE.MeshStandardMaterial {
-  let m = clothCache.get(color);
-  if (!m) {
-    m = texturedMaterial('cloth', { color, roughness: 0.8 }, 'object');
-    clothCache.set(color, m);
+/** One dressed figure material per simulated person: shirt in their occupation colour, everything else from their id. */
+const figureCache = new Map<string, ReturnType<typeof humanoidMaterial>>();
+function figureFor(id: string, color: string): ReturnType<typeof humanoidMaterial> {
+  let f = figureCache.get(id);
+  if (!f) {
+    f = humanoidMaterial(outfitFor(hashString(id), color));
+    f.walk.x = (hashString(id) % 628) / 100;
+    figureCache.set(id, f);
   }
-  return m;
+  return f;
 }
 import type { TerrainData } from './terrain';
 
@@ -102,9 +102,7 @@ function pointFor(_world: World, c: Character, layout: Layout, rng: Rng): { targ
   }
 }
 
-const bodyGeo = new THREE.CapsuleGeometry(0.42, 1.0, 4, 10);
-const headGeo = new THREE.SphereGeometry(0.34, 14, 12);
-const ringGeo = new THREE.RingGeometry(0.62, 0.78, 28);
+const ringGeo = new THREE.RingGeometry(0.55, 0.68, 28);
 const ringMat = new THREE.MeshBasicMaterial({ color: '#6fd6ff', transparent: true, opacity: 0.55, depthWrite: false });
 
 export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId: string; layout: Layout; t: TerrainData; onPick: (id: string) => void }) {
@@ -209,7 +207,7 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
       // named figures beyond 150 m are culled (their labels already are)
       g.visible = !npc.hidden && (npc.pos.x - camera.position.x) ** 2 + (npc.pos.z - camera.position.z) ** 2 < 150 * 150;
       g.position.copy(npc.pos);
-      g.position.y += npc.moving ? Math.abs(Math.sin(now * 9 + npc.pos.x)) * 0.08 : 0;
+      figureFor(npc.id, OCC_COLORS[c.occupation]).walk.y = npc.moving ? (c.activity.type === 'travel' ? 3.2 : 2.2) * 4.2 : 0;
       g.rotation.y = npc.facing;
       if (!npc.hidden) {
         npcPositions.set(npc.id, { x: npc.pos.x, z: npc.pos.z, color: OCC_COLORS[c.occupation] });
@@ -255,18 +253,17 @@ export function Inhabitants({ settlementId, layout, t, onPick }: { settlementId:
               onPick(id);
             }}
           >
-            <mesh geometry={bodyGeo} position={[0, 0.95, 0]} castShadow material={clothFor(color)} />
+            <mesh geometry={humanoidGeometry()} castShadow material={figureFor(id, color).material} scale={1.04} />
             {/* simulated individuals are marked so they read apart from the ambient crowd */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]} geometry={ringGeo} material={ringMat} />
-            <mesh geometry={headGeo} position={[0, 2.0, 0]} castShadow material={headMat} />
             {world.player.followedCharacterId === id && (
-              <mesh position={[0, 3.4, 0]} rotation={[0, 0, Math.PI / 4]}>
+              <mesh position={[0, 2.55, 0]} rotation={[0, 0, Math.PI / 4]}>
                 <boxGeometry args={[0.45, 0.45, 0.45]} />
                 <meshBasicMaterial color="#6fd6ff" />
               </mesh>
             )}
             {(labelIds.includes(id) || world.player.followedCharacterId === id) && (
-              <Html center position={[0, 2.9, 0]} distanceFactor={14} style={{ pointerEvents: 'none' }} zIndexRange={[6, 0]}>
+              <Html center position={[0, 2.35, 0]} distanceFactor={14} style={{ pointerEvents: 'none' }} zIndexRange={[6, 0]}>
                 <div className="npc-label">
                   <b>{c.givenName}</b>
                   <span>{explorerFeed.get(id)?.description ?? c.activity.description}</span>

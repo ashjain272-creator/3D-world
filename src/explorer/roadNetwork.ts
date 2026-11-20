@@ -28,6 +28,13 @@ export interface HighwayData {
   roads: Road[];
   pillars: { x: number; z: number; h: number; y: number; w: number; ang: number }[];
   colliders: Collider[];
+  /**
+   * Walkable deck surface under a walker at (x, z) with feet at height y:
+   * the highest deck surface no more than a step above the feet, or null.
+   */
+  surface: (x: number, z: number, y: number) => number | null;
+  /** True where a walker on a deck would run into the central median barrier. */
+  blocked: (x: number, z: number, y: number) => boolean;
 }
 
 function finishRoad(kind: RoadKind, raw: THREE.Vector3[], width: number, lanes: number, closed: boolean, elevated: boolean): Road {
@@ -134,10 +141,11 @@ export function generateHighways(layout: Layout, t: TerrainData): HighwayData | 
       const q = r.pts[i - 1];
       const ang = Math.atan2(p.x - q.x, p.z - q.z);
       pillars.push({ x: p.x, z: p.z, h, y: ground, w: r.width, ang });
-      colliders.push({ type: 'circle', x: p.x, z: p.z, hw: 1.2, hd: 0 });
+      colliders.push({ type: 'circle', x: p.x, z: p.z, hw: 1.2, hd: 0, top: ground + h });
     }
   }
-  return { roads, pillars, colliders };
+  const sampler = deckSampler(roads);
+  return { roads, pillars, colliders, surface: sampler.surface, blocked: sampler.blocked };
 }
 
 /** Position and heading at distance d along a road (wrapping for closed roads). */
@@ -158,3 +166,70 @@ export function sampleRoad(r: Road, d: number, out: THREE.Vector3): number {
   out.copy(a).lerp(b, (d - r.dist[lo]) / span);
   return Math.atan2(b.x - a.x, b.z - a.z);
 }
+
+/**
+ * Spatial index over the elevated deck segments. A point is on a deck when it
+ * lies within the deck's width (inside the barriers); the surface height is
+ * interpolated along the segment.
+ */
+export function deckSampler(roads: Road[]): { surface: (x: number, z: number, y: number) => number | null; blocked: (x: number, z: number, y: number) => boolean } {
+  const CELL = 12;
+  type Seg = { ax: number; az: number; ay: number; bx: number; bz: number; by: number; hw: number; median: boolean };
+  const grid = new Map<number, Seg[]>();
+  for (const r of roads) {
+    if (!r.elevated) continue;
+    const hw = r.width / 2 - 0.35;
+    for (let i = 0; i < r.pts.length - 1; i++) {
+      const a = r.pts[i];
+      const b = r.pts[i + 1];
+      const seg: Seg = { ax: a.x, az: a.z, ay: a.y, bx: b.x, bz: b.z, by: b.y, hw, median: r.lanes >= 2 };
+      const x0 = Math.floor((Math.min(a.x, b.x) - hw) / CELL);
+      const x1 = Math.floor((Math.max(a.x, b.x) + hw) / CELL);
+      const z0 = Math.floor((Math.min(a.z, b.z) - hw) / CELL);
+      const z1 = Math.floor((Math.max(a.z, b.z) + hw) / CELL);
+      for (let gx = x0; gx <= x1; gx++)
+        for (let gz = z0; gz <= z1; gz++) {
+          const k = gx * 65536 + gz;
+          const list = grid.get(k);
+          if (list) list.push(seg);
+          else grid.set(k, [seg]);
+        }
+    }
+  }
+  const blocked = (x: number, z: number, y: number) => {
+    const list = grid.get(Math.floor(x / CELL) * 65536 + Math.floor(z / CELL));
+    if (!list) return false;
+    for (const s of list) {
+      if (!s.median) continue;
+      const dx = s.bx - s.ax;
+      const dz = s.bz - s.az;
+      const len2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((x - s.ax) * dx + (z - s.az) * dz) / len2));
+      const h = s.ay + (s.by - s.ay) * t;
+      if (Math.abs(h - y) > 1) continue;
+      if ((x - (s.ax + dx * t)) ** 2 + (z - (s.az + dz * t)) ** 2 < 0.6 * 0.6) return true;
+    }
+    return false;
+  };
+  const surface = (x: number, z: number, y: number) => {
+    const list = grid.get(Math.floor(x / CELL) * 65536 + Math.floor(z / CELL));
+    if (!list) return null;
+    let best: number | null = null;
+    for (const s of list) {
+      const dx = s.bx - s.ax;
+      const dz = s.bz - s.az;
+      const len2 = dx * dx + dz * dz || 1;
+      const t = Math.max(0, Math.min(1, ((x - s.ax) * dx + (z - s.az) * dz) / len2));
+      const px = s.ax + dx * t;
+      const pz = s.az + dz * t;
+      if ((x - px) ** 2 + (z - pz) ** 2 > s.hw * s.hw) continue;
+      const h = s.ay + (s.by - s.ay) * t;
+      // only surfaces you could step onto from here: not decks far overhead
+      if (h > y + 1.1) continue;
+      if (best === null || h > best) best = h;
+    }
+    return best;
+  };
+  return { surface, blocked };
+}
+

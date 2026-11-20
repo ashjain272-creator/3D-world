@@ -98,6 +98,7 @@ function Explorer({ target }: { target: Target }) {
   const quality = useApp((s) => s.settings.quality);
   const vegetation = useMemo(() => generateVegetation(terrain, layout, quality), [terrain, layout, quality]);
   sceneDebug.footprints = vegetation.structures.footprints;
+  sceneDebug.poi = vegetation.poi;
   sceneDebug.shore = useMemo(() => {
     if (terrain.waterLevel === null) return null;
     for (let r = 10; r < 340; r += 6)

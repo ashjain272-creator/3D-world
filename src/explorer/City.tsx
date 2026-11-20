@@ -291,7 +291,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       pave: texturedMaterial('paving', { color: layout.style === 'futuristic' ? '#8b939d' : layout.style === 'organic' ? '#6f7f4c' : '#a39478', roughness: 0.95, polygonOffset: true, polygonOffsetFactor: -1 }),
       far: new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.05, emissive: new THREE.Color('#9fb4d8'), emissiveIntensity: 0.1 }),
       roof: texturedMaterial('tiles', { roughness: 0.85 }),
-      dome: texturedMaterial('plaster', { roughness: 0.7, metalness: 0.02 }),
+      dome: texturedMaterial('plaster', { roughness: 0.7, metalness: 0.02, side: THREE.DoubleSide }),
       leaf: foliageMaterial(),
       bark: texturedMaterial('bark', { color: '#7a5e4a', roughness: 1 }),
       sign: signMaterial(),

@@ -35,6 +35,8 @@ export interface VegetationData {
   colliders: Collider[];
   /** Snow cover 0..1 (cold worlds): tints the tops of foliage white. */
   snow: number;
+  /** Where small features ended up (diagnostics and tests). */
+  poi: { mushrooms: [number, number][]; lilies: [number, number][] };
 }
 
 type Arche = 'oak' | 'birch' | 'poplar' | 'acacia' | 'spruce' | 'pine' | 'fir' | 'giant' | 'palm' | 'shrubtree' | 'dead' | 'saguaro' | 'barrelcl' | 'pear';
@@ -65,9 +67,10 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
   const kind = t.look.vegetation;
   const rng = new Rng(t.seed + 5);
   // floating platforms carry no plants or boulders
-  if (layout.style === 'cloud') return { parts: {}, structures: { pieces: [], ponds: [], colliders: [], footprints: [], palms: [] }, colliders: [], snow: 0 };
+  if (layout.style === 'cloud') return { parts: {}, structures: { pieces: [], ponds: [], colliders: [], footprints: [], palms: [] }, colliders: [], snow: 0, poi: { mushrooms: [], lilies: [] } };
   const noise = createNoise2D(() => rng.next());
   const parts: Partial<Record<PartKey, PartItem[]>> = {};
+  const poi: VegetationData['poi'] = { mushrooms: [], lilies: [] };
   const colliders: Collider[] = [];
   const snow = t.look.snow ?? 0;
   const put = (key: PartKey, x: number, y: number, z: number, sx: number, sy: number, sz: number, c: THREE.Color, rx = 0, ry = 0, rz = 0) => {
@@ -361,6 +364,7 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
       if (h > t.waterLevel - 0.4 || h < t.waterLevel - 2.5) continue;
       if (noise(x / 25 + 90, z / 25) < 0.15) continue;
       const s = rng.range(0.35, 0.8);
+      poi.lilies.push([x, z]);
       put('lily', x, t.waterLevel + 0.04, z, s, 1, s, new THREE.Color('#4f7f3a').offsetHSL(rng.range(-0.03, 0.04), 0, rng.range(-0.08, 0.06)), 0, rng.range(0, 6), 0);
       if (rng.chance(0.18)) put('dryshrub', x + s * 0.3, t.waterLevel + 0.12, z, 0.16, 0.12, 0.16, new THREE.Color(rng.pick(['#f6f0f4', '#f0a8c8', '#f4e070'])), 0, 0, 0);
     }
@@ -389,11 +393,12 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
       const h = placeable(x, z);
       if (h === null || noise(x / 160, z / 160) < 0.05) continue;
       const cap = new THREE.Color(rng.pick(['#b8322a', '#c89a5a', '#8a5a3a', '#e8dcc8']));
+      poi.mushrooms.push([x, z]);
       const n = 3 + Math.floor(rng.next() * 6);
       for (let k = 0; k < n; k++) {
         const a = rng.range(0, 6.28);
-        const r = rng.range(0, 0.9);
-        const s = rng.range(0.6, 1.3);
+        const r = rng.range(0, 1.3);
+        const s = rng.range(1.1, 2.1);
         const mx = x + Math.cos(a) * r;
         const mz = z + Math.sin(a) * r;
         const my = t.height(mx, mz);
@@ -462,5 +467,5 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
     }
   }
 
-  return { parts, structures, colliders, snow };
+  return { parts, structures, colliders, snow, poi };
 }

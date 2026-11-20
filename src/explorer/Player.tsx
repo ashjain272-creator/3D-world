@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { useApp } from '../state/store';
 import { playerCommands, playerState, useExplorer } from './explorerStore';
 import { resolveCollisionsGrid, type ColliderGrid, type Layout } from './layout';
-import { texturedMaterial } from './env';
+import { humanoidGeometry, humanoidMaterial } from './humanoid';
 import type { TerrainData } from './terrain';
 
 const WALK = 7;
@@ -17,9 +17,10 @@ const JUMP = 11;
  * Space to jump. Mouse: pointer-lock look (click the view) or drag to orbit.
  * Ground following samples the heightfield; buildings push the player out.
  */
-const suitMat = texturedMaterial('metal', { color: '#dfe8f7', roughness: 0.45, metalness: 0.35 }, 'object');
+// the traveller: a pale explorer suit, darker trousers and boots
+const suitFigure = humanoidMaterial({ shirt: new THREE.Color('#e4ecf6'), pants: new THREE.Color('#5a6a82'), skin: new THREE.Color('#d8a67e'), hair: new THREE.Color('#2a1c14'), longHair: false });
 
-export function Player({ t, layout, colliders, onInteract, spawnKey }: { t: TerrainData; layout: Layout; colliders: ColliderGrid; onInteract: () => void; spawnKey: string }) {
+export function Player({ t, layout, colliders, onInteract, spawnKey, surface, blocked }: { t: TerrainData; layout: Layout; colliders: ColliderGrid; onInteract: () => void; spawnKey: string; surface?: (x: number, z: number, y: number) => number | null; blocked?: (x: number, z: number, y: number) => boolean }) {
   const { camera, gl } = useThree();
   const body = useRef<THREE.Group>(null);
   const keys = useRef<Record<string, boolean>>({});
@@ -107,7 +108,9 @@ export function Player({ t, layout, colliders, onInteract, spawnKey }: { t: Terr
       s.x = playerCommands.teleport.x;
       s.z = playerCommands.teleport.z;
       if (playerCommands.teleport.yaw !== undefined) s.yaw = playerCommands.teleport.yaw;
-      s.y = t.height(s.x, s.z);
+      const top = playerCommands.teleport.top && surface ? surface(s.x, s.z, 1e6) : null;
+      s.y = top ?? t.height(s.x, s.z);
+      s.vy = 0;
       playerCommands.teleport = null;
     }
     if (playerCommands.view) {
@@ -140,7 +143,22 @@ export function Player({ t, layout, colliders, onInteract, spawnKey }: { t: Terr
         nx = s.x + vx * dt * 0.2;
         nz = s.z + vz * dt * 0.2;
       }
-      [nx, nz] = resolveCollisionsGrid(colliders, nx, nz, 0.7);
+      [nx, nz] = resolveCollisionsGrid(colliders, nx, nz, 0.7, s.y);
+      // highway decks: the barriers keep you from stepping off an elevated road
+      if (surface) {
+        const here = surface(s.x, s.z, s.y + 0.05);
+        if (here !== null && s.y - here < 0.6) {
+          const offDeck = (x: number, z: number) => (surface(x, z, s.y + 0.05) === null && s.y - t.height(x, z) > 1.2) || !!blocked?.(x, z, s.y);
+          if (offDeck(nx, nz)) {
+            if (!offDeck(nx, s.z)) nz = s.z;
+            else if (!offDeck(s.x, nz)) nx = s.x;
+            else {
+              nx = s.x;
+              nz = s.z;
+            }
+          }
+        }
+      }
       // floating platforms: refuse steps over the edge, sliding along it instead
       if (t.walkable && !t.walkable(nx, nz)) {
         if (t.walkable(nx, s.z)) nz = s.z;
@@ -154,7 +172,8 @@ export function Player({ t, layout, colliders, onInteract, spawnKey }: { t: Terr
       s.x = THREE.MathUtils.clamp(nx, -lim, lim);
       s.z = THREE.MathUtils.clamp(nz, -lim, lim);
     }
-    const ground = Math.max(t.height(s.x, s.z), t.waterLevel !== null ? (t.look.frozen ? t.waterLevel + 0.05 : t.waterLevel - 1.2) : -Infinity);
+    const deck = surface ? surface(s.x, s.z, s.y + 0.05) : null;
+    const ground = Math.max(t.height(s.x, s.z), deck ?? -Infinity, t.waterLevel !== null ? (t.look.frozen ? t.waterLevel + 0.05 : t.waterLevel - 1.2) : -Infinity);
     if (s.grounded && k.Space && !frozen) {
       s.vy = JUMP;
       s.grounded = false;
@@ -171,6 +190,7 @@ export function Player({ t, layout, colliders, onInteract, spawnKey }: { t: Terr
     playerState.z = s.z;
     playerState.yaw = s.yaw;
     playerState.speed = len > 0 ? speed : 0;
+    suitFigure.walk.y = len > 0 && s.grounded ? (speed > 10 ? 15 : 10) : 0;
     if (body.current) {
       body.current.position.set(s.x, s.y, s.z);
       body.current.rotation.y = s.yaw;
@@ -188,7 +208,7 @@ export function Player({ t, layout, colliders, onInteract, spawnKey }: { t: Terr
       const cx = s.x - Math.sin(s.yaw) * Math.cos(s.pitch) * d;
       const cz = s.z - Math.cos(s.yaw) * Math.cos(s.pitch) * d;
       let cy = s.y + 1.8 + Math.sin(s.pitch) * d;
-      const minY = t.height(cx, cz) + 1.2;
+      const minY = Math.max(t.height(cx, cz), surface ? surface(cx, cz, s.y + 2) ?? -Infinity : -Infinity) + 1.2;
       if (cy < minY) cy = minY;
       // gentle smoothing
       camera.position.x += (cx - camera.position.x) * Math.min(1, dt * 12);
@@ -200,17 +220,19 @@ export function Player({ t, layout, colliders, onInteract, spawnKey }: { t: Terr
 
   return (
     <group ref={body}>
-      <mesh position={[0, 0.95, 0]} castShadow>
-        <capsuleGeometry args={[0.45, 1.05, 6, 16]} />
-        <primitive object={suitMat} attach="material" />
+      <mesh geometry={humanoidGeometry()} material={suitFigure.material} castShadow scale={1.08} />
+      {/* glowing visor across the eyes and a small pack on the back */}
+      <mesh position={[0, 1.905, 0.105]}>
+        <boxGeometry args={[0.2, 0.045, 0.04]} />
+        <meshStandardMaterial color="#000" emissive="#6fd6ff" emissiveIntensity={2.2} />
       </mesh>
-      <mesh position={[0, 2.02, 0]} castShadow>
-        <sphereGeometry args={[0.36, 24, 16]} />
-        <meshStandardMaterial color="#e9eef6" roughness={0.18} metalness={0.55} />
+      <mesh position={[0, 1.36, -0.16]} castShadow>
+        <boxGeometry args={[0.3, 0.38, 0.14]} />
+        <meshStandardMaterial color="#8a96a8" roughness={0.5} metalness={0.4} />
       </mesh>
-      <mesh position={[0, 2.05, 0.3]}>
-        <boxGeometry args={[0.5, 0.12, 0.12]} />
-        <meshStandardMaterial color="#000" emissive="#6fd6ff" emissiveIntensity={2} />
+      <mesh position={[0, 1.36, -0.235]}>
+        <boxGeometry args={[0.18, 0.04, 0.01]} />
+        <meshBasicMaterial color="#6fd6ff" toneMapped={false} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
         <ringGeometry args={[0.8, 0.95, 32]} />

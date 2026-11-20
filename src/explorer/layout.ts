@@ -32,6 +32,8 @@ export interface Collider {
   z: number;
   hw: number; // half width or radius
   hd: number;
+  /** Optional top height: anything standing above it (e.g. on a highway deck) is not blocked. */
+  top?: number;
 }
 
 export interface StreetGraph {
@@ -455,12 +457,12 @@ export function buildColliderGrid(colliders: Collider[], cell = 16): ColliderGri
   return { cell, cells, count: colliders.length };
 }
 
-export function resolveCollisionsGrid(g: ColliderGrid, x: number, z: number, r: number): [number, number] {
+export function resolveCollisionsGrid(g: ColliderGrid, x: number, z: number, r: number, y?: number): [number, number] {
   const near: Collider[] = [];
   for (let gx = Math.floor((x - r) / g.cell); gx <= Math.floor((x + r) / g.cell); gx++) {
     for (let gz = Math.floor((z - r) / g.cell); gz <= Math.floor((z + r) / g.cell); gz++) {
       const list = g.cells.get(gx * 65536 + gz);
-      if (list) for (const c of list) if (!near.includes(c)) near.push(c);
+      if (list) for (const c of list) if (!near.includes(c) && !(y !== undefined && c.top !== undefined && y > c.top - 0.3)) near.push(c);
     }
   }
   return resolveCollisions(near, x, z, r);

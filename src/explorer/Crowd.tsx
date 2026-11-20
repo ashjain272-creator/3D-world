@@ -7,7 +7,7 @@ import type { Planet } from '../sim/types';
 import { getWorld } from '../state/store';
 import { routeBetween, type Layout } from './layout';
 import type { TerrainData } from './terrain';
-import { texturedMaterial } from './env';
+import { HAIR_COLORS, PANTS_COLORS, SKIN_TONES, humanoidGeometry, humanoidInstancedMaterial } from './humanoid';
 
 /**
  * Ambient crowd: anonymous, procedurally varied residents that stand in for
@@ -52,19 +52,30 @@ interface Agent {
   threshold: number;
   side: number;
   pause: number;
+  face: number;
+  build: number;
 }
 
 const CELL = 4;
-const bodyGeo = new THREE.CapsuleGeometry(0.34, 0.92, 2, 6);
-const headGeo = new THREE.SphereGeometry(0.29, 8, 6);
 const noRaycast = () => null;
-const clothMat = texturedMaterial('cloth', { roughness: 0.85 }, 'object');
-const skinMat = texturedMaterial('skin', { roughness: 0.75 }, 'object');
+const crowdMat = humanoidInstancedMaterial();
 
 export function Crowd({ layout, t, population, quality, planetId }: { layout: Layout; t: TerrainData; population: number; quality: 'low' | 'medium' | 'high'; planetId: string }) {
   const count = crowdCapacity(population, quality);
   const body = useRef<THREE.InstancedMesh>(null);
-  const head = useRef<THREE.InstancedMesh>(null);
+  // one figure geometry per crowd, carrying each person's outfit and walk cadence as instanced attributes
+  const geo = useMemo(() => {
+    const g = humanoidGeometry(quality !== 'high').clone();
+    g.setAttribute('iShirt', new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3));
+    g.setAttribute('iPants', new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3));
+    g.setAttribute('iSkin', new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3));
+    g.setAttribute('iHair', new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4));
+    const walk = new THREE.InstancedBufferAttribute(new Float32Array(count * 2), 2);
+    walk.setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('iWalk', walk);
+    return g;
+  }, [count, quality]);
+  useEffect(() => () => geo.dispose(), [geo]);
   const { camera } = useThree();
   const hotspots = useMemo(() => {
     const pts: [number, number][] = [];
@@ -83,11 +94,13 @@ export function Crowd({ layout, t, population, quality, planetId }: { layout: La
         oz: 0,
         path: [],
         speed: rng.range(1.3, 2.5),
-        scale: rng.range(0.86, 1.12),
+        scale: rng.range(0.9, 1.08),
         // evenly spread thresholds so density maps linearly to head-count
         threshold: (i + rng.next()) / count,
         side: rng.chance(0.5) ? 1 : -1,
         pause: 0,
+        face: rng.range(0, Math.PI * 2),
+        build: rng.range(0.88, 1.14),
       };
     });
   }, [layout, count]);
@@ -95,16 +108,26 @@ export function Crowd({ layout, t, population, quality, planetId }: { layout: La
   useEffect(() => {
     const rng = new Rng(count * 7 + 1);
     const c = new THREE.Color();
+    const shirt = geo.getAttribute('iShirt') as THREE.InstancedBufferAttribute;
+    const pants = geo.getAttribute('iPants') as THREE.InstancedBufferAttribute;
+    const skin = geo.getAttribute('iSkin') as THREE.InstancedBufferAttribute;
+    const hair = geo.getAttribute('iHair') as THREE.InstancedBufferAttribute;
+    const walk = geo.getAttribute('iWalk') as THREE.InstancedBufferAttribute;
     agents.forEach((_, i) => {
       // clothing: muted palette with occasional bright accents
-      const accent = rng.chance(0.15);
-      c.setHSL(rng.range(0, 1), accent ? rng.range(0.45, 0.7) : rng.range(0.08, 0.32), accent ? rng.range(0.45, 0.6) : rng.range(0.22, 0.55));
-      body.current?.setColorAt(i, c);
-      c.setHSL(rng.range(0.04, 0.1), rng.range(0.25, 0.55), rng.range(0.32, 0.78));
-      head.current?.setColorAt(i, c);
+      const accent = rng.chance(0.18);
+      c.setHSL(rng.range(0, 1), accent ? rng.range(0.45, 0.75) : rng.range(0.08, 0.32), accent ? rng.range(0.42, 0.6) : rng.range(0.2, 0.62));
+      shirt.setXYZ(i, c.r, c.g, c.b);
+      c.set(rng.pick(PANTS_COLORS)).offsetHSL(0, 0, rng.range(-0.05, 0.05));
+      pants.setXYZ(i, c.r, c.g, c.b);
+      c.set(rng.pick(SKIN_TONES));
+      skin.setXYZ(i, c.r, c.g, c.b);
+      c.set(rng.pick(HAIR_COLORS));
+      hair.setXYZW(i, c.r, c.g, c.b, rng.chance(0.42) ? 1 : 0);
+      walk.setXY(i, rng.range(0, 6.28), 0);
     });
-    for (const r of [body, head]) if (r.current?.instanceColor) r.current.instanceColor.needsUpdate = true;
-  }, [agents, count]);
+    for (const a of [shirt, pants, skin, hair, walk]) a.needsUpdate = true;
+  }, [agents, count, geo]);
 
   const m = useMemo(() => new THREE.Matrix4(), []);
   const q = useMemo(() => new THREE.Quaternion(), []);
@@ -117,8 +140,8 @@ export function Crowd({ layout, t, population, quality, planetId }: { layout: La
 
   useFrame((_, rawDt) => {
     const b = body.current;
-    const h = head.current;
-    if (!b || !h || !layout.graph.nodes.length) return;
+    if (!b || !layout.graph.nodes.length) return;
+    const walkAttr = geo.getAttribute('iWalk') as THREE.InstancedBufferAttribute;
     const dt = Math.min(rawDt, 0.1);
     const w = getWorld();
     const hour = localHour(w.time, w.planets[planetId]?.dayLengthHours);
@@ -143,7 +166,6 @@ export function Crowd({ layout, t, population, quality, planetId }: { layout: La
       const a = agents[i];
       if (a.threshold > density) {
         b.setMatrixAt(i, hidden);
-        h.setMatrixAt(i, hidden);
         continue;
       }
       if (!a.path.length) {
@@ -201,23 +223,22 @@ export function Crowd({ layout, t, population, quality, planetId }: { layout: La
       const fz = a.z + a.oz;
       if ((fx - camX) ** 2 + (fz - camZ) ** 2 > maxDist * maxDist) {
         b.setMatrixAt(i, hidden);
-        h.setMatrixAt(i, hidden);
         continue;
       }
       visible++;
       const y = t.height(fx, fz);
-      const bob = moving ? Math.abs(Math.sin(performance.now() * 0.009 + i)) * 0.06 : 0;
-      q.setFromAxisAngle(up, Math.atan2(dx, dz));
-      sv.set(a.scale, a.scale, a.scale);
-      v.set(fx, y + 0.8 * a.scale + bob, fz);
+      if (moving) a.face = Math.atan2(dx, dz);
+      q.setFromAxisAngle(up, a.face);
+      // slimmer or broader builds around a common height
+      sv.set(a.scale * a.build, a.scale, a.scale * a.build);
+      v.set(fx, y, fz);
       m.compose(v, q, sv);
       b.setMatrixAt(i, m);
-      v.set(fx, y + 1.78 * a.scale + bob, fz);
-      m.compose(v, q, sv);
-      h.setMatrixAt(i, m);
+      // stride cadence follows walking speed (rad/s of the leg swing); 0 while standing
+      walkAttr.setY(i, moving ? a.speed * 4.2 : 0);
     }
     b.instanceMatrix.needsUpdate = true;
-    h.instanceMatrix.needsUpdate = true;
+    walkAttr.needsUpdate = true;
     crowdStats.capacity = count;
     crowdStats.visible = visible;
     crowdStats.density = density;
@@ -234,8 +255,7 @@ export function Crowd({ layout, t, population, quality, planetId }: { layout: La
   if (!layout.graph.nodes.length) return null;
   return (
     <group>
-      <instancedMesh ref={body} args={[bodyGeo, undefined, count]} frustumCulled={false} raycast={noRaycast} castShadow={quality === 'high'} key={`b${count}`} material={clothMat} />
-      <instancedMesh ref={head} args={[headGeo, undefined, count]} frustumCulled={false} raycast={noRaycast} key={`h${count}`} material={skinMat} />
+      <instancedMesh ref={body} args={[geo, crowdMat, count]} frustumCulled={false} raycast={noRaycast} castShadow={quality === 'high'} key={`b${count}${quality}`} />
     </group>
   );
 }

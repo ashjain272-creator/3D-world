@@ -27,7 +27,7 @@ export interface StructureData {
   ponds: { x: number; z: number; r: number; y: number }[];
   colliders: Collider[];
   /** Areas kept clear of trees and rocks. */
-  footprints: { x: number; z: number; r: number }[];
+  footprints: { x: number; z: number; r: number; kind?: string }[];
   /** Palm positions requested by oases. */
   palms: { x: number; z: number }[];
 }
@@ -49,7 +49,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
   const circ = (x: number, z: number, r: number) => out.colliders.push({ type: 'circle', x, z, hw: r, hd: 0 });
   const vary = (hex: string, l = 0.06) => new THREE.Color(hex).offsetHSL(rng.range(-0.01, 0.01), 0, rng.range(-l, l));
   /** Find a reasonably flat, dry spot away from the spawn, landmarks and other structures. */
-  const site = (r: number, minDist = 60, maxDist = 290): { x: number; z: number; y: number } | null => {
+  const site = (r: number, minDist = 60, maxDist = 290, kind = ''): { x: number; z: number; y: number } | null => {
     for (let k = 0; k < 80; k++) {
       const a = rng.range(0, Math.PI * 2);
       const d = rng.range(minDist, maxDist);
@@ -67,14 +67,14 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
       }
       if (hi - lo > Math.max(2.5, r * 0.18)) continue;
       if (t.waterLevel !== null && lo < t.waterLevel + 1) continue;
-      out.footprints.push({ x, z, r });
+      out.footprints.push({ x, z, r, kind });
       return { x, z, y: lo };
     }
     return null;
   };
 
   const temple = () => {
-    const s = site(20, 55, 150);
+    const s = site(20, 55, 150, 'temple');
     if (!s) return;
     const ry = rng.range(0, Math.PI * 2);
     const rot = (lx: number, lz: number) => [s.x + lx * Math.cos(ry) - lz * Math.sin(ry), s.z + lx * Math.sin(ry) + lz * Math.cos(ry)] as const;
@@ -104,7 +104,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
   };
 
   const well = () => {
-    const s = site(4, 22, 70);
+    const s = site(4, 22, 70, 'well');
     if (!s) return;
     add('cyl', 'sandstone', s.x, s.y - 0.4, s.z, 3.2, 1.5, 3.2, vary('#cfae7c'));
     add('cyl', 'stone', s.x, s.y + 0.6, s.z, 2.5, 0.52, 2.5, '#1a2a34');
@@ -116,7 +116,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
   };
 
   const ruins = (mat: StructMat, tone: string) => {
-    const s = site(14, 35, 120);
+    const s = site(14, 35, 120, 'ruins');
     if (!s) return;
     const ry = rng.range(0, Math.PI * 2);
     const rot = (lx: number, lz: number) => [s.x + lx * Math.cos(ry) - lz * Math.sin(ry), s.z + lx * Math.sin(ry) + lz * Math.cos(ry)] as const;
@@ -147,7 +147,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
   };
 
   const oasis = () => {
-    const s = site(16, 45, 160);
+    const s = site(16, 45, 160, 'oasis');
     if (!s) return;
     const r = rng.range(7, 11);
     out.ponds.push({ x: s.x, z: s.z, r, y: s.y + 0.15 });
@@ -168,7 +168,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
   };
 
   const mesa = () => {
-    const s = site(26, 160, 330);
+    const s = site(26, 160, 330, 'mesa');
     if (!s) return;
     const layers = 4 + Math.floor(rng.next() * 3);
     let y = s.y - 2;
@@ -185,7 +185,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
   };
 
   const arch = () => {
-    const s = site(10, 80, 300);
+    const s = site(10, 80, 300, 'arch');
     if (!s) return;
     const ry = rng.range(0, 6.28);
     const tone = '#c8804a';
@@ -199,7 +199,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
   };
 
   const stoneCircle = () => {
-    const s = site(11, 30, 110);
+    const s = site(11, 30, 110, 'stones');
     if (!s) return;
     const n = 9 + Math.floor(rng.next() * 4);
     for (let k = 0; k < n; k++) {
@@ -217,7 +217,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
   };
 
   const tower = () => {
-    const s = site(6, 30, 130);
+    const s = site(6, 30, 130, 'tower');
     if (!s) return;
     const tone = snow > 0.4 ? '#9a9aa0' : '#8a8274';
     const h = rng.range(9, 15);
@@ -238,7 +238,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
 
   const cairns = () => {
     for (let c = 0; c < 4; c++) {
-      const s = site(2, 40, 300);
+      const s = site(2, 40, 300, 'cairn');
       if (!s) return;
       let y = s.y - 0.1;
       for (let k = 0; k < 5; k++) {
@@ -251,7 +251,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
   };
 
   const igloo = () => {
-    const s = site(6, 25, 90);
+    const s = site(6, 25, 90, 'igloo');
     if (!s) return;
     add('hemi', 'snow', s.x, s.y - 0.3, s.z, 7, 7, 7, '#eef4f8');
     const a = rng.range(0, 6.28);
@@ -263,7 +263,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
   };
 
   const iceSpires = () => {
-    const s = site(10, 60, 320);
+    const s = site(10, 60, 320, 'spires');
     if (!s) return;
     const n = 5 + Math.floor(rng.next() * 5);
     for (let k = 0; k < n; k++) {
@@ -280,7 +280,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
 
   /** A cluster of flat-roofed mud-brick houses around a small square with a well and a market stall. */
   const village = () => {
-    const s = site(26, 30, 110);
+    const s = site(26, 30, 110, 'village');
     if (!s) return;
     const n = 5 + Math.floor(rng.next() * 3);
     for (let k = 0; k < n; k++) {
@@ -324,7 +324,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
 
   /** The bleached skeleton of something enormous, half swallowed by the sand. */
   const skeleton = () => {
-    const s = site(16, 40, 150);
+    const s = site(16, 40, 150, 'skeleton');
     if (!s) return;
     const ry = rng.range(0, Math.PI * 2);
     const dx = Math.cos(ry);
@@ -354,7 +354,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
 
   /** Sandstone hoodoos: banded pillars with balanced cap rocks. */
   const hoodoos = () => {
-    const s = site(12, 50, 230);
+    const s = site(12, 50, 230, 'hoodoos');
     if (!s) return;
     const bands = ['#c8783e', '#dca064', '#b85a32', '#e8bc80'];
     const n = 3 + Math.floor(rng.next() * 4);
@@ -379,7 +379,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
 
   /** A pair of obelisks with gilded tips, flanking an old road. */
   const obelisks = () => {
-    const s = site(8, 35, 160);
+    const s = site(8, 35, 160, 'obelisks');
     if (!s) return;
     const ry = rng.range(0, 6.28);
     for (const side of [-1, 1]) {
@@ -395,7 +395,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
 
   /** A prefab research station: modules, a radio mast, a dish, solar panels and lit windows. */
   const outpost = () => {
-    const s = site(16, 28, 110);
+    const s = site(16, 28, 110, 'outpost');
     if (!s) return;
     const ry = rng.range(0, Math.PI * 2);
     const rot = (lx: number, lz: number) => [s.x + lx * Math.cos(ry) - lz * Math.sin(ry), s.z + lx * Math.sin(ry) + lz * Math.cos(ry)] as const;
@@ -446,7 +446,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
 
   /** Three or four igloos around a campfire, with a sled. */
   const iglooVillage = () => {
-    const s = site(14, 28, 110);
+    const s = site(14, 28, 110, 'igloo-village');
     if (!s) return;
     const n = 3 + Math.floor(rng.next() * 2);
     for (let k = 0; k < n; k++) {
@@ -478,7 +478,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
 
   /** A natural arch of blue glacial ice. */
   const iceArch = () => {
-    const s = site(14, 40, 220);
+    const s = site(14, 40, 220, 'ice-arch');
     if (!s) return;
     const ry = rng.range(0, 6.28);
     add('arc', 'ice', s.x, s.y - 2, s.z, 26, 22, 26, vary('#9fd4f0', 0.05), ry);
@@ -490,7 +490,7 @@ export function generateStructures(t: TerrainData, layout: Layout, rng: Rng): St
 
   /** A snow mound with a dark cave mouth fringed with icicles and a cold blue glow inside. */
   const iceCave = () => {
-    const s = site(18, 40, 200);
+    const s = site(18, 40, 200, 'ice-cave');
     if (!s) return;
     const a = rng.range(0, 6.28);
     add('hemi', 'snow', s.x, s.y - 3, s.z, 34, 18, 30, '#e8eef4', a);

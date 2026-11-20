@@ -128,8 +128,10 @@ try {
 
   // 4. Movement and camera
   const p0 = await world(() => ({ ...window.__genesis.player }));
+  // hold W for a fixed number of rendered frames: movement is clamped per frame, so a
+  // fixed wall-clock hold fails at software-rendering frame rates (about 1 fps)
   await page.keyboard.down('KeyW');
-  await page.waitForTimeout(2000);
+  await page.evaluate(() => new Promise((res) => { let n = 0; const f = () => (++n >= 16 ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); }));
   await page.keyboard.up('KeyW');
   const p1 = await world(() => ({ ...window.__genesis.player }));
   const moved = Math.hypot(p1.x - p0.x, p1.z - p0.z);

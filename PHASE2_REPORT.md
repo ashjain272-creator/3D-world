@@ -262,7 +262,8 @@ Commits `a997643` → `27ba4d1`.
   - road sampling on closed loops;
   - deck surface and median barrier;
   - line of sight.
-- Browser journey: see the e2e line below.
+- Browser journey: **36 / 37** at medium on the final build. The failing check was "WASD moves the player" (0.9 units in a 2 s hold). Player movement is capped at 0.12 s per frame and the final build renders at about 1 fps in software, so a 2 s hold covers only two frames. Run on its own, the same build moved the player 1.7 units in a 2 s hold and **14.3 units over 16 rendered frames**. The check now holds W for 16 rendered frames instead of 2 seconds. The full journey was not re-run after that change.
+- Screenshot tour of every city style and wild biome, by day and at dusk or night, after the shader fix: `docs/screenshots/tour/` (34 images).
 - **Frame rate: regressed.** Medians from `scripts/fps-compare.mjs`, software rendering, same seed:
 
   | Quality | Scene | Baseline | Now |

@@ -23,6 +23,21 @@ function hashRand(seed: number) {
   };
 }
 
+/**
+ * A painted arc of constant width, built from short straight segments so it is exactly as wide
+ * as the straight lines (scaled ring geometry would thin out on small circles and vanish on big
+ * ones). Angles are measured in the local (x, z) plane from +x towards +z.
+ */
+function paintArc(A: (shape: DShape, mat: DMat, u: number, y: number, v: number, sx: number, sy: number, sz: number, col: string | THREE.Color, rot?: number) => void, cx: number, cz: number, r: number, a0: number, a1: number, y: number, w: number, col: string) {
+  const n = Math.max(6, Math.ceil((r * Math.abs(a1 - a0)) / 0.6));
+  const da = (a1 - a0) / n;
+  for (let k = 0; k < n; k++) {
+    const a = a0 + da * (k + 0.5);
+    // a box's local x points along (cos t, -sin t) after a turn t about y; the tangent at a is (-sin a, cos a)
+    A('box', 'paint', cx + Math.cos(a) * r, y, cz + Math.sin(a) * r, r * Math.abs(da) * 1.06, 0.015, w, col, -a - Math.PI / 2);
+  }
+}
+
 const TEAM_COLS = ['#c8102e', '#034694', '#6cabdd', '#fdb913', '#132257', '#7a263a', '#00a650', '#f47a20'];
 
 /** A straight run of tiered seating along local +x, rising away from the field towards -z. */
@@ -79,24 +94,32 @@ export function footballStadium(out: DistrictData, add: Add, b: Building, warm: 
   A('box', 'stone', 0, 0, 0, L + 12, 0.1, Wp + 12, '#4a7a3a');
   const stripes = 18;
   for (let k = 0; k < stripes; k++) A('box', 'pitch', -L / 2 - 3 + (k + 0.5) * ((L + 6) / stripes), 0.06, 0, (L + 6) / stripes, 0.1, Wp + 6, k % 2 ? '#3f8a34' : '#4c9a3c');
-  const line = '#f4f6f2';
-  const lw = 0.12;
+  // markings sit clear above the tallest stripe (top at 0.16) in unshaded paint, 0.3 m wide so they
+  // still read from the upper tier and from the air
+  const line = '#ffffff';
+  const lw = 0.3;
+  const ly = 0.18;
   const L2 = L / 2;
   const W2 = Wp / 2;
-  A('box', 'plaster', 0, 0.12, W2, L, 0.03, lw, line);
-  A('box', 'plaster', 0, 0.12, -W2, L, 0.03, lw, line);
-  for (const s of [-1, 1]) A('box', 'plaster', s * L2, 0.12, 0, lw, 0.03, Wp, line);
-  A('box', 'plaster', 0, 0.12, 0, lw, 0.03, Wp, line);
-  A('ring', 'plaster', 0, 0.13, 0, 18.3, 1, 18.3, line);
-  A('cyl', 'plaster', 0, 0.12, 0, 0.3, 0.03, 0.3, line);
+  A('box', 'paint', 0, ly, W2, L + lw, 0.015, lw, line);
+  A('box', 'paint', 0, ly, -W2, L + lw, 0.015, lw, line);
+  for (const s of [-1, 1]) A('box', 'paint', s * L2, ly, 0, lw, 0.015, Wp + lw, line);
+  A('box', 'paint', 0, ly, 0, lw, 0.015, Wp, line);
+  paintArc(A, 0, 0, 9.15, 0, Math.PI * 2, ly, lw, line);
+  A('cyl', 'paint', 0, ly, 0, 0.7, 0.015, 0.7, line);
   for (const s of [-1, 1]) {
-    // penalty area 40.3 x 16.5, goal area 18.3 x 5.5, spot at 11, the D
-    A('box', 'plaster', s * (L2 - 16.5), 0.12, 0, lw, 0.03, 40.3, line);
-    for (const t of [-1, 1]) A('box', 'plaster', s * (L2 - 8.25), 0.12, t * 20.15, 16.5, 0.03, lw, line);
-    A('box', 'plaster', s * (L2 - 5.5), 0.12, 0, lw, 0.03, 18.3, line);
-    for (const t of [-1, 1]) A('box', 'plaster', s * (L2 - 2.75), 0.12, t * 9.15, 5.5, 0.03, lw, line);
-    A('cyl', 'plaster', s * (L2 - 11), 0.12, 0, 0.3, 0.03, 0.3, line);
-    A('dArc', 'plaster', s * (L2 - 11), 0.13, 0, 18.3, 1, 18.3, line, s > 0 ? Math.PI : 0);
+    // penalty area 40.3 x 16.5, goal area 18.3 x 5.5, spot at 11, the D, corner arcs
+    A('box', 'paint', s * (L2 - 16.5), ly, 0, lw, 0.015, 40.3 + lw, line);
+    for (const t of [-1, 1]) A('box', 'paint', s * (L2 - 8.25), ly, t * 20.15, 16.5, 0.015, lw, line);
+    A('box', 'paint', s * (L2 - 5.5), ly, 0, lw, 0.015, 18.3 + lw, line);
+    for (const t of [-1, 1]) A('box', 'paint', s * (L2 - 2.75), ly, t * 9.15, 5.5, 0.015, lw, line);
+    A('cyl', 'paint', s * (L2 - 11), ly, 0, 0.6, 0.015, 0.6, line);
+    const toward = s > 0 ? Math.PI : 0;
+    paintArc(A, s * (L2 - 11), 0, 9.15, toward - 0.927, toward + 0.927, ly, lw, line);
+    for (const t of [-1, 1]) {
+      const a = Math.atan2(-t, -s);
+      paintArc(A, s * L2, t * W2, 1, a - Math.PI / 4, a + Math.PI / 4, ly, lw * 0.8, line);
+    }
     // goal: posts, crossbar, a net box behind, stanchions
     const gx = s * (L2 + 0.06);
     for (const t of [-1, 1]) A('box', 'plaster', gx, 0, t * 3.66, 0.12, 2.44, 0.12, '#ffffff');
@@ -146,7 +169,7 @@ export function footballStadium(out: DistrictData, add: Add, b: Building, warm: 
     for (let k = 0; k < 10; k++) A('box', 'cloth', du - 5.4 + k * 1.2, 0.3, W2 + 3.8, 0.9, 0.6, 0.7, s > 0 ? home : away);
     A('box', 'glass', du, 2.1, W2 + 3.2, 12.2, 0.08, 2.4, '#a8c8d8', 0, -0.12);
     for (const e of [-6, 6]) A('box', 'glass', du + e, 0.3, W2 + 3.2, 0.06, 1.8, 2.2, '#a8c8d8');
-    A('box', 'plaster', du, 0.13, W2 + 1.6, 10, 0.02, 0.08, line);
+    A('box', 'paint', du, ly, W2 + 1.6, 10, 0.015, 0.15, line);
   }
   // players' tunnel, fourth official, TV gantry cameras
   A('box', 'dark', 0, 0, W2 + 6.6, 4.5, 3, 1.6, '#1e2228');
@@ -277,29 +300,34 @@ export function nbaArena(add: Add, b: Building) {
   const CL = 28.65;
   const CW = 15.24;
   const H = b.h;
+  // court lines: above the keys and centre disc (tops at 0.23), unshaded, 0.15 m wide
   const line = '#ffffff';
-  const lw = 0.08;
+  const lw = 0.15;
+  const ly = 0.245;
 
   // ── court: maple boards, the apron in team colour, every NBA line
   A('box', 'stone', 0, 0, 0, CL + 14, 0.12, CW + 12, '#2a2e34');
   A('box', 'court', 0, 0.06, 0, CL + 4, 0.12, CW + 4, team);
   A('box', 'court', 0, 0.08, 0, CL, 0.12, CW, '#d8a868');
-  A('box', 'plaster', 0, 0.21, CW / 2, CL, 0.02, lw, line);
-  A('box', 'plaster', 0, 0.21, -CW / 2, CL, 0.02, lw, line);
-  for (const s of [-1, 1]) A('box', 'plaster', s * CL / 2, 0.21, 0, lw, 0.02, CW, line);
-  A('box', 'plaster', 0, 0.21, 0, lw, 0.02, CW, line);
-  A('ring', 'plaster', 0, 0.22, 0, 3.66, 1, 3.66, line);
+  A('box', 'paint', 0, ly, CW / 2, CL + lw, 0.015, lw, line);
+  A('box', 'paint', 0, ly, -CW / 2, CL + lw, 0.015, lw, line);
+  for (const s of [-1, 1]) A('box', 'paint', s * CL / 2, ly, 0, lw, 0.015, CW + lw, line);
+  A('box', 'paint', 0, ly, 0, lw, 0.015, CW, line);
   A('cyl', 'court', 0, 0.2, 0, 3.5, 0.03, 3.5, team);
+  paintArc(A, 0, 0, 1.83, 0, Math.PI * 2, ly, lw, line);
   for (const s of [-1, 1]) {
     const hoop = s * (CL / 2 - 1.6);
+    const toward = s > 0 ? Math.PI : 0;
     // painted key 4.88 wide, 5.79 deep, free-throw circle, restricted arc, three-point line
     A('box', 'court', s * (CL / 2 - 2.895), 0.2, 0, 5.79, 0.03, 4.88, team);
-    for (const t of [-1, 1]) A('box', 'plaster', s * (CL / 2 - 2.895), 0.21, t * 2.44, 5.79, 0.02, lw, line);
-    A('box', 'plaster', s * (CL / 2 - 5.79), 0.21, 0, lw, 0.02, 4.88, line);
-    A('ring', 'plaster', s * (CL / 2 - 5.79), 0.22, 0, 3.66, 1, 3.66, line);
-    A('dArc', 'plaster', hoop, 0.22, 0, 2.44, 1, 2.44, line, s > 0 ? Math.PI : 0);
-    A('threeArc', 'plaster', hoop, 0.22, 0, 14.48, 1, 14.48, line, s > 0 ? Math.PI : 0);
-    for (const t of [-1, 1]) A('box', 'plaster', s * (CL / 2 - 1.5), 0.21, t * 6.71, 3, 0.02, lw, line);
+    for (const t of [-1, 1]) A('box', 'paint', s * (CL / 2 - 2.895), ly, t * 2.44, 5.79, 0.015, lw, line);
+    A('box', 'paint', s * (CL / 2 - 5.79), ly, 0, lw, 0.015, 4.88 + lw, line);
+    paintArc(A, s * (CL / 2 - 5.79), 0, 1.83, 0, Math.PI * 2, ly, lw, line);
+    paintArc(A, hoop, 0, 1.22, toward - Math.PI / 2, toward + Math.PI / 2, ly, lw, line);
+    paintArc(A, hoop, 0, 7.24, toward - 1.187, toward + 1.187, ly, lw, line);
+    for (const t of [-1, 1]) A('box', 'paint', s * (CL / 2 - 1.5), ly, t * 6.71, 3, 0.015, lw, line);
+    // hash marks along the key
+    for (const t of [-1, 1]) for (const d of [2.1, 3.0, 3.9]) A('box', 'paint', s * (CL / 2 - d), ly, t * (2.44 + 0.2), lw, 0.015, 0.4, line);
     // the basket: padded stanchion, arm, glass backboard with a red frame, rim, net, shot clock
     const bx = s * (CL / 2 + 1.8);
     A('box', 'cloth', bx, 0, 0, 1.6, 1.4, 1.4, '#16181c');

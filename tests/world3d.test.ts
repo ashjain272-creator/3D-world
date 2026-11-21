@@ -283,12 +283,18 @@ describe('futuristic districts', () => {
       if (stadium) {
         const ps = inV(stadium);
         expect(ps.filter((p) => p.mat === 'crowd').length).toBeGreaterThan(100);
-        expect(ps.some((p) => p.shape === 'dArc')).toBe(true);
+        // markings: painted lines and arcs, raised above the mowing stripes
+        const paint = ps.filter((p) => p.mat === 'paint');
+        expect(paint.length).toBeGreaterThan(150);
+        for (const p of paint) expect(p.m.elements[13]).toBeGreaterThan(0.16);
         expect(ps.filter((p) => p.mat === 'net').length).toBe(2);
       }
       const pa = inV(arena!);
       expect(pa.filter((p) => p.mat === 'crowd').length).toBeGreaterThan(100);
-      expect(pa.filter((p) => p.shape === 'threeArc').length).toBe(2);
+      // court lines lie above the painted keys (tops at 0.23)
+      const courtPaint = pa.filter((p) => p.mat === 'paint');
+      expect(courtPaint.length).toBeGreaterThan(80);
+      for (const p of courtPaint) expect(p.m.elements[13]).toBeGreaterThan(0.23);
       expect(pa.filter((p) => p.mat === 'court').length).toBeGreaterThan(4);
     }
   });

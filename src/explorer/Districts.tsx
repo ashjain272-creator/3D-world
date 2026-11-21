@@ -186,6 +186,9 @@ export function Districts({ data, quality }: { data: DistrictData; quality: Qual
       glow: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }),
       dark: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9 }),
       crowd: crowdMaterial(),
+      // pitch and court markings: unshaded so they stay crisp white in shade and at night, drawn
+      // in front of the surface they lie on
+      paint: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
       // the pitch and the court are floodlit after dark
       pitch: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, emissive: new THREE.Color('#3f8a36'), emissiveIntensity: 0 }),
       court: texturedMaterial('wood', { color: '#ffffff', roughness: 0.35, emissive: new THREE.Color('#8a6038'), emissiveIntensity: 0.2 }),

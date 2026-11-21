@@ -530,6 +530,18 @@ Requested: "Make a basketball NBA sized stadium, make a football Premier League 
 - **Cost.** In the futuristic capital at medium, draw calls went from 415 to 513 per frame. Triangles are 1.09M per frame. The stadium is 1 937 instanced pieces and the arena 1 437. Frame time was not measured cleanly: the run overlapped the test suite.
 - **Not done:** the arena has a single collider for its whole footprint, so the player cannot walk inside; the interior photos use the free photo camera. The browser journey was not re-run.
 
+**Follow-up: visible markings.** Requested: "make the game lines more visible, I can barely see them".
+- **Cause.** The pitch lines sat 1 cm below the tops of the mowing-stripe boxes, so they were hidden. The court lines shared a height with the painted keys and flickered against them. Both sets were also thin (12 cm and 8 cm) and lit like the ground, so they faded in shade and with distance.
+- **Fix.**
+  - Every marking is now drawn in unshaded white paint, pushed in front of its surface.
+  - Pitch lines are 30 cm wide at 18 cm height, above the stripes.
+  - Court lines are 15 cm wide at 24.5 cm height, above the keys and centre disc.
+  - Arcs (centre circles, the Ds, corner arcs, free-throw circles, restricted and three-point arcs) are built from short segments of the same width. Before, scaled ring geometry thinned out on the large circles.
+  - The court gained hash marks along the keys.
+- **Checks.**
+  - Tests now assert that every pitch marking is above 0.16 m and every court marking above 0.23 m.
+  - The stadium and court photos in `docs/screenshots/venues/` were re-shot.
+
 ## Limitations and unfinished items
 
 - **Frame-rate targets unproven** (55 fps at 5× in Universe; 60 fps with ≥ 150 figures on medium): no GPU in this environment. Measured relative to the baseline under software rendering, the current build is 2–3× slower at medium (see Phase 4).

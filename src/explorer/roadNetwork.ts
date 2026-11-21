@@ -55,6 +55,7 @@ function finishRoad(kind: RoadKind, raw: THREE.Vector3[], width: number, lanes: 
 
 export function generateHighways(layout: Layout, t: TerrainData): HighwayData | null {
   if (layout.style !== 'futuristic' || layout.radius <= 0) return null;
+  if (layout.features) return corridorHighways(layout, t);
   const y0 = t.flatHeight;
   const R = layout.radius;
   const roads: Road[] = [];
@@ -144,6 +145,100 @@ export function generateHighways(layout: Layout, t: TerrainData): HighwayData | 
       if (Math.hypot(p.x, p.z) < 34) continue;
       if (layout.landmarks.some((l) => Math.hypot(l.x - p.x, l.z - p.z) < l.radius + 3)) continue;
       // decks span parks and villa gardens without standing in them
+      if (layout.buildings.some((b) => (b.kind === 'park' || b.kind === 'stadium' || b.kind === 'arena' || b.plot) && Math.abs(p.x - (b.plot?.x ?? b.x)) < (b.plot?.w ?? b.w) / 2 && Math.abs(p.z - (b.plot?.z ?? b.z)) < (b.plot?.d ?? b.d) / 2)) continue;
+      const q = r.pts[i - 1];
+      const ang = Math.atan2(p.x - q.x, p.z - q.z);
+      pillars.push({ x: p.x, z: p.z, h, y: ground, w: r.width, ang });
+      colliders.push({ type: 'circle', x: p.x, z: p.z, hw: 1.2, hd: 0, top: ground + h });
+    }
+  }
+  const sampler = deckSampler(roads);
+  return { roads, pillars, colliders, surface: sampler.surface, blocked: sampler.blocked };
+}
+
+/**
+ * Highways of a coastal corridor city (see layout `futuristic`): the spine expressway along the
+ * coast on pillars over its ground boulevard and the metro, a second expressway inland over the
+ * canal, connectors crossing above the spine at a third level, ramps down to the countryside at
+ * the ends, and ground boulevards (coastal road, spine, arterial) with traffic.
+ */
+function corridorHighways(layout: Layout, t: TerrainData): HighwayData {
+  const f = layout.features!;
+  const y0 = t.flatHeight;
+  const R = layout.radius;
+  const chord = (z: number) => Math.sqrt(Math.max(0, R * R - z * z));
+  const roads: Road[] = [];
+  const inWorld = (x: number, z: number) => Math.abs(x) < t.size * 0.47 && Math.abs(z) < t.size * 0.47;
+  const level = (x: number, z: number, h: number) => Math.max(y0 + h, t.height(x, z) + h * 0.6);
+  // a straight elevated road along x with ramps down to the ground at both ends
+  const alongX = (z: number, h: number, half: number, width: number, lanes: number) => {
+    const pts: THREE.Vector3[] = [];
+    for (let x = -half; x <= half + 0.01; x += 8) pts.push(new THREE.Vector3(x, level(x, z, h), z));
+    roads.push(finishRoad('express', pts, width, lanes, false, true));
+    for (const s of [-1, 1]) {
+      const ramp: THREE.Vector3[] = [];
+      for (let d = 0; d <= 96; d += 8) {
+        const x = s * (half + d);
+        if (!inWorld(x, z)) break;
+        const k = d / 96;
+        ramp.push(new THREE.Vector3(x, level(s * half, z, h) * (1 - k) + (t.height(x, z) + 0.3) * k, z));
+      }
+      if (ramp.length > 3) roads.push(finishRoad('ramp', s > 0 ? ramp : ramp, width - 4, 1, false, true));
+    }
+  };
+  alongX(f.spineZ, 13, chord(f.spineZ) + 30, 15, 3);
+  const inlandZ = f.arterialZ - 36;
+  alongX(inlandZ, 10, chord(inlandZ) + 24, 13, 2);
+  // connectors from the coastal belt over the spine (a third level) down into the inland band
+  const venues = layout.buildings.filter((b) => b.kind === 'stadium' || b.kind === 'arena');
+  const za = f.coastRoadZ + 20;
+  const zb = inlandZ - 14;
+  const clear = (x: number) =>
+    layout.landmarks.every((l) => Math.abs(l.x - x) > l.radius + 10 || l.z < za || l.z > zb) &&
+    venues.every((v) => Math.abs(v.x - x) > v.w / 2 + 8 || v.z - v.d / 2 > zb || v.z + v.d / 2 < za) &&
+    f.lakes.every((l) => Math.abs(l.x - x) > l.rx + 8 || l.z + l.rz < za || l.z - l.rz > zb) &&
+    (!f.downtown || x < f.downtown.x0 - 4 || x > f.downtown.x1 + 4);
+  const candidates = f.downtown ? [f.downtown.x0 - 36, f.downtown.x1 + 36, f.downtown.x0 - 72, f.downtown.x1 + 72] : [-72, 72, -108, 108];
+  const chosen: number[] = [];
+  for (const x of candidates) if (chosen.length < 2 && clear(x) && chosen.every((c) => Math.abs(c - x) > 60) && Math.abs(x) < chord(f.spineZ) - 30) chosen.push(x);
+  for (const x of chosen) {
+    const pts: THREE.Vector3[] = [];
+    const up0 = za;
+    const up1 = f.spineZ - 30;
+    const dn0 = f.spineZ + 30;
+    const dn1 = zb;
+    for (let z = za; z <= zb + 0.01; z += 8) {
+      const ground = t.height(x, z) + 0.3;
+      let k = 1;
+      if (z < up1) k = (z - up0) / (up1 - up0);
+      else if (z > dn0) k = 1 - (z - dn0) / (dn1 - dn0);
+      k = Math.max(0, Math.min(1, k));
+      const e = k * k * (3 - 2 * k);
+      pts.push(new THREE.Vector3(x, ground * (1 - e) + (y0 + 20) * e, z));
+    }
+    roads.push(finishRoad('express', pts, 13, 2, false, true));
+  }
+  // ground boulevards with traffic
+  for (const z of [f.coastRoadZ, f.spineZ, f.arterialZ]) {
+    const half = chord(z) - 8;
+    if (half < 40) continue;
+    roads.push(finishRoad('street', [new THREE.Vector3(-half, y0 + 0.08, z), new THREE.Vector3(half, y0 + 0.08, z)], 12, 1, false, false));
+  }
+  // pillars every ~24 m, kept off parks, gardens, venues, lakes and landmarks
+  const pillars: HighwayData['pillars'] = [];
+  const colliders: Collider[] = [];
+  for (const r of roads) {
+    if (!r.elevated) continue;
+    let next = 10;
+    for (let i = 1; i < r.pts.length; i++) {
+      if (r.dist[i] < next) continue;
+      next = r.dist[i] + (r.kind === 'ramp' ? 18 : 24);
+      const p = r.pts[i];
+      const ground = t.height(p.x, p.z);
+      const h = p.y - 1.4 - ground;
+      if (h < 2.5) continue;
+      if (layout.landmarks.some((l) => Math.hypot(l.x - p.x, l.z - p.z) < l.radius + 3)) continue;
+      if (f.lakes.some((l) => ((p.x - l.x) / (l.rx + 2)) ** 2 + ((p.z - l.z) / (l.rz + 2)) ** 2 < 1)) continue;
       if (layout.buildings.some((b) => (b.kind === 'park' || b.kind === 'stadium' || b.kind === 'arena' || b.plot) && Math.abs(p.x - (b.plot?.x ?? b.x)) < (b.plot?.w ?? b.w) / 2 && Math.abs(p.z - (b.plot?.z ?? b.z)) < (b.plot?.d ?? b.d) / 2)) continue;
       const q = r.pts[i - 1];
       const ang = Math.atan2(p.x - q.x, p.z - q.z);

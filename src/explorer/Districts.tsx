@@ -212,7 +212,8 @@ function windowGlass(): THREE.MeshStandardMaterial {
 }
 
 /** Mansions, souk, mall, mosque, temple and boulevard palms of a futuristic city. */
-export function Districts({ data, quality }: { data: DistrictData; quality: Quality }) {
+export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quality: Quality; y0?: number }) {
+  const seaY = y0 - 0.85;
   const shadows = quality === 'high';
   const mats = useMemo<Record<DMat, THREE.Material>>(
     () => ({
@@ -283,6 +284,12 @@ export function Districts({ data, quality }: { data: DistrictData; quality: Qual
   }, [data, mats, shadows, quality]);
   return (
     <group>
+      {data.sea !== undefined && (
+        // the sea: one large plane from the shoreline out past the horizon
+        <mesh material={mats.water} position={[0, seaY, data.sea - 1500]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[6000, 3000]} />
+        </mesh>
+      )}
       {groups.map((g) => (
         <TiledInstances key={g.k} items={g.items} levels={g.levels} tileSize={240} name={`district-${g.k}`} />
       ))}

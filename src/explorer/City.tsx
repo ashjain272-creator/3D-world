@@ -616,7 +616,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       ))}
       <LightPools lights={layout.lights} y={y0} style={layout.style} />
       {quality !== 'low' && <Smoke sources={groups.smoke} perSource={18} />}
-      {districts.pieces.length > 0 && <Districts data={districts} quality={quality} />}
+      {districts.pieces.length > 0 && <Districts data={districts} quality={quality} y0={y0} />}
       <Instanced items={groups.signs} geometry={unitBox} material={mats.sign} />
       {layout.style === 'futuristic' && <SkyTraffic streets={layout.streets} y={y0} quality={quality} civColor={civColor} />}
       <ContactShadows buildings={layout.buildings} y={y0} />

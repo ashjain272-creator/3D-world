@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { generateLayout, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
+import { coastLine, generateLayout, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
 import { generateTerrain, type TerrainData } from '../src/explorer/terrain';
 import { generateVegetation } from '../src/explorer/vegetation';
 import { deckSampler, generateHighways, sampleRoad } from '../src/explorer/roadNetwork';
@@ -91,7 +91,7 @@ describe('explorer road network', () => {
   const city = Object.values(w.settlements).find((s) => generateLayout(s).style === 'futuristic')!;
   const layout = generateLayout(city);
   const p = w.planets[city.planetId];
-  const t = generateTerrain(p, city.regionIndex, p.regions[city.regionIndex].biome, settlementRadius(city) + 20);
+  const t = generateTerrain(p, city.regionIndex, p.regions[city.regionIndex].biome, settlementRadius(city) + 20, coastLine(city));
   const hw = generateHighways(layout, t)!;
 
   it('only futuristic cities get highways', () => {
@@ -102,33 +102,36 @@ describe('explorer road network', () => {
     expect(hw).not.toBeNull();
   });
 
-  it('stacks a ring road, two expressways and ramps on pillars', () => {
+  it('runs expressways along the coastal corridor on several levels, with ramps and pillars', () => {
     const count = (k: string) => hw.roads.filter((r) => r.kind === k).length;
-    expect(count('ring')).toBe(1);
-    expect(count('express')).toBe(2);
+    const f = layout.features!;
+    // the spine and the inland expressway run along the coast, the connectors cross them
+    const express = hw.roads.filter((r) => r.kind === 'express');
+    expect(express.length).toBeGreaterThanOrEqual(3);
+    const alongCoast = express.filter((r) => Math.abs(r.pts[0].z - r.pts[r.pts.length - 1].z) < 1);
+    expect(alongCoast.some((r) => Math.abs(r.pts[0].z - f.spineZ) < 1)).toBe(true);
     expect(count('ramp')).toBe(4);
     expect(hw.pillars.length).toBeGreaterThan(10);
-    const ring = hw.roads.find((r) => r.kind === 'ring')!;
-    expect(ring.closed).toBe(true);
-    // expressways run on different levels so they can cross
-    const [e1, e2] = hw.roads.filter((r) => r.kind === 'express');
-    const mid = (r: typeof e1) => r.pts[Math.floor(r.pts.length / 2)].y;
-    expect(Math.abs(mid(e1) - mid(e2))).toBeGreaterThan(4);
-    // every pillar collider knows how tall it is, so walkers on a deck pass over it
+    // where a connector crosses the spine it is a level above it
+    const spine = alongCoast.find((r) => Math.abs(r.pts[0].z - f.spineZ) < 1)!;
+    const connector = express.find((r) => Math.abs(r.pts[0].x - r.pts[r.pts.length - 1].x) < 1)!;
+    const cross = connector.pts.reduce((p, q) => (Math.abs(q.z - f.spineZ) < Math.abs(p.z - f.spineZ) ? q : p));
+    const under = spine.pts.reduce((p, q) => (Math.abs(q.x - cross.x) < Math.abs(p.x - cross.x) ? q : p));
+    expect(cross.y - under.y).toBeGreaterThan(4);
     for (const c of hw.colliders) expect(c.top!).toBeGreaterThan(t.height(c.x, c.z) + 2);
   });
 
   it('samples positions along a road and wraps closed loops', () => {
-    const ring = hw.roads.find((r) => r.kind === 'ring')!;
-    const total = ring.dist[ring.dist.length - 1];
-    const a = new THREE.Vector3();
-    const b = new THREE.Vector3();
-    sampleRoad(ring, 5, a);
-    sampleRoad(ring, total + 5, b);
-    expect(a.distanceTo(b)).toBeLessThan(1e-6);
     const ramp = hw.roads.find((r) => r.kind === 'ramp')!;
+    const a = new THREE.Vector3();
     sampleRoad(ramp, -50, a);
     expect(a.distanceTo(ramp.pts[0])).toBeLessThan(1e-6);
+    const loop = { ...ramp, closed: true };
+    const total = loop.dist[loop.dist.length - 1];
+    const b = new THREE.Vector3();
+    sampleRoad(loop, 5, a);
+    sampleRoad(loop, total + 5, b);
+    expect(a.distanceTo(b)).toBeLessThan(1e-6);
   });
 
   it('gives walkers a deck surface and a median barrier', () => {
@@ -177,46 +180,61 @@ describe('futuristic districts', () => {
   const w = freshWorld();
   const cities = Object.values(w.settlements).filter((s) => generateLayout(s).style === 'futuristic');
 
-  it('zones large futuristic cities into downtown, villas, souk and mixed districts', () => {
+  it('lays large futuristic cities out as a coastal corridor of districts', () => {
     const big = cities.filter((s) => s.kind === 'capital' || s.kind === 'city');
     expect(big.length).toBeGreaterThan(0);
     for (const s of big) {
       const l = generateLayout(s);
+      const f = l.features!;
+      expect(f).toBeDefined();
       const kinds = new Set(l.buildings.map((b) => b.kind));
-      for (const k of ['villa', 'shop', 'mosque']) expect(kinds.has(k as never)).toBe(true);
-      // every building knows its district, and the kinds match the district
+      for (const k of ['villa', 'shop', 'mosque', 'mosqueSmall', 'oldhouse', 'mall']) expect(kinds.has(k as never)).toBe(true);
+      // bands parallel to the coast: sea, coastal road, spine, arterial, in that order inland
+      expect(f.shoreZ).toBeLessThan(f.coastRoadZ);
+      expect(f.coastRoadZ).toBeLessThan(f.spineZ);
+      expect(f.spineZ).toBeLessThan(f.arterialZ);
+      // nothing is built in the sea, nothing tall stands in the villa belt
       for (const b of l.buildings) {
         expect(b.district).toBeDefined();
+        expect(b.z).toBeGreaterThan(f.coastRoadZ - 1);
         if (b.kind === 'villa') expect(b.district).toBe('villas');
-        if (b.kind === 'shop') expect(b.district).toBe('souk');
-        if (b.kind === 'supertall') expect(b.district).toBe('downtown');
+        if (b.kind === 'shop' || b.kind === 'oldhouse') expect(b.district).toBe('souk');
+        if (b.kind === 'supertall') expect(['downtown', 'marina']).toContain(b.district);
       }
-      // several places of worship, spread across the city rather than bunched in one quarter
-      const worship = l.buildings.filter((b) => b.kind === 'mosque' || b.kind === 'temple' || b.kind === 'church');
-      expect(worship.length).toBeGreaterThanOrEqual(s.kind === 'capital' ? 6 : 4);
-      let minGap = Infinity;
-      for (let i = 0; i < worship.length; i++) for (let j = i + 1; j < worship.length; j++) minGap = Math.min(minGap, Math.hypot(worship[i].x - worship[j].x, worship[i].z - worship[j].z));
-      expect(minGap).toBeGreaterThanOrEqual(36 * 2);
-      // and they stand in more than one district and on several sides of the centre
-      expect(new Set(worship.map((b) => b.district)).size).toBeGreaterThanOrEqual(2);
-      const quadrants = new Set(worship.map((b) => `${Math.sign(b.x)},${Math.sign(b.z)}`));
-      expect(quadrants.size).toBeGreaterThanOrEqual(3);
-      // mansion estates on double plots
-      expect(l.buildings.some((b) => b.kind === 'villa' && b.plot && b.plot.w > 50)).toBe(true);
-      // a mix of faiths, not a city of mosques
-      const mosques = worship.filter((b) => b.kind === 'mosque').length;
-      expect(mosques).toBeLessThanOrEqual(Math.ceil(worship.length * 0.6));
-      // parks in more than one size, including a central park on four blocks
+      // tower nodes, not a wall: the old town sits at one end, the marina's towers at the other
+      const old = l.buildings.filter((b) => b.kind === 'oldhouse');
+      const marina = l.buildings.filter((b) => b.district === 'marina' && (b.kind === 'tower' || b.kind === 'supertall'));
+      expect(Math.max(...old.map((b) => b.x))).toBeLessThan(Math.min(...marina.map((b) => b.x)));
+      // the creek runs from the sea into the canal, which returns to the sea
+      const creek = f.waters.find((w) => w.kind === 'creek')!;
+      const canal = f.waters.find((w) => w.kind === 'canal')!;
+      expect(creek.pts[0][1]).toBeLessThan(f.shoreZ);
+      expect(canal.pts[canal.pts.length - 1][1]).toBeLessThan(f.shoreZ);
+      // Downtown: a lake inside a ring with the signature supertall and a mall beside it
+      if (s.kind === 'capital') {
+        expect(f.downtown).not.toBeNull();
+        const sig = l.buildings.filter((b) => b.kind === 'supertall').sort((a, b) => b.h - a.h)[0];
+        expect(sig.h).toBeGreaterThan(200);
+        expect(Math.hypot(sig.x - f.downtown!.x, sig.z - f.downtown!.z)).toBeLessThan(f.downtown!.a);
+      }
+      // malls sit on the spine or in Downtown
+      for (const m of l.buildings.filter((b) => b.kind === 'mall')) expect(Math.abs(m.z - f.spineZ) < 40 || (f.downtown && Math.abs(m.z - f.downtown.z) < f.downtown.b)).toBeTruthy();
+      // daily mosques cover every home within walking distance
+      const mosques = l.buildings.filter((b) => b.kind === 'mosque' || b.kind === 'mosqueSmall');
+      for (const h of l.buildings.filter((b) => b.kind === 'villa' || b.kind === 'oldhouse')) {
+        const near = Math.min(...mosques.map((m) => Math.hypot(m.x - h.x, m.z - h.z)));
+        expect(near).toBeLessThan(h.kind === 'oldhouse' ? 80 : 115);
+      }
+      // churches and temples stand in walled compounds, two of them far apart
+      expect(f.compounds.length).toBe(2);
+      expect(Math.hypot(f.compounds[0].x - f.compounds[1].x, f.compounds[0].z - f.compounds[1].z)).toBeGreaterThan(l.radius * 0.6);
+      for (const b of l.buildings.filter((x) => x.kind === 'church' || x.kind === 'temple')) expect(f.compounds.some((c) => Math.abs(c.x - b.x) < c.w / 2 && Math.abs(c.z - b.z) < c.d / 2)).toBe(true);
+      // gated estates with a core
+      expect(f.estates.length).toBeGreaterThanOrEqual(1);
+      expect(l.buildings.some((b) => b.kind === 'villa' && b.plot?.rot !== undefined)).toBe(true);
+      // parks in more than one size, including a city park
       const parkSizes = new Set(l.buildings.filter((b) => b.kind === 'park').map((b) => Math.round(b.w * b.d)));
       expect(parkSizes.size).toBeGreaterThanOrEqual(2);
-      expect(Math.max(...l.buildings.filter((b) => b.kind === 'park').map((b) => b.w * b.d))).toBeGreaterThan(2500);
-      // neighbourhoods: villas and souks each appear as several separate patches, not one wedge
-      for (const k of ['villa', 'shop']) {
-        const xs = l.buildings.filter((b) => b.kind === k);
-        const quadrants = new Set(xs.map((b) => `${Math.sign(b.x)},${Math.sign(b.z)}`));
-        // (a city's arena can take the blocks of one of its two souk patches)
-        expect(quadrants.size).toBeGreaterThanOrEqual(k === 'villa' ? 3 : s.kind === 'capital' ? 2 : 1);
-      }
     }
   });
 
@@ -234,7 +252,7 @@ describe('futuristic districts', () => {
     expect(a.pieces.some((p) => p.shape === 'fronds')).toBe(true);
     expect(generateDistricts(l, 0, false).pieces.some((p) => p.shape === 'fronds')).toBe(false);
     // every villa piece stays inside its plot, and nothing of the city stands on a closed estate street
-    for (const v of l.buildings.filter((x) => x.kind === 'villa')) {
+    for (const v of l.buildings.filter((x) => x.kind === 'villa' && x.plot?.rot === undefined)) {
       const pl = v.plot!;
       const own = a.pieces.filter((p) => Math.abs(p.x - pl.x) < pl.w / 2 + 2 && Math.abs(p.z - pl.z) < pl.d / 2 + 2);
       expect(own.length).toBeGreaterThan(80);

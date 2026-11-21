@@ -204,7 +204,7 @@ function GroundCover({ t, layout, data, quality }: { t: TerrainData; layout: Lay
         const dx = x - camera.position.x;
         const dz = z - camera.position.z;
         if (dx * dx + dz * dz > R * R) continue;
-        if (layout.radius > 0 && x * x + z * z < (layout.radius + 4) ** 2) continue;
+        if ((layout.radius > 0 && x * x + z * z < (layout.radius + 4) ** 2) || (t.coastZ !== undefined && z < t.coastZ + 4)) continue;
         const patch = noise(x / 22, z / 22) * 0.6 + noise(x / 7 + 40, z / 7) * 0.4;
         const density = dry ? patch - 0.1 : kind === 'sparse' ? patch + 0.05 - snow * 0.4 : patch + 0.75;
         if (r1 * 1.3 > density + 0.35) continue;

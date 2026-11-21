@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Building, Layout } from './layout';
 import { footballStadium, nbaArena } from './venues';
+import { cityFeatures, mosqueSmall, oldHouse } from './cityFeatures';
 
 /**
  * Architecture for the special districts of futuristic cities: mansions in five
@@ -24,6 +25,8 @@ export interface DPiece {
 
 export interface DistrictData {
   pieces: DPiece[];
+  /** Coastal cities: the sea covers everything at z below this, drawn as one large plane. */
+  sea?: number;
   /** Pool and fountain surfaces (lit from below at night). */
   lights: [number, number][];
 }
@@ -41,7 +44,7 @@ const q = new THREE.Quaternion();
 const e = new THREE.Euler();
 
 /** Deterministic per-building random numbers. */
-function hashRand(seed: number) {
+export function hashRand(seed: number) {
   return (k: number) => {
     const v = Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453;
     return v - Math.floor(v);
@@ -81,8 +84,15 @@ export function generateDistricts(layout: Layout, y0: number, warm: boolean): Di
       case 'arena':
         nbaArena(frame(out, b.x, b.z, y0, b.door).add, b);
         break;
+      case 'oldhouse':
+        oldHouse(out, b, y0);
+        break;
+      case 'mosqueSmall':
+        mosqueSmall(out, b, y0, warm);
+        break;
     }
   }
+  if (layout.features) cityFeatures(out, layout, y0, warm);
   if (warm) boulevardPalms(out, layout, y0);
   return out;
 }
@@ -91,7 +101,7 @@ export function generateDistricts(layout: Layout, y0: number, warm: boolean): Di
  * A local frame for a building: +lz points from the building towards its street
  * (where the door is), +lx to the right when facing the street.
  */
-function frame(out: DistrictData, ox: number, oz: number, y0: number, toward: [number, number]) {
+export function frame(out: DistrictData, ox: number, oz: number, y0: number, toward: [number, number]) {
   const ry = Math.atan2(toward[0] - ox, toward[1] - oz);
   const cos = Math.cos(ry);
   const sin = Math.sin(ry);
@@ -108,9 +118,9 @@ function frame(out: DistrictData, ox: number, oz: number, y0: number, toward: [n
   return { add, wx, wz, ry };
 }
 
-type Add = ReturnType<typeof frame>['add'];
+export type Add = ReturnType<typeof frame>['add'];
 
-function palm(add: Add, lx: number, lz: number, h: number, r: (k: number) => number, k: number, y = 0) {
+export function palm(add: Add, lx: number, lz: number, h: number, r: (k: number) => number, k: number, y = 0) {
   add('palmTrunk', 'bark', lx, y, lz, 2.2, h, 2.2, new THREE.Color('#8a7256').offsetHSL(0, 0, (r(k) - 0.5) * 0.1), r(k + 1) * 6);
   // the trunk leans along its local +x by about 0.18 per unit height squared
   const lean = 0.18 * 2.2;
@@ -119,7 +129,7 @@ function palm(add: Add, lx: number, lz: number, h: number, r: (k: number) => num
 }
 
 /** Arched opening: a dark recess with a semicircular head, flush with a wall facing +lz. */
-function archWindow(add: Add, lx: number, ly: number, lz: number, w: number, h: number, mat: DMat = 'glass', color = '#6f8ea6', rot = 0) {
+export function archWindow(add: Add, lx: number, ly: number, lz: number, w: number, h: number, mat: DMat = 'glass', color = '#6f8ea6', rot = 0) {
   add('box', mat, lx, ly, lz, w, h - w / 2, 0.12, color, rot);
   add('arch', mat, lx, ly + h - w / 2, lz, w, w / 2, 0.12, color, rot);
 }
@@ -193,7 +203,7 @@ function merlons(add: Add, x: number, y: number, z: number, len: number, rot: nu
   }
 }
 
-function roundTree(add: Add, x: number, z: number, h: number, col: string, r: (k: number) => number, k: number) {
+export function roundTree(add: Add, x: number, z: number, h: number, col: string, r: (k: number) => number, k: number) {
   add('cyl', 'bark', x, 0, z, 0.35, h * 0.5, 0.35, '#6a5240');
   const s = h * (0.55 + r(k) * 0.2);
   add('sphere', 'leaf', x, h * 0.55 + s * 0.35, z, s, s * 0.85, s, new THREE.Color(col).offsetHSL((r(k + 1) - 0.5) * 0.03, 0, (r(k + 2) - 0.5) * 0.08));
@@ -212,7 +222,7 @@ function flowerBed(add: Add, x: number, z: number, len: number, rot: number, r: 
   }
 }
 
-function lounger(add: Add, x: number, z: number, rot: number) {
+export function lounger(add: Add, x: number, z: number, rot: number) {
   add('box', 'wood', x, 0.25, z, 0.75, 0.12, 1.9, '#b08a62', rot);
   add('box', 'cloth', x, 0.37, z, 0.7, 0.08, 1.8, '#f4f2ee', rot);
 }
@@ -249,8 +259,10 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
   // the plot frame faces the street, so local x runs along the frontage
   const cos = Math.cos(plot.ry);
   const sin = Math.sin(plot.ry);
-  const along = Math.abs(sin) > 0.5 ? plotRect.d : plotRect.w;
-  const deep = Math.abs(sin) > 0.5 ? plotRect.w : plotRect.d;
+  // a plot laid out along a curving estate road carries its own rotation and is sized in its frame
+  const local = b.plot?.rot !== undefined;
+  const along = local ? plotRect.w : Math.abs(sin) > 0.5 ? plotRect.d : plotRect.w;
+  const deep = local ? plotRect.d : Math.abs(sin) > 0.5 ? plotRect.w : plotRect.d;
   const PW = along / 2;
   const PD = deep / 2;
   const hx = (b.x - plotRect.x) * cos - (b.z - plotRect.z) * sin;
@@ -696,7 +708,7 @@ function villa(out: DistrictData, b: Building, y0: number, warm: boolean) {
 }
 
 /** Round fountain: basin, water, a central column, and on grand ones an upper bowl. */
-function fountain(add: Add, lx: number, lz: number, d: number, tiered = false) {
+export function fountain(add: Add, lx: number, lz: number, d: number, tiered = false) {
   add('cyl', 'marble', lx, 0, lz, d, 0.6, d, '#ece6da');
   add('cyl', 'water', lx, 0.5, lz, d - 0.5, 0.12, d - 0.5, '#4ab8d8');
   add('cyl', 'marble', lx, 0.5, lz, 0.5, tiered ? 1.6 : 1.2, 0.5, '#ece6da');
@@ -795,7 +807,7 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
 
 // ───────────────────────── Places of worship ─────────────────────────
 
-function minaret(add: Add, lx: number, lz: number, h: number, col: THREE.Color) {
+export function minaret(add: Add, lx: number, lz: number, h: number, col: THREE.Color) {
   add('box', 'plaster', lx, 0, lz, 2.6, h * 0.22, 2.6, col);
   add('oct', 'plaster', lx, h * 0.22, lz, 2, h * 0.45, 2, col);
   add('cyl', 'plaster', lx, h * 0.67, lz, 2.9, 0.4, 2.9, col.clone().offsetHSL(0, 0, -0.04));

@@ -550,6 +550,16 @@ Requested: "Make a basketball NBA sized stadium, make a football Premier League 
 - **Masts.** Four masts rise from the stair towers. Each has red beacons, four stay cables to the nearest points of the leading edges, and a back-stay to the ground.
 - **Photos.** `docs/screenshots/venues/stadium-roof.jpg` and `stadium-roof-night.jpg` are new; the stadium exterior, aerial and stands photos were re-shot.
 
+**Follow-up: arena exterior.** Requested: "make the arena look better too". Before, it was a plain drum of identical panels with a flat roof disc and a small canopy.
+- **Concourse.** A glazed concourse ring at street level, 9 m high with mullions, sits under a continuous canopy ring with a lit soffit. Both are built as rings of segments, because a solid disc would cut across the bowl inside.
+- **Upper drum.** It is set back behind 48 leaning white and silver fins that cross in an X pattern over dark glass.
+- **LED ribbon.** A 72-segment media ribbon runs round the drum in team colour, second colour and white.
+- **Roof.** A white rim with a team-colour band, four stepped rings with 24 radial ribs, and a glass lantern with mullions, a white cap and a lit ring.
+- **Ceiling.** Inside, the ceiling gained radial trusses. It is sized to the drum, so it no longer pokes out of the walls.
+- **Entrance.** A projecting glass atrium, 30 m wide and 17 m high with a mullion grid, carries a framed video wall (team-colour screen with lit name bands). In front are a 40 m canopy on slender columns with a lit soffit, broad steps, planters with trees, bollards, a gold statue on a plinth, and banners round the building.
+- **Fit.** The drum still clears the bowl: the outer rows reach about 57.4 m from the centre and the drum is 59.5 m.
+- **Photos.** The arena exterior, roof, entrance, interior and court, plus night exterior and roof, are in `docs/screenshots/venues/`.
+
 ## Limitations and unfinished items
 
 - **Frame-rate targets unproven** (55 fps at 5× in Universe; 60 fps with ≥ 150 figures on medium): no GPU in this environment. Measured relative to the baseline under software rendering, the current build is 2–3× slower at medium (see Phase 4).

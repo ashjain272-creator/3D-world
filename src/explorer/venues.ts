@@ -486,59 +486,115 @@ export function nbaArena(add: Add, b: Building) {
   for (const [u, v, w, d] of [[0, 2.25, 5.8, 0.08], [0, -2.25, 5.8, 0.08], [3.05, 0, 0.08, 4.2], [-3.05, 0, 0.08, 4.2]] as const) A('box', 'glow', u, sy - 2.2, v, w, 1.6, d, '#2a6ad8');
   for (const s of [-1, 1]) for (const t of [-1, 1]) A('cyl', 'metal', s * 3.5, sy + 6, t * 2.6, 0.08, H - sy - 6, 0.08, '#8a8f96');
 
-  // ── the building: a glazed elliptical drum, metal fins, a roof with a glass skylight
-  const segs = 40;
+  // ── the building, in three layers: a glazed concourse ring at street level under a lit
+  // canopy, an upper drum set back behind leaning fins with an LED media ribbon, and a stepped
+  // roof of rings and radial ribs crowned by a glass lantern. The drum clears the bowl, whose
+  // outer rows reach about 57.4 m from the centre.
+  const R1 = Math.min(EW, ED) - 2;
+  const R2 = R1 - 3.5;
   const shellH = H - 4;
-  for (let k = 0; k < segs; k++) {
-    const a0 = (k / segs) * Math.PI * 2;
-    const a1 = ((k + 1) / segs) * Math.PI * 2;
-    const x0 = Math.cos(a0) * EW;
-    const z0 = Math.sin(a0) * ED;
-    const x1 = Math.cos(a1) * EW;
-    const z1 = Math.sin(a1) * ED;
-    const len = Math.hypot(x1 - x0, z1 - z0);
-    // box x along the segment: a turn of theta about y sends x to (cos theta, -sin theta)
-    const ang = Math.atan2(-(z1 - z0), x1 - x0);
-    const mx = (x0 + x1) / 2;
-    const mz = (z0 + z1) / 2;
-    // the main entrance (on +v) is all glass, the rest is glass below and metal panels above
-    const front = Math.sin((a0 + a1) / 2) > 0.85;
-    A('box', 'glass', mx, 0, mz, len + 0.1, front ? shellH : 8, 0.4, '#7aa0b8', ang);
-    if (!front) {
-      A('box', 'metal', mx, 8, mz, len + 0.1, shellH - 8, 0.5, k % 2 ? '#d6dbe2' : '#c6ccd4', ang);
-      A('box', 'glow', mx * 1.004, 13 + (k % 4) * 0.01, mz * 1.004, len + 0.1, 0.6, 0.2, team, ang);
+  const ring = (r: number, n: number, fn: (a: number, x: number, z: number, len: number, ang: number, k: number) => void) => {
+    for (let k = 0; k < n; k++) {
+      const a = ((k + 0.5) / n) * Math.PI * 2;
+      const len = (2 * Math.PI * r) / n;
+      // a box's local x points along (cos t, -sin t) after a turn t; the tangent at a is (-sin a, cos a)
+      fn(a, Math.cos(a) * r, Math.sin(a) * r, len, -a - Math.PI / 2, k);
     }
-    A('box', 'metal', x0 * 1.01, 0, z0 * 1.01, 0.5, shellH + 1.4, 0.9, '#e8ebef', ang);
+  };
+  const isFront = (a: number) => Math.sin(a) > 0.9;
+  // concourse: floor-to-ceiling glass with mullions, a white floor slab above; the glass stops
+  // only where the entrance atrium (30 m wide) stands in front of it
+  ring(R1, 64, (_a, x, z, len, ang, k) => {
+    if (z > 0 && Math.abs(x) < 15) return;
+    A('box', 'glass', x, 0, z, len + 0.05, 9, 0.3, '#7aa0b8', ang);
+    if (k % 2 === 0) A('box', 'metal', x * 1.003, 0, z * 1.003, 0.25, 9, 0.35, '#e8ebef', ang);
+  });
+  // the canopy is a ring of segments (a solid disc would cut across the bowl inside)
+  ring(R1 + 0.5, 64, (_a, x, z, len, ang) => {
+    A('box', 'plaster', x, 9, z, len + 0.1, 0.6, 6, '#f2f4f6', ang);
+    A('box', 'glow', x * 1.02, 8.92, z * 1.02, len + 0.1, 0.08, 3.5, '#fff2dc', ang);
+  });
+  // upper drum: dark glass behind leaning fins
+  ring(R2, 48, (_a, x, z, len, ang, k) => {
+    A('box', 'glass', x, 9.6, z, len + 0.05, shellH - 9.6, 0.3, '#3e566c', ang);
+    A('box', 'plaster', x * 1.012, 9.6, z * 1.012, 0.7, shellH - 9.6, 0.9, k % 2 ? '#f4f6f8' : '#d8dde4', ang, 0, k % 2 ? 0.32 : -0.32);
+  });
+  // LED media ribbon: blocks of team colour, second colour and white chasing round the drum
+  ring(R2 + 0.6, 72, (_a, x, z, len, ang, k) => {
+    const c = k % 6 < 3 ? team : k % 6 < 5 ? team2 : '#ffffff';
+    A('box', 'glow', x, shellH - 5.5, z, len + 0.05, 2.2, 0.12, c, ang);
+  });
+  // roof: a white rim, then stepped rings with radial ribs, then the lantern
+  A('cyl', 'plaster', 0, shellH, 0, R2 * 2 + 3, 1.6, R2 * 2 + 3, '#f2f4f6');
+  A('cyl', 'glow', 0, shellH + 0.5, 0, R2 * 2 + 3.15, 0.4, R2 * 2 + 3.15, team);
+  const steps = [R2 - 1, R2 - 12, R2 - 22, R2 - 31];
+  steps.forEach((r, k) => A('cyl', 'metal', 0, shellH + 1.6 + k * 1.5, 0, r * 2, 1.5, r * 2, k % 2 ? '#e6e9ed' : '#d6dbe1'));
+  for (let k = 0; k < 24; k++) {
+    const a = (k / 24) * Math.PI * 2;
+    for (let st2 = 0; st2 < steps.length - 1; st2++) {
+      const r0 = steps[st2];
+      const r1 = steps[st2 + 1];
+      const rm = (r0 + r1) / 2;
+      // ribs lie on top of each ring, running inwards
+      A('box', 'plaster', Math.cos(a) * rm, shellH + 1.6 + (st2 + 1) * 1.5, Math.sin(a) * rm, r0 - r1, 0.6, 0.6, '#f4f6f8', -a);
+    }
   }
-  // the ceiling seen from the bowl (an elliptical slab), the roof outside with a lit rim and a
-  // raised lantern of glass louvres over the court
+  const lr = steps[steps.length - 1] - 6;
+  A('cyl', 'glass', 0, shellH + 1.6 + steps.length * 1.5, 0, lr * 2, 3.2, lr * 2, '#9ec4d8');
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    A('box', 'plaster', Math.cos(a) * lr, shellH + 1.6 + steps.length * 1.5, Math.sin(a) * lr, 0.4, 3.2, 0.4, '#f4f6f8');
+  }
+  A('cyl', 'plaster', 0, shellH + 4.8 + steps.length * 1.5, 0, lr * 2 + 2, 0.6, lr * 2 + 2, '#f2f4f6');
+  A('cyl', 'glow', 0, shellH + 4.7 + steps.length * 1.5, 0, lr * 2 + 2.1, 0.15, lr * 2 + 2.1, '#ffffff');
+
+  // the ceiling seen from the bowl, with radial trusses, and the catwalks with light rigs
   const cy = H - 4.5;
-  A('cyl', 'metal', 0, cy, 0, EW * 2 - 0.6, 0.6, ED * 2 - 0.6, '#30343c');
-  for (let k = 0; k < 9; k++) A('box', 'metal', -CL / 2 - 10 + k * ((CL + 20) / 8), cy - 1.6, 0, 0.6, 1.6, ED * 1.6, '#4a4e56');
-  A('cyl', 'metal', 0, shellH, 0, EW * 2 + 1.2, 1.2, ED * 2 + 1.2, '#eceff3');
-  A('cyl', 'glow', 0, shellH + 1.2, 0, EW * 2 + 1.4, 0.3, ED * 2 + 1.4, team);
-  A('cyl', 'metal', 0, shellH + 1.2, 0, EW * 1.5, 2, ED * 1.5, '#e2e6eb');
-  A('cyl', 'glass', 0, shellH + 3.2, 0, CL + 14, 3, CW + 14, '#9ec4d8');
-  A('cyl', 'metal', 0, shellH + 6.2, 0, CL + 15, 0.5, CW + 15, '#eceff3');
-  A('cyl', 'glow', 0, shellH + 3.4, 0, CL + 14.3, 0.25, CW + 14.3, '#ffffff');
-  // catwalk and lighting rigs under the ceiling
+  A('cyl', 'metal', 0, cy, 0, R2 * 2 - 1, 0.6, R2 * 2 - 1, '#30343c');
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI;
+    A('box', 'metal', 0, cy - 1.6, 0, R2 * 1.8, 1.6, 0.5, '#4a4e56', a);
+  }
   for (const s of [-1, 1]) {
     A('box', 'metal', 0, cy - 1.2, s * (CW / 2 + 6), CL + 16, 0.3, 1.2, '#5a5e66');
     for (let k = 0; k < 10; k++) A('box', 'glow', -CL / 2 - 6 + k * ((CL + 12) / 9), cy - 1.6, s * (CW / 2 + 6), 0.7, 0.4, 0.7, '#fff6e0');
   }
-  // entrance plaza: canopy, team name sign, statue plinth, banners
-  A('box', 'plaster', 0, 7, ED + 4, 30, 0.5, 8, '#f2f4f6');
-  for (const s of [-1, 1]) A('cyl', 'metal', s * 13, 0, ED + 7.5, 0.6, 7, 0.6, '#d8dce2');
-  A('box', 'glow', 0, 8.2, ED + 7.9, 22, 2.4, 0.3, '#ffffff');
-  A('box', 'glow', 0, 8.6, ED + 8.1, 14, 1.4, 0.2, team);
-  A('box', 'stone', 0, 0, ED + 16, 3, 2, 3, '#8a8f96');
-  A('box', 'gold', 0, 2, ED + 16, 0.9, 2.6, 0.7, '#d8b25a');
-  A('sphere', 'gold', 0, 4.9, ED + 16, 0.9, 0.9, 0.9, '#d8b25a');
-  for (let k = 0; k < 8; k++) {
-    const a = (k / 8) * Math.PI * 2;
-    const px = Math.cos(a) * (EW + 2);
-    const pz = Math.sin(a) * (ED + 2);
-    A('cyl', 'metal', px, 0, pz, 0.2, 14, 0.2, '#c8ccd2');
-    A('box', 'cloth', px, 7, pz, 0.1, 6, 2, k % 2 ? team : team2, a);
+
+  // ── main entrance: a projecting glass atrium with a video wall above, a deep canopy, a plaza
+  const az = R1 - 2;
+  A('box', 'glass', 0, 0, az + 3.5, 30, 17, 7, '#86aec6');
+  for (let k = 0; k <= 10; k++) A('box', 'metal', -15 + k * 3, 0, az + 7.05, 0.25, 17, 0.25, '#e8ebef');
+  for (const y of [5.6, 11.3]) A('box', 'metal', 0, y, az + 7.05, 30, 0.25, 0.25, '#e8ebef');
+  A('box', 'plaster', 0, 17, az + 3.5, 31, 0.6, 7.6, '#f2f4f6');
+  // the video wall: a dark frame, the screen in the club's colours, the team name in light
+  A('box', 'dark', 0, 17.6, az + 4.5, 26, 8.4, 0.8, '#0e1014');
+  A('box', 'glow', 0, 18.1, az + 4.95, 25, 7.4, 0.08, '#14306a');
+  A('box', 'glow', 0, 21.2, az + 5.0, 14, 2.2, 0.06, team);
+  A('box', 'glow', 0, 19.0, az + 5.0, 20, 1.4, 0.06, '#ffffff');
+  A('box', 'glow', -8, 23, az + 5.0, 4, 1.2, 0.06, team2);
+  // canopy over the doors on slender columns, with a lit soffit
+  A('box', 'plaster', 0, 6.5, az + 9, 40, 0.5, 6, '#f4f6f8');
+  A('box', 'glow', 0, 6.4, az + 9, 38, 0.08, 5, '#fff2dc');
+  for (const s of [-1, 1]) for (const d of [-14, -5]) A('cyl', 'metal', s * Math.abs(d), 0, az + 11.5, 0.45, 6.5, 0.45, '#d8dce2');
+  // plaza: broad steps, planters with trees, bollards, a statue, flags
+  for (let k = 0; k < 3; k++) A('box', 'stone', 0, 0, az + 7.3 + k * 0.8, 34 - k * 1.5, 0.45 - k * 0.15, 0.8, '#cfc8bc');
+  for (const s of [-1, 1]) {
+    for (const d of [20, 26]) {
+      A('cyl', 'stone', s * d, 0, az + 6, 3, 0.8, 3, '#b8b0a4');
+      A('cone', 'leaf', s * d, 0.8, az + 6, 2.4, 5, 2.4, '#3a6a34');
+    }
+    for (let k = 0; k < 6; k++) A('cyl', 'metal', s * (4 + k * 2.2), 0, az + 13.2, 0.3, 0.9, 0.3, '#5a5e66');
+  }
+  A('cyl', 'stone', 0, 0, az + 9.5, 3.2, 1.6, 3.2, '#8a8f96');
+  A('box', 'gold', 0, 1.6, az + 9.5, 0.9, 2.6, 0.7, '#d8b25a');
+  A('sphere', 'gold', 0, 4.5, az + 9.5, 0.9, 0.9, 0.9, '#e2a63a');
+  for (let k = 0; k < 10; k++) {
+    const a = ((k + 0.5) / 10) * Math.PI * 2;
+    if (isFront(a)) continue;
+    const px = Math.cos(a) * (R1 + 4);
+    const pz = Math.sin(a) * (R1 + 4);
+    A('cyl', 'metal', px, 0, pz, 0.22, 13, 0.22, '#c8ccd2');
+    A('box', 'cloth', px, 7, pz, 0.1, 5.4, 1.8, k % 2 ? team : team2, -a);
   }
 }
+

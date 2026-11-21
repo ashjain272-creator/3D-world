@@ -41,7 +41,8 @@ function beach(add: Add, f: CityFeatures, R: number, r: (k: number) => number, l
   add('box', 'stone', 0, -0.9, edge - 6, half * 2, 0.3, 12.4, '#d6c49c', 0, -0.09);
   // the beach is split into public stretches and hotel frontages in front of the resorts
   const hotels = layout.buildings.filter((b) => b.kind === 'slab' && b.z < f.coastRoadZ + 36 && b.z > f.coastRoadZ);
-  const z0 = edge + 7;
+  // props stay on the sand, seaward of the coastal road
+  const z0 = edge + 2;
   let k = 0;
   for (let x = -half + 30; x < half - 30; x += 7) {
     const resort = hotels.some((h) => Math.abs(h.x - x) < 26);
@@ -50,7 +51,7 @@ function beach(add: Add, f: CityFeatures, R: number, r: (k: number) => number, l
     if (layout.features!.waters.some((w) => w.pts.some(([px, pz]) => Math.abs(px - x) < w.w && pz < f.coastRoadZ))) continue;
     if (resort) {
       // neat rows of white parasols and loungers in front of the hotel
-      for (const dz of [0, 6]) {
+      for (const dz of [0, Math.min(6, Math.max(0, top - 6 - z0))]) {
         add('cyl', 'metal', x, 0, z0 + dz, 0.08, 2.4, 0.08, '#d8d8d8');
         add('cone', 'cloth', x, 2.2, z0 + dz, 3, 0.6, 3, '#f4f2ea');
         lounger(add, x - 1, z0 + dz + 1.6, 0);
@@ -59,18 +60,18 @@ function beach(add: Add, f: CityFeatures, R: number, r: (k: number) => number, l
     } else if (r(k) < 0.55) {
       // a public beach: bright umbrellas scattered, towels, the odd palm and a lifeguard tower
       const ux = x + (r(k + 1) - 0.5) * 4;
-      const uz = z0 + r(k + 2) * 8;
+      const uz = z0 + r(k + 2) * Math.max(0, top - 4 - z0 - 2);
       add('cyl', 'metal', ux, 0, uz, 0.07, 2.2, 0.07, '#d0d0d0');
       add('cone', 'cloth', ux, 2, uz, 2.6, 0.55, 2.6, ['#e8402e', '#2e8ae8', '#f2b81e', '#3ab85a', '#f4f2ee'][Math.floor(r(k + 3) * 5)]);
       add('box', 'cloth', ux + 1.4, 0.06, uz + 1, 0.9, 0.02, 1.8, ['#e8402e', '#2e8ae8', '#f2b81e', '#c84aa0'][Math.floor(r(k + 4) * 4)]);
     }
     if (pub && Math.floor((x + half) / 7) % 11 === 0) {
-      for (const s of [-1, 1]) for (const t of [-1, 1]) add('box', 'wood', x + s * 0.8, 0, z0 + 10 + t * 0.8, 0.15, 3, 0.15, '#c8a070');
-      add('box', 'wood', x, 3, z0 + 10, 2.2, 0.15, 2.2, '#c8a070');
-      add('box', 'plaster', x, 3.15, z0 + 10, 1.6, 1.4, 1.6, '#f4f4f0');
-      add('box', 'cloth', x, 4.55, z0 + 10, 2.2, 0.15, 2.2, '#e8402e');
+      for (const s of [-1, 1]) for (const t of [-1, 1]) add('box', 'wood', x + s * 0.8, 0, Math.min(z0 + 6, top - 3) + t * 0.8, 0.15, 3, 0.15, '#c8a070');
+      add('box', 'wood', x, 3, Math.min(z0 + 6, top - 3), 2.2, 0.15, 2.2, '#c8a070');
+      add('box', 'plaster', x, 3.15, Math.min(z0 + 6, top - 3), 1.6, 1.4, 1.6, '#f4f4f0');
+      add('box', 'cloth', x, 4.55, Math.min(z0 + 6, top - 3), 2.2, 0.15, 2.2, '#e8402e');
     }
-    if (warm && Math.floor((x + half) / 7) % 6 === 0) palm(add, x, top - 3, 6 + r(k + 5) * 3, r, k + 6);
+    if (warm && Math.floor((x + half) / 7) % 6 === 0) palm(add, x, top - 3.5, 6 + r(k + 5) * 3, r, k + 6);
     k += 7;
   }
 }

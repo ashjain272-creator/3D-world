@@ -28,6 +28,25 @@ export function cityFeatures(out: DistrictData, layout: Layout, y0: number, warm
   metro(add, f, r);
   for (const e of f.estates) estate(out, add, e, r, warm);
   for (const c of f.compounds) compound(add, c);
+  for (const [x, z] of f.roundabouts ?? []) roundabout(add, x, z, r, warm);
+}
+
+/** A roundabout: an asphalt circle over the crossing, a kerbed planted island, a palm or a fountain. */
+function roundabout(add: Add, x: number, z: number, r: (k: number) => number, warm: boolean) {
+  const k = Math.abs(x * 3.1 + z * 7.7);
+  add('cyl', 'stone', x, 0, z, 26, 0.075, 26, '#454b54');
+  // the white give-way ring painted around the island
+  add('ring', 'paint', x, 0.08, z, 21, 0.02, 21, '#e8e8e2');
+  add('cyl', 'stone', x, 0, z, 15, 0.35, 15, '#c9c3b5');
+  add('cyl', 'lawn', x, 0.35, z, 13.6, 0.1, 13.6, '#5e9a48');
+  if (r(k) < 0.4) {
+    fountain(add, x, z, 5, true);
+  } else if (warm) {
+    for (let q = 0; q < 3; q++) palm(add, x + Math.cos(q * 2.1) * 2.6, z + Math.sin(q * 2.1) * 2.6, 7 + r(k + q) * 3, r, k + q * 5, 0.45);
+  } else {
+    roundTree(add, x, z, 6, '#4f7f3c', r, k);
+  }
+  for (let q = 0; q < 10; q++) add('sphere', 'leaf', x + Math.cos(q * 0.63) * 5.4, 0.45, z + Math.sin(q * 0.63) * 5.4, 1.4, 0.8, 1.4, q % 2 ? '#c84a7a' : '#4f8a3a');
 }
 
 // ───────────────────────── Sea and beach ─────────────────────────

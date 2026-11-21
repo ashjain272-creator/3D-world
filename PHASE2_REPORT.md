@@ -639,3 +639,27 @@ Screenshots are in `docs/screenshots/corridor/`. The corridor test in `tests/wor
 - every mosque catchment is covered;
 - there are 2 compounds, the estates exist and the parks come in varied sizes;
 - the express roads and ramps are in place.
+
+## Phase 10: a bigger capital and a real road hierarchy
+
+**Size.** The futuristic capital's radius goes from 340 m to 520 m, so it is about 1.04 km across (a city is 380 m). The terrain grows to 1.64 km. A capital now holds about 690 buildings, up from about 250. Fog was pushed back so the whole corridor reads from the air.
+
+**Roads**, from widest to narrowest:
+- **Boulevards:** the spine (16 m), the arterial (14 m) and the coastal road (12 m).
+- **Collector roads (11 m):** every fourth grid line.
+- **Local streets (7 m):** the grid lines between collectors.
+- **Old-town lanes (6 m).**
+
+In villa quarters there are no through cross-streets between collectors, only lanes, so traffic stays on the collectors as it does in Dubai's residential superblocks.
+
+**Roundabouts** go where wide roads meet, away from the spine, the coastal road and Downtown, and at least 140 m apart. Each has an asphalt circle, a white give-way ring, a kerbed planted island and a fountain, palms or a tree. There are no traffic lights, zebra crossings or kerb furniture on them.
+
+**Expressways** no longer stop in the fields. Past their ramps they carry on at ground level to the edge of the map.
+
+**Downtown** had become an empty plaza at the new size. It now has towers on both sides of the ring boulevard, around a smaller lake.
+
+**Fix:** the three towers of each JLT-style cluster overlapped one another. They are now 9 m towers set 8 m from the cluster centre.
+
+**Tests:** a new test checks that no two buildings in a futuristic city overlap. It also checks that the capital is at least 500 m in radius and that every roundabout sits on a 4-way crossing.
+
+Screenshots and the plan map are in `docs/screenshots/corridor/`.

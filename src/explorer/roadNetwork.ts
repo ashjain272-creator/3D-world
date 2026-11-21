@@ -184,6 +184,15 @@ function corridorHighways(layout: Layout, t: TerrainData): HighwayData {
         ramp.push(new THREE.Vector3(x, level(s * half, z, h) * (1 - k) + (t.height(x, z) + 0.3) * k, z));
       }
       if (ramp.length > 3) roads.push(finishRoad('ramp', s > 0 ? ramp : ramp, width - 4, 1, false, true));
+      // the expressway carries on out of town at ground level to the edge of the map, so it
+      // leads somewhere instead of stopping in the fields
+      const out: THREE.Vector3[] = [];
+      for (let d = 96; ; d += 8) {
+        const x = s * (half + d);
+        if (!inWorld(x, z)) break;
+        out.push(new THREE.Vector3(x, t.height(x, z) + 0.35, z));
+      }
+      if (out.length > 2) roads.push(finishRoad('express', out, width, lanes, false, true));
     }
   };
   alongX(f.spineZ, 13, chord(f.spineZ) + 30, 15, 3);

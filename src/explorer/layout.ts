@@ -85,11 +85,13 @@ export interface CityFeatures {
   jbr: { x0: number; x1: number; z0: number; z1: number } | null;
   jlt: { x: number; z: number; s: number }[];
   compounds: { x: number; z: number; w: number; d: number }[];
+  /** Centres of roundabouts at collector crossings. */
+  roundabouts: [number, number][];
 }
 
 export function settlementRadius(s: Settlement): number {
   // futuristic cities are laid out in districts (downtown, villa estates, souk, mixed), which need room
-  if (s.style === 'futuristic') return s.kind === 'capital' ? 340 : s.kind === 'city' ? 250 : s.kind === 'town' ? 150 : 95;
+  if (s.style === 'futuristic') return s.kind === 'capital' ? 520 : s.kind === 'city' ? 380 : s.kind === 'town' ? 150 : 95;
   return s.kind === 'capital' ? 175 : s.kind === 'city' ? 145 : s.kind === 'town' ? 110 : 75;
 }
 
@@ -212,7 +214,7 @@ function futuristic(s: Settlement, rng: Rng): Layout {
 
   // ── bands, parallel to the coast
   const shoreZ = -0.76 * R;
-  const coastRoadZ = snap(shoreZ + 12);
+  const coastRoadZ = Math.ceil((shoreZ + 12) / sp) * sp;
   const spineZ = snap(-0.36 * R);
   const arterialZ = Math.max(snap(0.36 * R), spineZ + 4 * sp);
   const canalZ = arterialZ - sp;
@@ -384,7 +386,7 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     const cz = (dZ0 + dZ1) / 2;
     const a = W / 2 - 22;
     const b = D / 2 - 18;
-    const lake = { x: cx, z: cz, rx: Math.max(18, a - 34), rz: Math.max(12, b - 16) };
+    const lake = { x: cx, z: cz, rx: Math.max(18, Math.min(a - 34, a * 0.5)), rz: Math.max(12, Math.min(b - 16, b * 0.5)) };
     lakes.push({ ...lake, island: 14 });
     downtownF = { x: cx, z: cz, a, b, x0: dX0, x1: dX1, z0: dZ0, z1: dZ1 };
     plaza = { x: cx, z: cz, r: lake.rx };
@@ -405,6 +407,25 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     add({ x: cx - lake.rx - 13, z: cz, w: 20, d: 20, h: sigH, kind: 'supertall', role: 'work', door: [cx - lake.rx - 13, cz - 12], district: 'downtown' });
     signature = true;
     add({ x: cx + lake.rx + 15, z: cz, w: 24, d: 22, h: 15, kind: 'mall', role: 'work', door: [cx + lake.rx + 15, cz - 12], district: 'downtown' });
+    // a wall of towers on both sides of the ring boulevard, the inner ones facing the lake, like
+    // the towers around the Burj lake; gaps where the boulevard's four links leave the ring
+    const ringTowers = (ra: number, rb: number, gaps: number[], hMin: number, hMax: number, size: number) => {
+      const per = Math.PI * Math.sqrt((ra * ra + rb * rb) / 2) * 2;
+      const m = Math.floor(per / 30);
+      for (let q = 0; q < m; q++) {
+        const t = (q / m) * Math.PI * 2 + 0.13;
+        if (gaps.some((g) => Math.abs(Math.atan2(Math.sin(t - g), Math.cos(t - g))) < 0.3)) continue;
+        const tx = cx + Math.cos(t) * ra;
+        const tz = cz + Math.sin(t) * rb;
+        if (tx < dX0 + 9 || tx > dX1 - 9 || tz < dZ0 + 9 || tz > dZ1 - 9) continue;
+        const h = rng.range(hMin, hMax);
+        add({ x: tx, z: tz, w: size, d: size, h, kind: h > 100 ? 'supertall' : 'tower', role: 'work', door: [tx, tz - size / 2 - 1], district: 'downtown' });
+      }
+    };
+    if (a > 90) {
+      ringTowers((a + lake.rx) / 2 + 2, (b + lake.rz) / 2 + 2, [0, Math.PI], 55, 125, 13);
+      ringTowers(a + 15, b + 14, [0, Math.PI / 2, Math.PI, -Math.PI / 2], 45, 105, 13);
+    }
     for (const sx of [-1, 1])
       for (const sz of [-1, 1]) {
         const tx = cx + sx * (W / 2 - 12);
@@ -762,7 +783,7 @@ function futuristic(s: Settlement, rng: Rng): Layout {
       jlt.push({ x, z, s: 26 });
       for (let q = 0; q < 3; q++) {
         const t = (q / 3) * Math.PI * 2 + 0.5;
-        add({ x: x + Math.cos(t) * 7, z: z + Math.sin(t) * 7, w: 11, d: 11, h: rng.range(45, 88), kind: 'tower', role: rng.chance(0.5) ? 'work' : 'home', door: [x, z - sp / 2 + 0.01], district: 'marina' });
+        add({ x: x + Math.cos(t) * 8, z: z + Math.sin(t) * 8, w: 9, d: 9, h: rng.range(45, 88), kind: 'tower', role: rng.chance(0.5) ? 'work' : 'home', door: [x, z - sp / 2 + 0.01], district: 'marina' });
       }
     }
   }
@@ -830,7 +851,14 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     }));
   const edges: [number, number][] = [];
   const streets: Layout['streets'] = [];
-  const widthOf = (az: number, bz: number) => (az === bz ? (az === spineZ ? 16 : az === coastRoadZ ? 12 : az === arterialZ ? 14 : 8) : 8);
+  // road hierarchy: boulevards (spine, coastal road, arterial), collectors every fourth grid line,
+  // local streets between them; villa quarters get lanes only, no through cross-streets
+  const majorV = (x: number) => Math.round(x / sp) % 4 === 0;
+  const majorH = (z: number) => z === spineZ || z === coastRoadZ || z === arterialZ || (z > arterialZ && Math.round(z / sp) % 4 === 0);
+  const widthOf = (ax: number, az: number, bz: number) =>
+    az === bz ? (az === spineZ ? 16 : az === coastRoadZ ? 12 : az === arterialZ ? 14 : majorH(az) ? 11 : 7) : majorV(ax) ? 11 : 7;
+  const villaZone = (z: Zone) => z === 'coast' || z === 'outer' || z === 'estate';
+  const roundabouts: [number, number][] = [];
   for (const [key, a] of idx) {
     const [i, j] = key.split(',').map(Number);
     for (const [di, dj] of [
@@ -844,9 +872,13 @@ function futuristic(s: Settlement, rng: Rng): Layout {
       const [ax, az] = nodes[a];
       const [bx, bz] = nodes[b];
       if (onCanal(ax, az, bx, bz)) continue;
+      if (ax === bx && !majorV(ax)) {
+        const zm = (az + bz) / 2;
+        if (villaZone(zoneOf(ax - sp / 2, zm)) && villaZone(zoneOf(ax + sp / 2, zm))) continue;
+      }
       edges.push([a, b]);
       const oldLane = ax < oldTownX && bx <= oldTownX && az < canalZ && bz < canalZ && az > coastRoadZ && bz > coastRoadZ;
-      streets.push({ a: nodes[a], b: nodes[b], w: oldLane ? 6 : widthOf(az, bz) });
+      streets.push({ a: nodes[a], b: nodes[b], w: oldLane ? 6 : widthOf(ax, az, bz) });
     }
   }
   // extra links (ring, estate roads): snap their ends to existing nodes where they meet them
@@ -868,7 +900,19 @@ function futuristic(s: Settlement, rng: Rng): Layout {
   void signature;
 
   const graph = makeGraph(nodes, edges);
-  const lights: [number, number][] = nodes.filter((_, q) => graph.adj[q].length > 0 && rng.chance(0.85));
+  // roundabouts where two collectors cross (never under the spine expressway or beside Downtown)
+  for (let q = 0; q < nodes.length; q++) {
+    const [x, z] = nodes[q];
+    if (graph.adj[q].length !== 4 || !(majorV(x) || majorH(z)) || z === spineZ || z === coastRoadZ || z === arterialZ - sp) continue;
+    // only where wide roads meet: at least two of the four arms are collectors or boulevards
+    if (streets.filter((st) => st.w >= 11 && ((st.a[0] === x && st.a[1] === z) || (st.b[0] === x && st.b[1] === z))).length < 2) continue;
+    if (roundabouts.some(([rx, rz]) => Math.hypot(rx - x, rz - z) < 140)) continue;
+    if (downtownF && x > downtownF.x0 - sp && x < downtownF.x1 + sp && z > downtownF.z0 - sp && z < downtownF.z1 + sp) continue;
+    if (nearWater(x, z, 14) || Math.hypot(x, z) > R - 20) continue;
+    roundabouts.push([x, z]);
+  }
+  // no traffic lights on roundabouts
+  const lights: [number, number][] = nodes.filter(([x, z], q) => graph.adj[q].length > 0 && rng.chance(0.85) && !roundabouts.some(([rx, rz]) => rx === x && rz === z));
   const chordSpine = chord(spineZ);
   const features: CityFeatures = {
     shoreZ,
@@ -883,6 +927,7 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     jbr,
     jlt,
     compounds,
+    roundabouts,
   };
   const avoid = (x: number, z: number) => z < coastRoadZ + 8 || nearWater(x, z, 16) || lakes.some((l) => ((x - l.x) / (l.rx + 10)) ** 2 + ((z - l.z) / (l.rz + 10)) ** 2 < 1);
   const out = finish('futuristic', s, rng, R, kept, streets, graph, [plaza], lights, sp, avoid);

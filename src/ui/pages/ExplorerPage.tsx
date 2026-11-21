@@ -84,6 +84,7 @@ function Explorer({ target }: { target: Target }) {
   const vegetation = useMemo(() => generateVegetation(terrain, layout, quality), [terrain, layout, quality]);
   sceneDebug.footprints = vegetation.structures.footprints;
   sceneDebug.buildings = layout.buildings.map((b) => ({ x: b.x, z: b.z, w: b.w, d: b.d, h: b.h, kind: b.kind, district: b.district, tone: b.tone }));
+  (sceneDebug as { roundabouts?: [number, number][] }).roundabouts = layout.features?.roundabouts ?? [];
   sceneDebug.poi = vegetation.poi;
   sceneDebug.shore = useMemo(() => {
     if (terrain.waterLevel === null) return null;

@@ -409,7 +409,8 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
     };
     if (layout.style === 'cloud' || layout.style === 'wild') return out;
     const rng = new Rng(Math.round(layout.radius * 31) + layout.buildings.length * 7 + 3);
-    const blocked = (x: number, z: number) => layout.colliders.some((c) => Math.abs(c.x - x) < c.hw + 1.4 && Math.abs(c.z - z) < (c.type === 'circle' ? c.hw : c.hd) + 1.4) || layout.landmarks.some((l) => Math.hypot(l.x - x, l.z - z) < l.radius + 2);
+    const rbs = layout.features?.roundabouts ?? [];
+    const blocked = (x: number, z: number) => rbs.some(([rx, rz]) => Math.hypot(rx - x, rz - z) < 16) || layout.colliders.some((c) => Math.abs(c.x - x) < c.hw + 1.4 && Math.abs(c.z - z) < (c.type === 'circle' ? c.hw : c.hd) + 1.4) || layout.landmarks.some((l) => Math.hypot(l.x - x, l.z - z) < l.radius + 2);
     const green = layout.style === 'futuristic' ? '#4f8f4a' : layout.style === 'organic' ? '#3f7a3a' : '#5a8a3e';
     for (const s of layout.streets) {
       const dx = s.b[0] - s.a[0];
@@ -493,7 +494,7 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
       const B = (x: number, y: number, z: number, sx: number, sy: number, sz: number, c: string, rot = 0, lit = false) => (lit ? out.lit : out.boxes).push({ m: mat(x, y, z, sx, sy, sz, rot), c: new THREE.Color(c), x, z });
       layout.graph.nodes.forEach(([nxp, nzp], ni) => {
         const deg = layout.graph.adj[ni]?.length ?? 0;
-        if (deg < 3) return;
+        if (deg < 3 || rbs.some(([rx, rz]) => rx === nxp && rz === nzp)) return;
         const futur = layout.style === 'futuristic';
         for (const nb of layout.graph.adj[ni]) {
           const [bx, bz] = layout.graph.nodes[nb];

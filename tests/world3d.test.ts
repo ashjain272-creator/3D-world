@@ -180,6 +180,27 @@ describe('futuristic districts', () => {
   const w = freshWorld();
   const cities = Object.values(w.settlements).filter((s) => generateLayout(s).style === 'futuristic');
 
+  it('never overlaps two buildings in a futuristic city, and puts roundabouts on collector crossings', () => {
+    for (const s of cities) {
+      const l = generateLayout(s);
+      const solid = l.buildings.filter((b) => !b.plot && b.kind !== 'park' && b.kind !== 'stadium' && b.kind !== 'arena');
+      for (let i = 0; i < solid.length; i++)
+        for (let j = i + 1; j < solid.length; j++) {
+          const a = solid[i];
+          const b = solid[j];
+          const ox = (a.w + b.w) / 2 - Math.abs(a.x - b.x);
+          const oz = (a.d + b.d) / 2 - Math.abs(a.z - b.z);
+          if (ox > 0.5 && oz > 0.5) throw new Error(`${s.kind}: ${a.kind}@${a.x.toFixed(0)},${a.z.toFixed(0)} overlaps ${b.kind}@${b.x.toFixed(0)},${b.z.toFixed(0)}`);
+        }
+      if (s.kind === 'capital') {
+        expect(l.radius).toBeGreaterThanOrEqual(500);
+        expect(l.features!.roundabouts.length).toBeGreaterThan(2);
+        // every roundabout sits on a street crossing
+        for (const [x, z] of l.features!.roundabouts) expect(l.streets.filter((st) => (st.a[0] === x && st.a[1] === z) || (st.b[0] === x && st.b[1] === z)).length).toBe(4);
+      }
+    }
+  });
+
   it('lays large futuristic cities out as a coastal corridor of districts', () => {
     const big = cities.filter((s) => s.kind === 'capital' || s.kind === 'city');
     expect(big.length).toBeGreaterThan(0);

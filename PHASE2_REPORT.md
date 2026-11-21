@@ -560,6 +560,35 @@ Requested: "Make a basketball NBA sized stadium, make a football Premier League 
 - **Fit.** The drum still clears the bowl: the outer rows reach about 57.4 m from the centre and the drum is 59.5 m.
 - **Photos.** The arena exterior, roof, entrance, interior and court, plus night exterior and roof, are in `docs/screenshots/venues/`.
 
+**Follow-up: interiors.** Requested: "make the interior better and way more amazing for both of them".
+
+**Stadium**
+- **Colour zones.** The main stand is dark. The home end and the far side are in club colours. The visitors fill the lower tier of the far end in their own colours.
+- **Home end.** A card mosaic (tifo) in club colours and white, with a gold emblem, lies across the whole upper tier on the rake of the seats.
+- **Banners.** Banners hang from the other upper-tier fronts, in club colours at the far side and in the visitors' colours at the away end.
+- **Directors' box.** A glazed, lit box projects from the centre of the main stand.
+- **On the pitch edge.**
+  - An inflatable players' tunnel in club colours.
+  - Photographers with cameras behind both goals.
+  - Ball kids at the corners.
+  - Six substitutes in bibs warming up along the far touchline.
+- **Roof edge.** Goal-line cameras sit under the roof edge, aimed at each goal.
+- **Floodlight beams.** Additive haze cones from the floodlights. They fade in after dark only, because by day they read as solid cones.
+
+**Arena**
+- **Court edge.** LED boards run along both sidelines (broken at the scorer's table) and behind both baselines.
+- **Centre court.** A logo: a gold ring round a white and second-colour disc.
+- **Apron.** Sponsor panels painted on the apron.
+- **People and cameras.** Eight dancers with pom-poms on the baselines, and four broadcast cameras on posts at the court corners.
+- **Banners.** Six championship banners (team colour, gold band, white) and four retired-number banners hang in the rafters above the club level at one end.
+- **Light beams.** Four light beams fall from the rigs onto the court. They are always on, since the arena is indoors.
+- **Tunnels.** Tunnel mouths at the four corners of the lower bowl, with lit signs.
+- **Scoreboard.** A lit halo in the second colour under the scoreboard.
+
+**Checks**
+- The court sponsor panels sit above the apron surface. The tests were adjusted to require paint above the apron (0.18 m) everywhere and above the keys (0.23 m) for the court markings.
+- Photos re-shot in `docs/screenshots/venues/`: stadium stands (day and night), pitchside, home end, goal; arena interior (day and night), court, scoreboard.
+
 ## Limitations and unfinished items
 
 - **Frame-rate targets unproven** (55 fps at 5× in Universe; 60 fps with ≥ 150 figures on medium): no GPU in this environment. Measured relative to the baseline under software rendering, the current build is 2–3× slower at medium (see Phase 4).

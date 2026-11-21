@@ -218,7 +218,13 @@ export function footballStadium(out: DistrictData, add: Add, b: Building, warm: 
       const [lx, lz] = toLocal(x, z);
       add(shape, mat, lx, y, lz, a, bb, c, col, rot + R0, rx, rz);
     };
-    stand(add2, ox, oz, st.len, lowerRows, rowD, rowH, 1.2, st.rot, seat);
+    // colour zones: a dark main stand, the home end and opposite side in club colours, the
+    // visitors packed into the lower tier of the far end in their own colours
+    const homeEnd = st.rot === Math.PI / 2;
+    const awayEnd = st.rot === -Math.PI / 2;
+    const lowerSeat = st.main ? '#30343c' : awayEnd ? away : seat;
+    const upperSeat = st.main ? '#30343c' : seat;
+    stand(add2, ox, oz, st.len, lowerRows, rowD, rowH, 1.2, st.rot, lowerSeat);
     // executive boxes: a glazed band between the tiers with lit interiors
     const backLow = lowerRows * rowD;
     add2('box', 'plaster', sx(0, backLow + 1.5), lowerRows * rowH + 1.2, sz(0, backLow + 1.5), st.len, 0.4, 4, '#d8dce2', st.rot);
@@ -226,7 +232,36 @@ export function footballStadium(out: DistrictData, add: Add, b: Building, warm: 
     for (let k = 0; k < Math.floor(st.len / 5); k++) add2('box', 'glow', sx(-st.len / 2 + 2.5 + k * 5, backLow + 1), lowerRows * rowH + 3.4, sz(-st.len / 2 + 2.5 + k * 5, backLow + 1), 3, 0.08, 1.4, '#ffe8c8', st.rot);
     // upper tier set back over the boxes, its front fascia an LED ribbon in club colours
     const upperBack = backLow + 3;
-    stand((sh, m, x, y, z, a, bb, c, col, rot = 0, rx = 0, rz = 0) => add2(sh, m, x, y, z, a, bb, c, col, rot, rx, rz), sx(0, upperBack), sz(0, upperBack), st.len, upperRows, rowD, upperRowH, upperY, st.rot, seat);
+    stand((sh, m, x, y, z, a, bb, c, col, rot = 0, rx = 0, rz = 0) => add2(sh, m, x, y, z, a, bb, c, col, rot, rx, rz), sx(0, upperBack), sz(0, upperBack), st.len, upperRows, rowD, upperRowH, upperY, st.rot, upperSeat);
+    // banners hanging from the upper-tier front; across the home end, a giant tifo in club colours
+    if (homeEnd) {
+      // a card mosaic held up across the whole upper tier, lying on the rake of the seats
+      const rake = Math.atan(upperRowH / rowD);
+      const depth = (upperRows * rowD) / Math.cos(rake);
+      const bands = [home, '#ffffff', home, home, '#ffffff', home];
+      bands.forEach((c, k) => {
+        const f = (k + 0.5) / bands.length;
+        const b = upperBack + upperRows * rowD * f;
+        add2('box', 'cloth', sx(0, b), upperY + upperRows * upperRowH * f + 0.7, sz(0, b), st.len * 0.86, 0.06, depth / bands.length + 0.05, c, st.rot, rake);
+      });
+      const bc = upperBack + upperRows * rowD * 0.5;
+      add2('box', 'cloth', sx(0, bc), upperY + upperRows * upperRowH * 0.5 + 0.78, sz(0, bc), 12, 0.06, depth * 0.55, '#f2d24a', st.rot, rake);
+      add2('box', 'cloth', sx(0, bc), upperY + upperRows * upperRowH * 0.5 + 0.84, sz(0, bc), 7, 0.06, depth * 0.35, home, st.rot, rake);
+    } else {
+      for (let k = 0; k < Math.floor(st.len / 10); k++) {
+        const u = -st.len / 2 + 5 + k * 10;
+        const c = awayEnd ? (k % 2 ? away : '#ffffff') : k % 3 === 0 ? '#ffffff' : home;
+        add2('box', 'cloth', sx(u, upperBack - 0.4), upperY - 3.6, sz(u, upperBack - 0.4), 4.5, 2.8, 0.06, c, st.rot);
+        add2('box', 'cloth', sx(u, upperBack - 0.45), upperY - 2.4, sz(u, upperBack - 0.45), 4.5, 0.4, 0.06, k % 2 ? home : '#f2d24a', st.rot);
+      }
+    }
+    // the directors' box: a glazed, lit, projecting box at the centre of the main stand
+    if (st.main) {
+      add2('box', 'plaster', sx(0, lowerRows * rowD + 0.5), lowerRows * rowH + 0.6, sz(0, lowerRows * rowD + 0.5), 22, 4.4, 4.5, '#e8ebef', st.rot);
+      add2('box', 'glass', sx(0, lowerRows * rowD - 1.8), lowerRows * rowH + 1.4, sz(0, lowerRows * rowD - 1.8), 21, 2.6, 0.12, '#9ec4d8', st.rot);
+      add2('box', 'glow', sx(0, lowerRows * rowD - 1.6), lowerRows * rowH + 4.4, sz(0, lowerRows * rowD - 1.6), 20, 0.3, 0.2, home, st.rot);
+      add2('box', 'glow', sx(0, lowerRows * rowD), lowerRows * rowH + 3.7, sz(0, lowerRows * rowD), 18, 0.1, 3, '#fff2dc', st.rot);
+    }
     add2('box', 'glow', sx(0, upperBack - 0.3), upperY - 0.6, sz(0, upperBack - 0.3), st.len, 0.6, 0.12, st.main ? '#ffffff' : home, st.rot);
     // the back of the stand: a solid wall up to roof height
     const backAll = upperBack + upperRows * rowD;
@@ -354,6 +389,34 @@ export function footballStadium(out: DistrictData, add: Add, b: Building, warm: 
     A('cyl', 'metal', u, 0, OD + 4.2, 0.12, 9, 0.12, '#c8ccd2');
     A('box', 'cloth', u + 0.9, 7, OD + 4.2, 1.8, 1.2, 0.05, k % 2 ? home : '#ffffff');
   }
+  // ── matchday: an inflatable tunnel, photographers and ball kids, substitutes warming up,
+  // goal-line cameras under the roof, and soft beams from the floodlights
+  for (let k = 0; k < 6; k++) {
+    A('hemi', 'cloth', 0, 0, W2 + 6 - k * 1.1, 3.4, 5, 1.2, k % 2 ? home : '#ffffff');
+  }
+  for (const s of [-1, 1]) {
+    for (let k = 0; k < 8; k++) {
+      const v = -12 + k * 3.4;
+      if (Math.abs(v) < 5) continue;
+      const px = s * (L2 + 3.4);
+      A('box', 'cloth', px, 0, v, 0.5, 0.6, 0.5, '#2a2a30');
+      A('sphere', 'plaster', px, 0.75, v, 0.24, 0.26, 0.24, '#c89870');
+      A('box', 'dark', px - s * 0.35, 0.55, v, 0.3, 0.22, 0.22, '#111111');
+    }
+    for (const t of [-1, 1]) {
+      A('box', 'cloth', s * (L2 + 2), 0, t * (W2 + 2.2), 0.4, 0.9, 0.3, '#f2d24a');
+      A('sphere', 'plaster', s * (L2 + 2), 1.05, t * (W2 + 2.2), 0.2, 0.22, 0.2, '#d8a880');
+    }
+    // goal-line cameras on the roof edge, aimed at each goal
+    for (const t of [-1, 1]) A('box', 'dark', s * (L2 - 1), roofY + rise - 3.4, t * (sideFront - 5.2), 0.6, 0.5, 0.9, '#1a1a1e');
+  }
+  for (let k = 0; k < 6; k++) {
+    const u = -40 + k * 4.5;
+    A('box', 'cloth', u, 0.85, -W2 - 2.4, 0.42, 0.65, 0.26, '#f2a02a');
+    A('box', 'cloth', u, 0.1, -W2 - 2.4, 0.36, 0.75, 0.22, '#1a1a1e');
+    A('sphere', 'plaster', u, 1.7, -W2 - 2.4, 0.24, 0.26, 0.24, ['#e8c4a0', '#7a4a2a', '#b07850'][k % 3]);
+  }
+  for (const s of [-1, 1]) for (const t of [-1, 1]) A('cone', 'nightBeam', s * L2 * 0.55, 0.2, t * W2 * 0.6, 26, roofY + rise - 2, 26, '#fff8e6');
   out.lights.push([0, 0]);
   void warm;
 }
@@ -485,6 +548,56 @@ export function nbaArena(add: Add, b: Building) {
   A('box', 'dark', 0, sy - 2.4, 0, 6, 2, 4.4, '#0c0e12');
   for (const [u, v, w, d] of [[0, 2.25, 5.8, 0.08], [0, -2.25, 5.8, 0.08], [3.05, 0, 0.08, 4.2], [-3.05, 0, 0.08, 4.2]] as const) A('box', 'glow', u, sy - 2.2, v, w, 1.6, d, '#2a6ad8');
   for (const s of [-1, 1]) for (const t of [-1, 1]) A('cyl', 'metal', s * 3.5, sy + 6, t * 2.6, 0.08, H - sy - 6, 0.08, '#8a8f96');
+
+  // ── arena atmosphere: courtside LED boards, a centre logo, sponsor panels on the apron, a
+  // cheer team, broadcast cameras, banners in the rafters, light beams on the court, tunnels
+  for (const t of [-1, 1]) {
+    for (let k = 0; k < 8; k++) {
+      const u = -CL / 2 + 1.8 + k * ((CL - 3.6) / 7);
+      if (t < 0 && Math.abs(u) < 7) continue;
+      A('box', 'glow', u, 0.12, t * (CW / 2 + 1.05), 3.2, 0.8, 0.12, k % 2 ? team : '#ffffff');
+    }
+  }
+  for (const s of [-1, 1]) A('box', 'glow', s * (CL / 2 + 4.2), 0.12, 0, 0.12, 0.8, CW - 1, team2);
+  paintArc(A, 0, 0, 2.7, 0, Math.PI * 2, 0.25, 0.22, '#f2d24a');
+  A('cyl', 'paint', 0, 0.25, 0, 1.6, 0.015, 1.6, '#ffffff');
+  A('cyl', 'paint', 0, 0.255, 0, 1.0, 0.015, 1.0, team2);
+  for (const s of [-1, 1]) for (const t of [-1, 1]) A('box', 'paint', s * 7, 0.19, t * (CW / 2 + 1), 5, 0.015, 1.2, team2);
+  for (const s of [-1, 1]) A('box', 'paint', s * (CL / 2 + 1), 0.19, 0, 1.2, 0.015, 6, '#ffffff');
+  for (let k = 0; k < 8; k++) {
+    const v = -5.6 + k * 1.6;
+    const px = (k % 2 ? 1 : -1) * (CL / 2 + 2.6);
+    A('box', 'cloth', px, 0.95, v, 0.4, 0.55, 0.24, team);
+    A('box', 'cloth', px, 0.12, v, 0.3, 0.83, 0.2, '#f4f4f4');
+    A('sphere', 'plaster', px, 1.68, v, 0.22, 0.24, 0.22, ['#e8c4a0', '#7a4a2a', '#b07850'][k % 3]);
+    A('sphere', 'cloth', px + 0.28, 1.3, v, 0.22, 0.22, 0.22, team2);
+  }
+  for (const s of [-1, 1]) for (const t of [-1, 1]) {
+    A('cyl', 'metal', s * (CL / 2 + 3), 0, t * (CW / 2 + 0.6), 0.1, 1.4, 0.1, '#3a3e44');
+    A('box', 'dark', s * (CL / 2 + 3), 1.4, t * (CW / 2 + 0.6), 0.5, 0.45, 0.9, '#16181c', Math.atan2(-s, -t));
+  }
+  // championship and retired-number banners in the rafters above the upper deck
+  for (let k = 0; k < 10; k++) {
+    const v = -18 + k * 4;
+    const champ = k < 6;
+    // hung above the club level at one end, clear of the upper deck behind
+    const bu = -(CL / 2 + 16);
+    A('box', 'cloth', bu, H - 12.5, v, 0.08, 6, 3, champ ? team : '#f4f4f4');
+    A('box', 'cloth', bu + 0.06, H - 8.1, v, 0.06, 0.6, 3, champ ? '#f2d24a' : team);
+    A('box', 'cloth', bu + 0.06, H - 10.9, v, 0.06, 2.2, champ ? 1.8 : 1.2, champ ? '#ffffff' : team);
+    A('box', 'metal', bu, H - 6.5, v, 0.1, 1.2, 0.1, '#5a5e66');
+  }
+  // light beams from the rigs onto the court
+  for (const s of [-1, 1]) for (const t of [-1, 1]) A('cone', 'beam', s * CL * 0.28, 0.25, t * CW * 0.25, 10, H - 6.5, 10, '#fff6e0');
+  // tunnels at the four corners of the lower bowl, with lit signs
+  for (const s of [-1, 1]) for (const t of [-1, 1]) {
+    const px = s * (CL / 2 + 6);
+    const pz = t * (CW / 2 + 6);
+    A('box', 'dark', px, 0, pz, 4, 3, 4, '#0c0d10', Math.atan2(s, t));
+    A('box', 'glow', px - s * 1.2, 3.1, pz - t * 1.2, 3.4, 0.5, 0.1, team, Math.atan2(s, t) + Math.PI / 2);
+  }
+  // a lit halo round the scoreboard
+  A('cyl', 'glow', 0, sy - 2.9, 0, 9, 0.2, 7, team2);
 
   // ── the building, in three layers: a glazed concourse ring at street level under a lit
   // canopy, an upper drum set back behind leaning fins with an LED media ribbon, and a stepped

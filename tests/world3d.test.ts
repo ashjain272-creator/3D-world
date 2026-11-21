@@ -291,10 +291,12 @@ describe('futuristic districts', () => {
       }
       const pa = inV(arena!);
       expect(pa.filter((p) => p.mat === 'crowd').length).toBeGreaterThan(100);
-      // court lines lie above the painted keys (tops at 0.23)
+      // court lines lie above the painted keys (tops at 0.23); sponsor panels on the apron above
+      // the apron (top at 0.18)
       const courtPaint = pa.filter((p) => p.mat === 'paint');
       expect(courtPaint.length).toBeGreaterThan(80);
-      for (const p of courtPaint) expect(p.m.elements[13]).toBeGreaterThan(0.23);
+      for (const p of courtPaint) expect(p.m.elements[13]).toBeGreaterThan(0.18);
+      expect(courtPaint.filter((p) => p.m.elements[13] > 0.23).length).toBeGreaterThan(80);
       expect(pa.filter((p) => p.mat === 'court').length).toBeGreaterThan(4);
     }
   });

@@ -186,6 +186,10 @@ export function Districts({ data, quality }: { data: DistrictData; quality: Qual
       glow: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }),
       dark: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9 }),
       crowd: crowdMaterial(),
+      // light beams: faint, additive, so they read as haze lit by the floodlights
+      // the open-air stadium's floodlight beams only show after dark
+      nightBeam: new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
+      beam: new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
       // pitch and court markings: unshaded so they stay crisp white in shade and at night, drawn
       // in front of the surface they lie on
       paint: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
@@ -206,6 +210,7 @@ export function Districts({ data, quality }: { data: DistrictData; quality: Qual
     (mats.pitch as THREE.MeshStandardMaterial).emissiveIntensity = n * 0.55;
     (mats.court as THREE.MeshStandardMaterial).emissiveIntensity = 0.2 + n * 0.6;
     crowdLight.value = 0.08 + n * 0.45;
+    (mats.nightBeam as THREE.MeshBasicMaterial).opacity = n * 0.07;
   });
   const groups = useMemo(() => {
     const g = new Map<string, DPiece[]>();

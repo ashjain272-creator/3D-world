@@ -192,6 +192,21 @@ export function footballStadium(out: DistrictData, add: Add, b: Building, warm: 
     { off: endFront, len: Wp + 14, rot: Math.PI / 2, main: false },
     { off: endFront, len: Wp + 14, rot: -Math.PI / 2, main: false },
   ];
+  // the roof: same height on every stand, rising 4 m from the back columns to the leading edge
+  const standTop = upperY + upperRows * upperRowH;
+  const roofY = standTop + 7;
+  const rise = 4;
+  // where the stay cables from the corner masts meet the leading edge
+  const anchors: [number, number, number][] = [];
+  // a straight member between two points in the pitch frame (cables, braces)
+  const member = (p0: [number, number, number], p1: [number, number, number], w: number, mat: DMat, col: string) => {
+    const dx = p1[0] - p0[0];
+    const dy = p1[1] - p0[1];
+    const dz = p1[2] - p0[2];
+    const len = Math.hypot(dx, dy, dz);
+    // yaw sends local z along the horizontal direction, a negative pitch lifts it to the slope
+    A('box', mat, (p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2 - w / 2, (p0[2] + p1[2]) / 2, w, w, len, col, Math.atan2(dx, dz), -Math.asin(dy / len));
+  };
   for (const st of stands) {
     // the stand at offset `off` from the centre on the side the rotation points away from
     const ox = Math.sin(st.rot) * -st.off;
@@ -222,20 +237,64 @@ export function footballStadium(out: DistrictData, add: Add, b: Building, warm: 
       const u = -st.len / 2 + (k * st.len) / 5;
       add2('box', 'dark', sx(u, 7), 1.2 + 7 * 0.6 * rowH / rowD, sz(u, 7), 2.4, 2.4, 2.2, '#16181c', st.rot);
     }
-    // roof: a cantilevered slab with trusses and a translucent leading edge, floodlights along it
-    // the roof floats well above the last row, carried on columns at the back
-    const roofY = top + 7;
-    const roofDepth = backAll + 6;
-    add2('box', 'metal', sx(0, backAll - roofDepth / 2 + 1), roofY, sz(0, backAll - roofDepth / 2 + 1), st.len + 4, 0.6, roofDepth, '#dfe3e8', st.rot);
-    add2('box', 'skylight', sx(0, backAll - roofDepth - 2), roofY + 0.1, sz(0, backAll - roofDepth - 2), st.len + 4, 0.25, 6, '#d8f0ff', st.rot);
-    for (let k = 0; k <= Math.floor(st.len / 12); k++) {
-      const u = -st.len / 2 + k * 12;
-      add2('box', 'metal', sx(u, backAll - roofDepth / 2), roofY + 0.6, sz(u, backAll - roofDepth / 2), 0.5, 2.2, roofDepth + 4, '#b8bcc4', st.rot);
-      add2('box', 'metal', sx(u, backAll + 0.6), 0, sz(u, backAll + 0.6), 0.9, roofY + 2.8, 0.9, '#b8bcc4', st.rot);
+    // roof: alternating metal panels and translucent strips running from the back beam to the
+    // leading edge, tilted up towards the pitch, with exposed trusses on top
+    const bBack = backAll + 1.2;
+    const roofDepth = backAll + 7;
+    const bFront = bBack - roofDepth;
+    const bMid = (bBack + bFront) / 2;
+    const tilt = -Math.atan(rise / roofDepth);
+    const slab = roofDepth / Math.cos(tilt);
+    const span = st.len + 6;
+    const bay = 6;
+    const bays = Math.round(span / bay);
+    for (let k = 0; k < bays; k++) {
+      const u = -span / 2 + (k + 0.5) * (span / bays);
+      add2('box', 'metal', sx(u - 0.8, bMid), roofY + rise / 2, sz(u - 0.8, bMid), span / bays - 1.6, 0.35, slab, k % 2 ? '#e9ecf0' : '#dde1e6', st.rot, tilt);
+      add2('box', 'skylight', sx(u + (span / bays) / 2 - 0.8, bMid), roofY + rise / 2 + 0.05, sz(u + (span / bays) / 2 - 0.8, bMid), 1.6, 0.25, slab, '#cfeaff', st.rot, tilt);
     }
-    add2('box', 'glow', sx(0, backAll - roofDepth - 4.6), roofY - 0.2, sz(0, backAll - roofDepth - 4.6), st.len, 0.5, 0.6, '#f4faff', st.rot);
-    // signage on the main stand roof fascia
-    if (st.main) add2('box', 'glow', sx(0, backAll - roofDepth - 5), roofY + 0.5, sz(0, backAll - roofDepth - 5), 40, 2, 0.2, home, st.rot);
+    // primary trusses: a deep top chord over every second bay, posts and a diagonal web
+    for (let k = 0; k <= bays; k += 2) {
+      const u = -span / 2 + k * (span / bays);
+      add2('box', 'plaster', sx(u, bMid), roofY + rise / 2 + 2.1, sz(u, bMid), 0.45, 0.45, slab + 1, '#f4f6f8', st.rot, tilt);
+      for (const f of [0, 0.33, 0.66]) {
+        const b = bBack - roofDepth * f;
+        const y = roofY + rise * f;
+        add2('box', 'plaster', sx(u, b), y + 0.35, sz(u, b), 0.3, 1.9 - f * 0.9, 0.3, '#f4f6f8', st.rot);
+      }
+      // the back column and its tie-down
+      add2('box', 'plaster', sx(u, bBack), 0, sz(u, bBack), 1.1, roofY + 0.4, 1.1, '#e8ebef', st.rot);
+    }
+    // a white box beam along the back, and the leading edge: a deep fascia with an LED band in
+    // club colours on its face, floodlights beneath and a maintenance catwalk
+    add2('box', 'plaster', sx(0, bBack), roofY - 0.4, sz(0, bBack), span, 2.6, 1.6, '#eef0f3', st.rot);
+    const frontY = roofY + rise;
+    add2('box', 'plaster', sx(0, bFront), frontY - 1.9, sz(0, bFront), span, 2.6, 1.4, '#f4f6f8', st.rot);
+    add2('box', 'glow', sx(0, bFront - 0.72), frontY - 1.4, sz(0, bFront - 0.72), span, 0.7, 0.08, st.main ? '#ffffff' : home, st.rot);
+    add2('box', 'metal', sx(0, bFront + 2.2), frontY - 2.6, sz(0, bFront + 2.2), span, 0.25, 1.4, '#6a6f78', st.rot);
+    for (let k = 0; k < Math.floor(span / 3); k++) {
+      const u = -span / 2 + 1.5 + k * 3;
+      add2('box', 'glow', sx(u, bFront + 0.3), frontY - 2.35, sz(u, bFront + 0.3), 1.1, 0.45, 0.7, '#fff8e6', st.rot);
+    }
+    // signage on the main stand fascia
+    if (st.main) add2('box', 'glow', sx(0, bFront - 0.78), frontY - 1.75, sz(0, bFront - 0.78), 42, 2, 0.06, home, st.rot);
+    for (const f of [-0.42, -0.14, 0.14, 0.42]) anchors.push([sx(st.len * f, bFront), frontY + 0.7, sz(st.len * f, bFront)]);
+  }
+  // corner roofs close the gaps between the stands, each with a fascia joining the two edges
+  for (const s of [-1, 1]) for (const t of [-1, 1]) {
+    const u0 = s * ((L + 10) / 2 + 3);
+    const u1 = s * (OW - 1);
+    const v0 = t * ((Wp + 14) / 2 + 3);
+    const v1 = t * (OD - 1);
+    const cx = (u0 + u1) / 2;
+    const cz = (v0 + v1) / 2;
+    A('box', 'metal', cx, roofY + rise / 2, cz, Math.abs(u1 - u0) + 2, 0.35, Math.abs(v1 - v0) + 2, '#e3e6ea');
+    A('box', 'skylight', cx, roofY + rise / 2 + 0.05, cz, Math.abs(u1 - u0) * 0.5, 0.25, Math.abs(v1 - v0) * 0.5, '#cfeaff');
+    // fascia from the end of the side-stand edge to the end of the end-stand edge
+    const pSide: [number, number, number] = [s * ((L + 16) / 2), roofY + rise - 1.9, t * (sideFront - 5.8)];
+    const pEnd: [number, number, number] = [s * (endFront - 5.8), roofY + rise - 1.9, t * ((Wp + 20) / 2)];
+    member(pSide, pEnd, 2.4, 'plaster', '#f4f6f8');
+    member([pSide[0], pSide[1] + 0.9, pSide[2] - t * 0.7], [pEnd[0] - s * 0.7, pEnd[1] + 0.9, pEnd[2]], 0.7, 'glow', home);
   }
   // corner fills with giant screens above
   for (const s of [-1, 1]) for (const t of [-1, 1]) {
@@ -243,11 +302,12 @@ export function footballStadium(out: DistrictData, add: Add, b: Building, warm: 
     const cv2 = t * (W2 + 18);
     const rot = Math.atan2(s, t);
     for (let k = 0; k < 18; k++) A('box', 'crowd', cu2 - s * (10 - k * 0.6) * 0.7, 1.2, cv2 - t * (10 - k * 0.6) * 0.7, 12, (k + 1) * rowH * 1.1, 0.9, seat, rot);
-    A('box', 'plaster', cu2 + s * 4, 0, cv2 + t * 4, 16, 30, 6, '#c8ccd2', rot);
-    A('box', 'dark', cu2 - s * 2, 24, cv2 - t * 2, 14, 7.5, 0.6, '#101216', rot);
-    A('box', 'glow', cu2 - s * 2.35, 24.4, cv2 - t * 2.35, 13.2, 6.7, 0.1, '#1a4a9a', rot);
-    A('box', 'glow', cu2 - s * 2.4, 26.9, cv2 - t * 2.4, 5, 1.6, 0.1, home, rot);
-    A('box', 'glow', cu2 - s * 2.4, 25, cv2 - t * 2.4, 9, 1.2, 0.1, '#ffffff', rot);
+    // a pylon under the corner roof carries the giant screen
+    A('box', 'plaster', cu2 + s * 4, 0, cv2 + t * 4, 16, roofY + 1, 6, '#c8ccd2', rot);
+    A('box', 'dark', cu2 - s * 2, roofY - 10, cv2 - t * 2, 14, 7.5, 0.6, '#101216', rot);
+    A('box', 'glow', cu2 - s * 2.35, roofY - 9.6, cv2 - t * 2.35, 13.2, 6.7, 0.1, '#1a4a9a', rot);
+    A('box', 'glow', cu2 - s * 2.4, roofY - 7.1, cv2 - t * 2.4, 5, 1.6, 0.1, home, rot);
+    A('box', 'glow', cu2 - s * 2.4, roofY - 9, cv2 - t * 2.4, 9, 1.2, 0.1, '#ffffff', rot);
   }
 
   // ── facade: finned cladding with a lit band, stair towers, entrances, a fan plaza
@@ -261,6 +321,23 @@ export function footballStadium(out: DistrictData, add: Add, b: Building, warm: 
       A('box', 'metal', pu, 5, pv, rot ? 1.2 : 0.35, fh - 5, rot ? 0.35 : 1.2, k % 2 ? '#e6e9ee' : '#d4d8de');
     }
     A('box', 'glow', u + (rot ? Math.sign(u) * 1.4 : 0), fh - 3, v + (rot ? 0 : Math.sign(v) * 1.4), rot ? 0.2 : len, 0.8, rot ? len : 0.2, home);
+  }
+  // four masts rise from the stair towers; stay cables hold the leading edges of the roof
+  for (const s of [-1, 1]) for (const t of [-1, 1]) {
+    const mx = s * (OW - 4);
+    const mz = t * (OD - 4);
+    const mTop = fh + 36;
+    A('cyl', 'plaster', mx, fh + 2, mz, 1.8, mTop - fh - 2, 1.8, '#f4f6f8');
+    A('cone', 'plaster', mx, mTop, mz, 1.8, 3, 1.8, '#f4f6f8');
+    A('sphere', 'glow', mx, mTop + 3, mz, 0.6, 0.6, 0.6, '#ff3426');
+    A('box', 'plaster', mx, mTop - 4, mz, 3, 1, 3, '#e8ebef');
+    const near = anchors
+      .map((a) => ({ a, d: Math.hypot(a[0] - mx, a[2] - mz) }))
+      .sort((p, q) => p.d - q.d)
+      .slice(0, 4);
+    for (const { a } of near) member([mx, mTop - 3.6, mz], a, 0.16, 'metal', '#d8dce2');
+    // back-stays down to the ground
+    member([mx, mTop - 3.6, mz], [mx + s * 4.5, 0.2, mz + t * 4.5], 0.2, 'metal', '#d8dce2');
   }
   for (const s of [-1, 1]) for (const t of [-1, 1]) {
     A('cyl', 'plaster', s * (OW - 4), 0, t * (OD - 4), 8, fh + 2, 8, '#d4d8de');

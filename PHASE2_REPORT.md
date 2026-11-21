@@ -542,6 +542,14 @@ Requested: "Make a basketball NBA sized stadium, make a football Premier League 
   - Tests now assert that every pitch marking is above 0.16 m and every court marking above 0.23 m.
   - The stadium and court photos in `docs/screenshots/venues/` were re-shot.
 
+**Follow-up: stadium roof.** Requested: "make the stadium roofs look better". Before, each stand had a flat grey slab with thin ribs, and the corners were open.
+- **Panels.** The roof is now 6 m bays of alternating metal panels (two tones) and translucent strips, tilted to rise 4 m from the back to the leading edge.
+- **Structure.** White trusses with top chords and posts sit over every second bay. Back columns carry a white box beam.
+- **Leading edge.** A deep white fascia carries an LED band in club colours (white on the main stand, which also has a lit sign), a row of floodlights every 3 m beneath it, and a catwalk.
+- **Corners.** Corner roofs close the gaps, with diagonal fascias and LED bands joining the stand edges. The giant screens now hang under the corner roofs from pylons.
+- **Masts.** Four masts rise from the stair towers. Each has red beacons, four stay cables to the nearest points of the leading edges, and a back-stay to the ground.
+- **Photos.** `docs/screenshots/venues/stadium-roof.jpg` and `stadium-roof-night.jpg` are new; the stadium exterior, aerial and stands photos were re-shot.
+
 ## Limitations and unfinished items
 
 - **Frame-rate targets unproven** (55 fps at 5× in Universe; 60 fps with ≥ 150 figures on medium): no GPU in this environment. Measured relative to the baseline under software rendering, the current build is 2–3× slower at medium (see Phase 4).

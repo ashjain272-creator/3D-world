@@ -416,7 +416,7 @@ export function footballStadium(out: DistrictData, add: Add, b: Building, warm: 
     A('box', 'cloth', u, 0.1, -W2 - 2.4, 0.36, 0.75, 0.22, '#1a1a1e');
     A('sphere', 'plaster', u, 1.7, -W2 - 2.4, 0.24, 0.26, 0.24, ['#e8c4a0', '#7a4a2a', '#b07850'][k % 3]);
   }
-  for (const s of [-1, 1]) for (const t of [-1, 1]) A('cone', 'nightBeam', s * L2 * 0.55, 0.2, t * W2 * 0.6, 26, roofY + rise - 2, 26, '#fff8e6');
+  for (const s of [-1, 1]) for (const t of [-1, 1]) A('beamCone', 'nightBeam', s * L2 * 0.55, 0.2, t * W2 * 0.6, 26, roofY + rise - 2, 26, '#fff8e6');
   out.lights.push([0, 0]);
   void warm;
 }
@@ -510,11 +510,14 @@ export function nbaArena(add: Add, b: Building) {
       y += rows * rowH + lift;
     }
   }
+  // seats: the lower bowl and upper deck in a deep shade of the team colour, the club level in
+  // black leather, as most NBA arenas do it
+  const seatFor = (ti: number) => (ti === 1 ? '#1a1b1f' : new THREE.Color(team).multiplyScalar(ti === 0 ? 0.62 : 0.5).getStyle());
   for (const [ti, tr] of tiers.entries()) {
     for (const [len, off, rot] of [[CL + 2 * tr.front, CW / 2 + tr.front, Math.PI], [CL + 2 * tr.front, CW / 2 + tr.front, 0], [CW + 2 * tr.front, CL / 2 + tr.front, Math.PI / 2], [CW + 2 * tr.front, CL / 2 + tr.front, -Math.PI / 2]] as const) {
       const ox = Math.sin(rot) * -off;
       const oz = Math.cos(rot) * -off;
-      stand((sh, m, x, y, z, a, bb, c, col, rr = 0, rx = 0, rz = 0) => A(sh, m, x, y, z, a, bb, c, col, rr, rx, rz), ox, oz, len, tr.rows, 0.8, tr.rowH, tr.y, rot, ti === 1 ? team : '#2a2e3a', 7);
+      stand((sh, m, x, y, z, a, bb, c, col, rr = 0, rx = 0, rz = 0) => A(sh, m, x, y, z, a, bb, c, col, rr, rx, rz), ox, oz, len, tr.rows, 0.8, tr.rowH, tr.y, rot, seatFor(ti), 7);
       // ribbon board along the front of the upper tiers
       if (ti > 0) {
         const fx = ox + Math.sin(rot) * 0.4;
@@ -525,7 +528,7 @@ export function nbaArena(add: Add, b: Building) {
     // corner sections, angled
     for (const s of [-1, 1]) for (const t of [-1, 1]) {
       const d = tr.front + tr.rows * 0.4;
-      for (let k = 0; k < tr.rows; k++) A('box', 'crowd', s * (CL / 2 + d * 0.7 + k * 0.4), tr.y, t * (CW / 2 + d * 0.7 + k * 0.4), 8 + k * 0.6, (k + 1) * tr.rowH, 0.9, ti === 1 ? team : '#2a2e3a', Math.atan2(s, t) + Math.PI / 2);
+      for (let k = 0; k < tr.rows; k++) A('box', 'crowd', s * (CL / 2 + d * 0.7 + k * 0.4), tr.y, t * (CW / 2 + d * 0.7 + k * 0.4), 8 + k * 0.6, (k + 1) * tr.rowH, 0.9, seatFor(ti), Math.atan2(s, t) + Math.PI / 2);
     }
   }
   // suites: a glazed, lit band between the second and third tier
@@ -588,7 +591,7 @@ export function nbaArena(add: Add, b: Building) {
     A('box', 'metal', bu, H - 6.5, v, 0.1, 1.2, 0.1, '#5a5e66');
   }
   // light beams from the rigs onto the court
-  for (const s of [-1, 1]) for (const t of [-1, 1]) A('cone', 'beam', s * CL * 0.28, 0.25, t * CW * 0.25, 10, H - 6.5, 10, '#fff6e0');
+  for (const s of [-1, 1]) for (const t of [-1, 1]) A('beamCone', 'beam', s * CL * 0.28, 0.25, t * CW * 0.25, 10, H - 6.5, 10, '#fff6e0');
   // tunnels at the four corners of the lower bowl, with lit signs
   for (const s of [-1, 1]) for (const t of [-1, 1]) {
     const px = s * (CL / 2 + 6);

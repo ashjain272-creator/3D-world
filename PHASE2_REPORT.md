@@ -589,6 +589,24 @@ Requested: "Make a basketball NBA sized stadium, make a football Premier League 
 - The court sponsor panels sit above the apron surface. The tests were adjusted to require paint above the apron (0.18 m) everywhere and above the keys (0.23 m) for the court markings.
 - Photos re-shot in `docs/screenshots/venues/`: stadium stands (day and night), pitchside, home end, goal; arena interior (day and night), court, scoreboard.
 
+**Follow-up: seats and light beams.** Requested: "make the arena seats more realistic, and the beams of light look weird".
+
+**Seats**
+- **Arena seat scheme.** The lower bowl and upper deck use a deep shade of the team colour, and the club level is black leather.
+- **Clothing.** Fans dress like a real crowd: mostly black, navy, grey and white, about a third in team jerseys, the rest in muted colours. Before, every fan had a saturated rainbow shirt.
+- **Seen from above.** Each occupied seat shows shoulders and a head, with skin or hair showing.
+- **Row fronts.** Seat backs with armrest gaps and a lit top edge, with torsos and heads above them.
+- **Hash fix.** The hash that picks a person now uses the same 0.8 m cells as the drawing, so a person never changes colour halfway across.
+- **Distance.** Far away, the per-seat detail fades to the crowd's average tone, so distant stands read as a dense crowd instead of shimmering noise.
+- **Night glow.** The crowd's night glow was cut by half.
+
+**Light beams**
+- The beams were solid cones with a cap and hard edges.
+- They are now open cones in an additive shader, brightest along the axis and near the lamp, fading to nothing at the silhouette and towards the floor.
+- This applies to both the arena (always on) and the stadium (after dark only).
+
+**Photos.** Re-shot in `docs/screenshots/venues/`: arena interior (day and night), court and scoreboard, and the stadium stands (day and night).
+
 ## Limitations and unfinished items
 
 - **Frame-rate targets unproven** (55 fps at 5× in Universe; 60 fps with ≥ 150 figures on medium): no GPU in this environment. Measured relative to the baseline under software rendering, the current build is 2–3× slower at medium (see Phase 4).

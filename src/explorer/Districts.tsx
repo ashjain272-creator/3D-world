@@ -31,6 +31,8 @@ const SHAPES: Record<DShape, THREE.BufferGeometry> = {
     return new THREE.ExtrudeGeometry(s, { depth: 1.1, bevelEnabled: false }).translate(0, 0, -0.55);
   })(),
   arch: archGeo,
+  // light shafts: an open cone (no cap) with its apex at the top
+  beamCone: new THREE.ConeGeometry(0.5, 1, 32, 1, true).translate(0, 0.5, 0),
   // pitch and court markings: thin rings lying flat, a full circle and two arcs centred on +x
   ring: new THREE.RingGeometry(0.494, 0.5, 72).rotateX(-Math.PI / 2),
   // the penalty-area D (106 degrees) and the NBA three-point arc (136 degrees)
@@ -45,6 +47,40 @@ const SHAPES: Record<DShape, THREE.BufferGeometry> = {
 type Quality = 'low' | 'medium' | 'high';
 
 const glassNight = { value: 0 };
+
+/**
+ * Soft light shafts: additive, brightest along the axis and near the lamp, fading to nothing at
+ * the cone's silhouette and towards the floor, so they read as light in haze, not as solid cones.
+ */
+function beamMaterial(opacity: number): THREE.MeshBasicMaterial {
+  const m = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+  m.customProgramCacheKey = () => 'district-light-beam';
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vEdge;\nvarying float vH;')
+      .replace(
+        '#include <project_vertex>',
+        `#include <project_vertex>
+        {
+          vec3 bn = normal;
+          #ifdef USE_INSTANCING
+            bn = mat3(instanceMatrix) * bn;
+          #endif
+          vec3 vn = normalize(normalMatrix * bn);
+          vEdge = abs(dot(vn, normalize(-mvPosition.xyz)));
+          vH = position.y;
+        }`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vEdge;\nvarying float vH;')
+      .replace(
+        '#include <dithering_fragment>',
+        `#include <dithering_fragment>
+        gl_FragColor.a *= pow(vEdge, 3.0) * mix(0.15, 1.0, vH * vH);`,
+      );
+  };
+  return m;
+}
 const crowdLight = { value: 0.08 };
 
 /**
@@ -85,25 +121,39 @@ function crowdMaterial(): THREE.MeshStandardMaterial {
           float row = floor(vCW.y / 0.3);
           float cellId = floor(seat);
           float fs = fract(seat) - 0.5;
-          float h = chash(vec3(cellId, row, floor(top > 0.5 ? (abs(n.x) > abs(n.z) ? vCW.x : vCW.z) / 0.75 : 0.0)));
-          float fan = step(h, 0.9);
-          // muted, varied clothing, about a third of the crowd in club colours
-          vec3 shirt = 0.32 + 0.26 * cos(6.2832 * (h * 5.7 + vec3(0.0, 0.33, 0.67)));
-          shirt = mix(shirt, seatCol * 1.1, step(0.66, fract(h * 13.7)));
-          shirt = mix(shirt, vec3(0.08), step(0.85, fract(h * 7.3)));
+          float h = chash(vec3(cellId, row, floor(top > 0.5 ? (abs(n.x) > abs(n.z) ? vCW.x : vCW.z) / 0.8 : 0.0)));
+          float fan = step(h, 0.93);
+          // clothing like a real crowd: mostly black, navy, grey and white, about a third in team
+          // jerseys (the seat colour, brightened), the rest in muted colours
+          float pick = fract(h * 13.7);
+          vec3 muted = mix(vec3(0.3), 0.32 + 0.22 * cos(6.2832 * (h * 5.7 + vec3(0.0, 0.33, 0.67))), 0.55);
+          vec3 shirt = pick < 0.22 ? vec3(0.06 + 0.06 * fract(h * 3.1), 0.07, 0.1)
+            : pick < 0.36 ? vec3(0.32 + 0.2 * fract(h * 5.3))
+            : pick < 0.48 ? vec3(0.82)
+            : pick < 0.8 ? clamp(seatCol * 1.9 + 0.04, 0.0, 1.0)
+            : muted;
           vec3 skin = mix(vec3(0.36, 0.22, 0.15), vec3(0.86, 0.68, 0.55), fract(h * 31.3));
-          // top faces: shoulders and a head seen from above
-          vec2 g2 = vec2(fs, fract((abs(n.x) > abs(n.z) ? vCW.x : vCW.z) / 0.75) - 0.5);
-          float body = 1.0 - smoothstep(0.32, 0.4, length(g2 * vec2(1.0, 1.4)));
-          float head = 1.0 - smoothstep(0.1, 0.14, length(g2));
-          vec3 onTop = mix(seatCol * 0.55, mix(shirt, skin, head), fan * body);
-          // row fronts: torsos and heads above the seat backs
+          vec3 hair = mix(vec3(0.05, 0.04, 0.03), vec3(0.45, 0.32, 0.2), step(0.8, fract(h * 17.1)));
+          // top faces: each seat holds a person seen from above, shoulders and a head, or shows the
+          // empty seat pan with its seat back
+          vec2 g2 = vec2(fs, fract((abs(n.x) > abs(n.z) ? vCW.x : vCW.z) / 0.8) - 0.5);
+          float body = 1.0 - smoothstep(0.28, 0.34, length(g2 * vec2(1.0, 1.25)));
+          float head = 1.0 - smoothstep(0.1, 0.13, length(g2 - vec2(0.0, -0.05)));
+          vec3 person = mix(shirt, mix(hair, skin, step(0.5, fract(h * 23.0))), head);
+          vec3 seatTop = mix(seatCol, seatCol * 0.6, step(0.38, abs(fs)));
+          vec3 onTop = mix(seatTop, person, fan * body);
+          // row fronts: seat backs with armrest gaps, and above them torsos and heads of the seated
           float yf = fract(vCW.y / 0.3);
-          float torso = step(abs(fs), 0.36) * fan;
-          vec3 riser = mix(seatCol * 0.5, seatCol * 0.25, step(0.42, abs(fs)));
-          riser = mix(riser, shirt, torso * step(yf, 0.75));
-          riser = mix(riser, skin, torso * step(0.75, yf) * step(abs(fs), 0.16));
-          diffuseColor.rgb = mix(riser, onTop, top);
+          float torso = step(abs(fs), 0.32) * fan;
+          vec3 riser = mix(seatCol, seatCol * 0.35, step(0.43, abs(fs)));
+          riser = mix(riser, seatCol * 1.25, step(0.9, yf) * step(abs(fs), 0.43));
+          riser = mix(riser, shirt * 0.9, torso * step(0.25, yf) * step(yf, 0.78));
+          riser = mix(riser, skin, torso * step(0.78, yf) * step(abs(fs), 0.14));
+          // far away, single seats are smaller than a pixel: fade to the crowd's average tone so
+          // distant stands read as a dense crowd instead of shimmering noise
+          float fw = length(fwidth(vCW));
+          vec3 avg = mix(seatCol * 0.6, mix(vec3(0.3), clamp(seatCol * 1.9 + 0.04, 0.0, 1.0), 0.35), 0.8);
+          diffuseColor.rgb = mix(mix(riser, onTop, top), avg, smoothstep(0.12, 0.35, fw));
         }`,
       )
       .replace(
@@ -188,8 +238,8 @@ export function Districts({ data, quality }: { data: DistrictData; quality: Qual
       crowd: crowdMaterial(),
       // light beams: faint, additive, so they read as haze lit by the floodlights
       // the open-air stadium's floodlight beams only show after dark
-      nightBeam: new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
-      beam: new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }),
+      nightBeam: beamMaterial(0),
+      beam: beamMaterial(0.16),
       // pitch and court markings: unshaded so they stay crisp white in shade and at night, drawn
       // in front of the surface they lie on
       paint: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
@@ -209,8 +259,8 @@ export function Districts({ data, quality }: { data: DistrictData; quality: Qual
     // floodlights: the pitch, the court and the crowd carry their own light after dark
     (mats.pitch as THREE.MeshStandardMaterial).emissiveIntensity = n * 0.55;
     (mats.court as THREE.MeshStandardMaterial).emissiveIntensity = 0.2 + n * 0.6;
-    crowdLight.value = 0.08 + n * 0.45;
-    (mats.nightBeam as THREE.MeshBasicMaterial).opacity = n * 0.07;
+    crowdLight.value = 0.06 + n * 0.22;
+    (mats.nightBeam as THREE.MeshBasicMaterial).opacity = n * 0.16;
   });
   const groups = useMemo(() => {
     const g = new Map<string, DPiece[]>();

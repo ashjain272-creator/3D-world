@@ -215,6 +215,8 @@ function windowGlass(): THREE.MeshStandardMaterial {
 export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quality: Quality; y0?: number }) {
   const seaY = y0 - 0.85;
   const shadows = quality === 'high';
+  // the open sea: deep Gulf teal, glossy so it catches the sky
+  const seaMat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#1d6f8c", roughness: 0.12, metalness: 0.35 }), []);
   const mats = useMemo<Record<DMat, THREE.Material>>(
     () => ({
       plaster: texturedMaterial('plaster', { color: '#ffffff', roughness: 0.85 }),
@@ -286,7 +288,7 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
     <group>
       {data.sea !== undefined && (
         // the sea: one large plane from the shoreline out past the horizon
-        <mesh material={mats.water} position={[0, seaY, data.sea - 1500]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <mesh material={seaMat} position={[0, seaY, data.sea - 1500]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
           <planeGeometry args={[6000, 3000]} />
         </mesh>
       )}

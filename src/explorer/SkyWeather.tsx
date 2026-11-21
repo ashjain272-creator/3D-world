@@ -160,8 +160,9 @@ export function SkyWeather({ planet, system, quality, warm = false, cold = false
     if (scene.fog instanceof THREE.Fog) {
       scene.fog.color.copy(fogColor);
       const dense = wx === 'fog' ? 0.25 : wx === 'dust' ? 0.35 : wx === 'storm' ? 0.5 : wx === 'snow' ? 0.85 : wx === 'rain' ? 0.65 : 1;
-      scene.fog.near = 30 * dense;
-      scene.fog.far = (quality === 'low' ? 600 : 950) * dense;
+      // a long, clear haze so a whole city reads from the air
+      scene.fog.near = 80 * dense;
+      scene.fog.far = (quality === 'low' ? 900 : 1700) * dense;
     }
     scene.background = fogColor;
     if (stars.current) (stars.current.material as THREE.PointsMaterial).opacity = night * (1 - overcast);

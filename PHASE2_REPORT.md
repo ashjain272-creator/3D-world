@@ -617,3 +617,25 @@ Requested: "Make a basketball NBA sized stadium, make a football Premier League 
 - **The `index` chunk grew to 442 kB** (postprocessing). Splitting post-processing into a lazy chunk was not done.
 - **Soak memory figures include fake-indexeddb's in-memory store**, which holds every saved record in the same Node heap, so they overstate what the simulation itself uses.
 - **GitHub push** fails with 403: the Claude GitHub App has no write access to `ashjain272-creator/3D-world`. All commits are local on the branch.
+
+## Phase 9: a Dubai-style coastal corridor
+
+The research behind this phase is in `reports/Dubai urban layout patterns.md`, which sets out 45 generator rules. The futuristic capital is no longer laid out as rings around a centre. It is a corridor along the coast, built in bands parallel to the sea at -z:
+
+- **Sea and beach:** a carved coastline, a deep-teal sea plane, public and resort beaches, and a coastal road.
+- **Old town:** at the mouth of a winding creek, with courtyard houses, souks, abra piers and dense small mosques.
+- **Spine:** the main avenue, with a 3-lane elevated express road and a metro viaduct carrying 4 stations and footbridges. Malls sit on it.
+- **Downtown:** a ring road around a lake with fountains, the signature supertall, a mall and corner towers.
+- **Further along the coast:** a canal loop lined with towers and park strips, then the Marina (a canal of supertalls), JBR-style slabs on a podium and JLT-style tower clusters around lakes.
+- **Inland:** an arterial road with a second express road, gated villa estates (loop roads around golf, or lanes around a lake), the stadium and arena, and two worship compounds (church and temple) placed apart from each other.
+- **Mosques:** Friday mosques are spread across the city, and small mosques are placed by catchment (one per 95 m, 65 m in the old town).
+
+Capital radius is 340 m (the terrain is 1.2 km). Fog was lengthened so the whole corridor reads from the air.
+
+Screenshots are in `docs/screenshots/corridor/`. The corridor test in `tests/world3d.test.ts` checks:
+
+- the bands are in order and no building stands in the sea;
+- the creek and canal reach the sea;
+- every mosque catchment is covered;
+- there are 2 compounds, the estates exist and the parks come in varied sizes;
+- the express roads and ramps are in place.

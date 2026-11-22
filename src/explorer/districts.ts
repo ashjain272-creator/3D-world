@@ -1076,6 +1076,107 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
     add('sphere', 'leaf', bx + Math.cos(t) * 1.8, 1.4, bz - Math.sin(t) * 1.8, 1.3, 1.1, 1.3, '#4f8a3a');
   }
 
+  // ── exterior detail
+  const gold = '#d8b25a';
+  // a shaded arcade along the front of each wing: paired columns with gilt capitals, a lit soffit,
+  // a crenellated parapet and uplights at the column feet
+  const az = D / 2 + 3.2;
+  for (const sd of [-1, 1]) {
+    const x0 = rd / 2 + 2.5;
+    const x1 = coreW / 2 - 0.5;
+    if (x1 - x0 < 6) continue;
+    const mid = sd * (x0 + x1) / 2;
+    const len = x1 - x0;
+    add('box', 'stone', mid, 5.4, az - 1.5, len, 0.9, 3.6, '#e8e0cc');
+    add('box', 'glow', mid, 5.38, az - 1.5, len - 0.6, 0.04, 3, '#fff0d4');
+    add('box', 'stone', mid, 6.3, az + 0.2, len, 0.35, 0.4, '#d8cfbc');
+    for (let x = x0; x <= x1 + 0.01; x += 1.1) add('box', 'stone', sd * x, 6.65, az + 0.2, 0.55, 0.45, 0.4, '#d8cfbc');
+    for (let x = x0; x <= x1 + 0.01; x += 4.2) {
+      for (const dx of [-0.35, 0.35]) {
+        add('cyl', 'marble', sd * (x + dx), 0.35, az, 0.42, 5.05, 0.42, '#f2eee6');
+        add('cyl', 'gold', sd * (x + dx), 5.0, az, 0.62, 0.4, 0.62, gold);
+        add('box', 'marble', sd * (x + dx), 0.35, az, 0.7, 0.4, 0.7, '#e6e0d4');
+      }
+      add('cone', 'glow', sd * x, 0.35, az + 0.6, 0.5, 0.12, 0.5, '#ffe6b8');
+      // a pointed arch between each pair of column bays, in carved stone
+      if (x + 4.2 <= x1 + 0.01) add('arch', 'stone', sd * (x + 2.1), 4.1, az + 0.05, 3.4, 1.3, 0.25, '#e8e0cc');
+    }
+  }
+  // mashrabiya screens of gilt diamond lattice over the upper glazing of each wing
+  for (const sd of [-1, 1]) {
+    const x0 = rd / 2 + 1.2;
+    const x1 = coreW / 2 - 1;
+    const bw = sideW > 12 ? Math.min(14, sideW * 0.55) + 1 : 0;
+    const bx0 = rd / 2 + 3 - 0.5;
+    for (let x = x0 + 0.4; x < x1; x += 0.8)
+      for (let y = 7.4; y < H - 0.8; y += 0.8) {
+        if (bw && x > bx0 - 0.2 && x < bx0 + bw + 0.2) continue;
+        add('box', 'gold', sd * x, y, D / 2 + 0.95, 0.42, 0.42, 0.05, '#c8a050', 0, 0, Math.PI / 4);
+      }
+    add('box', 'stone', sd * (x0 + x1) / 2, 7.05, D / 2 + 1, x1 - x0, 0.25, 0.3, '#d8cfbc');
+  }
+  // the rotunda: a gilt crown at the top of the drum, light strips on every fin
+  add('cyl', 'gold', 0, rh - 0.6, rz, rd + 1.6, 0.5, rd + 1.6, gold);
+  for (let k = 0; k < (big ? 36 : 22); k++) {
+    const t = (k / (big ? 36 : 22)) * Math.PI * 2;
+    add('cone', 'gold', Math.sin(t) * (rd / 2 + 0.8), rh - 0.1, rz + Math.cos(t) * (rd / 2 + 0.8), 0.5, 1.2, 0.5, gold);
+  }
+  {
+    const fins2 = big ? 28 : 16;
+    for (let k = 0; k < fins2; k++) {
+      const t = (k / fins2) * Math.PI * 2;
+      if ((Math.abs(Math.sin(t)) * rd) / 2 < pass + 0.3) continue;
+      add('box', 'glow', Math.sin(t) * (rd / 2 + 0.4), 1.2, rz + Math.cos(t) * (rd / 2 + 0.4), 0.08, rh - 2.4, 0.06, brand, t);
+    }
+  }
+  // two digital totems flanking the entrance, with a lit logo and a screen
+  for (const sd of [-1, 1]) {
+    const tx = sd * (rd / 2 + 3.2);
+    const tz = rz + rd / 2 + 6;
+    add('box', 'dark', tx, 0.35, tz, 1.4, 7.5, 0.8, '#1c1e22');
+    add('box', 'glow', tx, 1.2, tz + 0.41, 1.1, 4.6, 0.04, sd < 0 ? '#7ac8ff' : '#ff8ad8');
+    add('box', 'gold', tx, 6.2, tz + 0.41, 1.2, 1.2, 0.05, gold);
+    add('box', 'stone', tx, 7.85, tz, 1.7, 0.25, 1.1, '#d8cfbc');
+  }
+  // gilt sculptures: stacked spheres on marble plinths at the corners of the forecourt
+  for (const sd of [-1, 1]) {
+    const sx = sd * (W / 2 - 2);
+    const sz = D / 2 + 5;
+    add('box', 'marble', sx, 0.35, sz, 2, 1.1, 2, '#ece6da');
+    add('sphere', 'gold', sx, 2.2, sz, 1.6, 1.6, 1.6, gold);
+    add('sphere', 'gold', sx + 0.3, 3.5, sz, 1.1, 1.1, 1.1, gold);
+    add('sphere', 'gold', sx - 0.1, 4.4, sz + 0.2, 0.7, 0.7, 0.7, gold);
+    add('cone', 'glow', sx, 1.45, sz + 1.1, 0.5, 0.1, 0.5, '#ffe6b8');
+  }
+  // flower beds and lit bollards along the arcade
+  for (const sd of [-1, 1])
+    for (let x = rd / 2 + 4.5; x < coreW / 2 - 1; x += 4.2) {
+      add('box', 'stone', sd * x, 0.35, az + 1.6, 2.6, 0.45, 1, '#cfc6b4');
+      add('box', 'leaf', sd * x, 0.8, az + 1.6, 2.4, 0.35, 0.8, ['#c84a7a', '#e8c040', '#7a4ac8', '#e86a3a'][Math.floor(r(1200 + x) * 4)]);
+      add('cyl', 'metal', sd * (x + 2.1), 0.35, az + 1.6, 0.22, 0.9, 0.22, '#3a3e44');
+      add('cyl', 'glow', sd * (x + 2.1), 1.1, az + 1.6, 0.24, 0.12, 0.24, '#fff2d6');
+    }
+  // a rooftop garden on the wings: planted edges along the front parapet and a terrace café with
+  // a pergola at one end
+  for (const sd of [-1, 1]) {
+    const x0 = rd / 2 + 1.5;
+    const x1 = coreW / 2 - 1.5;
+    if (x1 - x0 < 6) continue;
+    add('box', 'stone', sd * (x0 + x1) / 2, H + 0.8, D / 2 - 1.2, x1 - x0, 0.6, 1.4, '#cfc6b4');
+    add('box', 'leaf', sd * (x0 + x1) / 2, H + 1.4, D / 2 - 1.2, x1 - x0 - 0.2, 0.5, 1.2, '#4f8a3a');
+    for (let x = x0 + 1.5; x < x1; x += 3.5) add('sphere', 'leaf', sd * x, H + 1.9, D / 2 - 1.2, 1.4, 1.2, 1.4, '#3f7a34');
+  }
+  {
+    const px = (coreW / 2 - 6) * (r(1300) < 0.5 ? -1 : 1);
+    const pz = D / 2 - 6;
+    for (const dx of [-3, 3]) for (const dz of [-2.5, 2.5]) add('box', 'wood', px + dx, H + 0.8, pz + dz, 0.3, 3, 0.3, '#8a6a4a');
+    for (let k = -3; k <= 3; k++) add('box', 'wood', px + k, H + 3.8, pz, 0.2, 0.25, 5.6, '#8a6a4a');
+    for (const dx of [-1.6, 1.6]) {
+      add('cyl', 'metal', px + dx, H + 0.8, pz, 0.8, 0.75, 0.8, '#f0f0f0');
+      add('cyl', 'glow', px + dx, H + 3.4, pz, 0.3, 0.2, 0.3, '#fff2d6');
+    }
+  }
+
   // ── the observation tower (big malls): a slender shaft with a glazed pod and a spire
   if (big) {
     const tx = -W / 2 + anchorW + 8;
@@ -1110,8 +1211,8 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
   const front = rz + rd / 2;
   if (big) {
     // the drop-off lane: an asphalt arc around the rotunda, with a covered walkway
-    add('box', 'dark', 0, 0.35, front + 4, rd + 26, 0.06, 6, '#3c4048');
-    for (let x = -rd / 2 - 10; x <= rd / 2 + 10; x += 3) add('box', 'paint', x, 0.42, front + 4, 1.4, 0.01, 0.15, '#f0f0f0');
+    add('box', 'dark', 0, 0.35, front + 4, rd + 14, 0.06, 6, '#3c4048');
+    for (let x = -rd / 2 - 6; x <= rd / 2 + 6; x += 3) add('box', 'paint', x, 0.42, front + 4, 1.4, 0.01, 0.15, '#f0f0f0');
     const taxis = ['#f2c21a', '#f2c21a', '#e8e8e8', '#202226'];
     for (let k = 0; k < 5; k++) {
       const x = -rd / 2 - 6 + k * 7 + r(300 + k) * 2;
@@ -1127,11 +1228,11 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
     }
     // the show fountain: a long basin with a row of jets in front of each wing
     for (const s of [-1, 1]) {
-      const cx = s * (rd / 2 + 16);
-      add('box', 'marble', cx, 0.35, fz + 5, 22, 0.7, 9, '#ece6da');
-      add('box', 'water', cx, 0.9, fz + 5, 21, 0.12, 8, '#4ab8d8');
-      for (let k = 0; k < 7; k++) add('cyl', 'water', cx - 9 + k * 3, 1, fz + 5, 0.35, 2 + r(400 + k + s) * 3, 0.35, '#cdeefa');
-      add('box', 'glow', cx, 0.9, fz + 9.55, 21, 0.12, 0.05, '#7ae0ff');
+      const cx = s * (rd / 2 + 19.8);
+      add('box', 'marble', cx, 0.35, fz + 5.5, 18, 0.7, 6, '#ece6da');
+      add('box', 'water', cx, 0.9, fz + 5.5, 17, 0.12, 5, '#4ab8d8');
+      for (let k = 0; k < 6; k++) add('cyl', 'water', cx - 7.5 + k * 3, 1, fz + 5.5, 0.35, 2 + r(400 + k + s) * 3, 0.35, '#cdeefa');
+      add('box', 'glow', cx, 0.9, fz + 8.55, 17, 0.12, 0.05, '#7ae0ff');
     }
   } else {
     // a plaza out to the waterfront: paving bands, café terraces either side of the rotunda,

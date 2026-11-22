@@ -250,6 +250,9 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
       pitch: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, emissive: new THREE.Color('#3f8a36'), emissiveIntensity: 0 }),
       court: texturedMaterial('wood', { color: '#ffffff', roughness: 0.35, emissive: new THREE.Color('#8a6038'), emissiveIntensity: 0.2 }),
       net: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false }),
+      // mall atrium glass: pale, clear-looking glass lit warm from inside after dark; double-sided
+      // so the vault and dome read as glass from inside the rotunda too
+      atrium: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.12, metalness: 0.25, emissive: new THREE.Color('#ffd7a0'), emissiveIntensity: 0.05, transparent: true, opacity: 0.72, side: THREE.DoubleSide, depthWrite: false }),
       skylight: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.45, depthWrite: false }),
     }),
     [],
@@ -259,6 +262,7 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
     const n = nightUniform.value;
     glassNight.value = n;
     (mats.water as THREE.MeshStandardMaterial).emissiveIntensity = 0.12 + n * 0.6;
+    (mats.atrium as THREE.MeshStandardMaterial).emissiveIntensity = 0.05 + n * 0.75;
     // floodlights: the pitch, the court and the crowd carry their own light after dark
     (mats.pitch as THREE.MeshStandardMaterial).emissiveIntensity = n * 0.55;
     (mats.court as THREE.MeshStandardMaterial).emissiveIntensity = 0.2 + n * 0.6;

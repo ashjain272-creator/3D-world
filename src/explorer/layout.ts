@@ -89,6 +89,51 @@ export interface CityFeatures {
   roundabouts: [number, number][];
 }
 
+/**
+ * The shape of a mall in its entrance frame (local +z towards the door): its width across the
+ * front, its depth, and the hollow entrance rotunda (diameter and centre). Shared by the builder
+ * and the colliders so you can walk in through the rotunda's doorway.
+ */
+export function mallGeometry(b: Pick<Building, 'x' | 'z' | 'w' | 'd' | 'door'>) {
+  const alongX = Math.abs(b.door[0] - b.x) > Math.abs(b.door[1] - b.z);
+  const W = alongX ? b.d : b.w;
+  const D = alongX ? b.w : b.d;
+  const big = W >= 60;
+  const rd = big ? Math.min(30, W * 0.22) : Math.min(14, W * 0.55);
+  const rz = D / 2 - rd * 0.15;
+  const ry = Math.atan2(b.door[0] - b.x, b.door[1] - b.z);
+  const cos = Math.cos(ry);
+  const sin = Math.sin(ry);
+  const toWorld = (lx: number, lz: number): [number, number] => [b.x + lx * cos + lz * sin, b.z - lx * sin + lz * cos];
+  return { W, D, big, rd, rz, alongX, toWorld };
+}
+
+function mallColliders(b: Building): Collider[] {
+  const g = mallGeometry(b);
+  const out: Collider[] = [];
+  const box = (lx: number, lz: number, w: number, d: number) => {
+    const [x, z] = g.toWorld(lx, lz);
+    out.push({ type: 'box', x, z, hw: (g.alongX ? d : w) / 2, hd: (g.alongX ? w : d) / 2 });
+  };
+  const rBack = g.rz - g.rd / 2;
+  const coreHalf = g.W / 2;
+  const sideW = coreHalf - g.rd / 2;
+  // the block behind the rotunda and the wings either side of it
+  box(0, (rBack - g.D / 2) / 2, g.W, rBack + g.D / 2);
+  for (const s of [-1, 1]) box(s * (g.rd / 2 + sideW / 2), (rBack + g.D / 2) / 2, sideW, g.D / 2 - rBack);
+  // the rotunda's glass wall as a ring of posts, open at the doorway
+  const n = Math.ceil((Math.PI * g.rd) / 1.1);
+  for (let k = 0; k < n; k++) {
+    const t = (k / n) * Math.PI * 2;
+    const lx = Math.sin(t) * g.rd / 2;
+    const lz = g.rz + Math.cos(t) * g.rd / 2;
+    if (Math.abs(lx) < 2.4 && lz > g.rz) continue;
+    const [x, z] = g.toWorld(lx, lz);
+    out.push({ type: 'circle', x, z, hw: 0.45, hd: 0 });
+  }
+  return out;
+}
+
 export function settlementRadius(s: Settlement): number {
   // futuristic cities are laid out in districts (downtown, villa estates, souk, mixed), which need room
   if (s.style === 'futuristic') return s.kind === 'capital' ? 520 : s.kind === 'city' ? 380 : s.kind === 'town' ? 150 : 95;
@@ -1109,13 +1154,14 @@ function finish(
     }
     landmarks.push({ id: lm.id, name: lm.name, kind: lm.kind, description: lm.description, x, z, radius });
   });
-  const colliders: Collider[] = buildings.filter((b) => b.kind !== 'park').map((b) =>
+  const colliders: Collider[] = buildings.filter((b) => b.kind !== 'park' && b.kind !== 'mall').map((b) =>
     b.kind === 'dome' || b.kind === 'treehouse' || b.kind === 'pod' || b.kind === 'silo' || b.kind === 'windmill'
       ? { type: 'circle', x: b.x, z: b.z, hw: (b.kind === 'treehouse' ? 2.4 : Math.max(b.w, b.d) / 2) * 0.95, hd: 0 }
       : b.plot?.rot !== undefined
         ? { type: 'circle', x: b.x, z: b.z, hw: Math.min(b.w, b.d) / 2, hd: 0 }
         : { type: 'box', x: b.x, z: b.z, hw: (b.rot ? b.d : b.w) / 2, hd: (b.rot ? b.w : b.d) / 2 },
   );
+  for (const b of buildings) if (b.kind === 'mall') colliders.push(...mallColliders(b));
   for (const l of landmarks) if (l.kind !== 'market' && l.kind !== 'garden') colliders.push({ type: 'circle', x: l.x, z: l.z, hw: l.radius * 0.55, hd: 0 });
   const homes = buildings.map((b, i) => (b.role === 'home' ? i : -1)).filter((i) => i >= 0);
   const works = buildings.map((b, i) => (b.role !== 'home' ? i : -1)).filter((i) => i >= 0);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { coastLine, generateLayout, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
+import { coastLine, generateLayout, mallGeometry, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
 import { generateTerrain, type TerrainData } from '../src/explorer/terrain';
 import { generateVegetation } from '../src/explorer/vegetation';
 import { deckSampler, generateHighways, sampleRoad } from '../src/explorer/roadNetwork';
@@ -198,6 +198,25 @@ describe('futuristic districts', () => {
         // every roundabout sits on a street crossing
         for (const [x, z] of l.features!.roundabouts) expect(l.streets.filter((st) => (st.a[0] === x && st.a[1] === z) || (st.b[0] === x && st.b[1] === z)).length).toBe(4);
       }
+    }
+  });
+
+  it('lets you walk into a mall through its rotunda doorway', () => {
+    const s = cities.find((c) => c.kind === 'capital')!;
+    const l = generateLayout(s);
+    const malls = l.buildings.filter((b) => b.kind === 'mall');
+    expect(malls.length).toBeGreaterThan(0);
+    const hit = (x: number, z: number) =>
+      l.colliders.some((c) => (c.type === 'circle' ? Math.hypot(c.x - x, c.z - z) < c.hw + 0.3 : Math.abs(c.x - x) < c.hw + 0.3 && Math.abs(c.z - z) < c.hd + 0.3));
+    for (const m of malls) {
+      const g = mallGeometry(m);
+      // the rotunda's centre and the doorway are open; the shopping wings are solid
+      expect(hit(...g.toWorld(0, g.rz))).toBe(false);
+      expect(hit(...g.toWorld(0, g.rz + g.rd / 2))).toBe(false);
+      expect(hit(...g.toWorld(0, -g.D / 2 + 2))).toBe(true);
+      expect(hit(...g.toWorld(g.rd / 2 + 3, g.D / 2 - 2))).toBe(true);
+      // the glass wall either side of the door blocks
+      expect(hit(...g.toWorld(g.rd / 2, g.rz))).toBe(true);
     }
   });
 

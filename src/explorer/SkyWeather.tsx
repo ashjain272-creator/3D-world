@@ -188,8 +188,8 @@ export function SkyWeather({ planet, system, quality, warm = false, cold = false
         shadow-camera-bottom={-120}
         shadow-camera-near={10}
         shadow-camera-far={700}
-        shadow-bias={-0.0004}
-        shadow-normalBias={quality === 'high' ? 0.03 : 0.06}
+        shadow-bias={-0.0006}
+        shadow-normalBias={quality === 'high' ? 0.06 : 0.12}
       />
       <directionalLight ref={moonLight} color="#8aa8ff" />
       <pointLight ref={cityGlow} color="#bcd0ff" distance={60} decay={1.4} intensity={0} />

@@ -689,3 +689,21 @@ Both malls are rebuilt in the style of Dubai's waterfront malls such as Marina M
 **Tests:** malls must face the spine (front edge within 40 m of it) or sit in Downtown. Downtown ring towers keep clear of the mall.
 
 Screenshots are in `docs/screenshots/mall/`.
+
+## Phase 12: walkable malls
+
+You can now walk into both malls, all the way through.
+
+**Route inside:** you enter through the rotunda's open doorway, cross the rotunda, and go through a passage at its back into a concourse that runs the full length of the mall under the glass barrel vault.
+
+**The concourse**
+- **Floor:** marble with inlaid bands and gold strips.
+- **Shops:** shopfronts on both levels and both sides, with goods lit behind the glass, lit fascia signs and stone pilasters.
+- **Galleries:** an upper gallery along each side, with a glass balustrade and lit underside, and footbridges across the void between them.
+- **Escalators:** crossing pairs, built as flights of treads between glass panels with lit handrails.
+- **Centre:** kiosks, planters with trees and benches, with pendant lamps and banners hanging from the vault.
+- **Ends:** on the flagship, the anchor stores' shopfronts close the concourse. The Downtown mall has glass end walls.
+
+**The rotunda chandelier** is now a gilt crown with three rings of crystal drops on fine cables.
+
+**Colliders** follow the new shell. A test walks from the rotunda centre through the passage and along the whole concourse without hitting anything. It also checks that the shopping wings, the back block and the concourse ends are solid.

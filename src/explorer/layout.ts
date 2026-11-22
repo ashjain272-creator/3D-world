@@ -101,11 +101,17 @@ export function mallGeometry(b: Pick<Building, 'x' | 'z' | 'w' | 'd' | 'door'>) 
   const big = W >= 60;
   const rd = big ? Math.min(30, W * 0.22) : Math.min(14, W * 0.55);
   const rz = D / 2 - rd * 0.15;
+  const anchorW = big ? Math.min(26, W * 0.2) : 0;
+  const coreW = W - anchorW * 2;
+  // the concourse under the glass vault, and the passage from the rotunda into it
+  const vd = Math.min(14, D * 0.32);
+  const rBack = rz - rd / 2;
+  const pass = 2.4;
   const ry = Math.atan2(b.door[0] - b.x, b.door[1] - b.z);
   const cos = Math.cos(ry);
   const sin = Math.sin(ry);
   const toWorld = (lx: number, lz: number): [number, number] => [b.x + lx * cos + lz * sin, b.z - lx * sin + lz * cos];
-  return { W, D, big, rd, rz, alongX, toWorld };
+  return { W, D, big, rd, rz, alongX, toWorld, anchorW, coreW, vd, rBack, pass };
 }
 
 function mallColliders(b: Building): Collider[] {
@@ -115,19 +121,23 @@ function mallColliders(b: Building): Collider[] {
     const [x, z] = g.toWorld(lx, lz);
     out.push({ type: 'box', x, z, hw: (g.alongX ? d : w) / 2, hd: (g.alongX ? w : d) / 2 });
   };
-  const rBack = g.rz - g.rd / 2;
-  const coreHalf = g.W / 2;
-  const sideW = coreHalf - g.rd / 2;
-  // the block behind the rotunda and the wings either side of it
-  box(0, (rBack - g.D / 2) / 2, g.W, rBack + g.D / 2);
-  for (const s of [-1, 1]) box(s * (g.rd / 2 + sideW / 2), (rBack + g.D / 2) / 2, sideW, g.D / 2 - rBack);
-  // the rotunda's glass wall as a ring of posts, open at the doorway
-  const n = Math.ceil((Math.PI * g.rd) / 1.1);
+  const { W, D, rd, rz, vd, rBack, pass, coreW } = g;
+  // the block behind the concourse, the anchors at its ends, the wings either side of the rotunda,
+  // and the short walls either side of the passage from the rotunda into the concourse
+  box(0, (-D / 2 - vd / 2) / 2, W, D / 2 - vd / 2);
+  if (g.anchorW > 0) for (const s of [-1, 1]) box(s * (coreW / 2 + g.anchorW / 2), (D / 2 - vd / 2) / 2, g.anchorW, D / 2 + vd / 2);
+  else for (const s of [-1, 1]) box(s * (coreW / 2 + 0.3), 0, 0.6, vd);
+  for (const s of [-1, 1]) box(s * (rd / 2 + (coreW / 2 - rd / 2) / 2), (vd / 2 + D / 2) / 2, coreW / 2 - rd / 2, D / 2 - vd / 2);
+  if (rBack > vd / 2 + 0.2) for (const s of [-1, 1]) box(s * (pass + (rd / 2 - pass) / 2), (vd / 2 + rBack) / 2, rd / 2 - pass, rBack - vd / 2);
+  // the rotunda's glass wall as a ring of posts, open at the doorway and at the passage
+  const n = Math.ceil((Math.PI * rd) / 1.1);
   for (let k = 0; k < n; k++) {
     const t = (k / n) * Math.PI * 2;
-    const lx = Math.sin(t) * g.rd / 2;
-    const lz = g.rz + Math.cos(t) * g.rd / 2;
-    if (Math.abs(lx) < 2.4 && lz > g.rz) continue;
+    const lx = (Math.sin(t) * rd) / 2;
+    const lz = rz + (Math.cos(t) * rd) / 2;
+    if (Math.abs(lx) < pass) continue;
+    // posts inside the concourse or the wings are covered by those
+    if (lz < vd / 2) continue;
     const [x, z] = g.toWorld(lx, lz);
     out.push({ type: 'circle', x, z, hw: 0.45, hd: 0 });
   }

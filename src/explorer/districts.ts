@@ -800,10 +800,9 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
   const glassC = '#5f8fae';
   const brand = r(1) < 0.5 ? '#ffd27a' : '#7ae0ff';
   const shopCols = ['#ff5a5a', '#ffd23a', '#5ad1ff', '#ff8ad8', '#8aff9a', '#ffffff', '#ff9a3a', '#b48aff'];
-  const anchorW = big ? Math.min(26, W * 0.2) : 0;
-  const coreW = W - anchorW * 2;
-  // the entrance rotunda's size; it is hollow and you can walk into it
+  // the entrance rotunda, the concourse and the passage between them; all hollow and walkable
   const g = mallGeometry(b);
+  const { anchorW, coreW, vd, pass } = g;
   const rd = g.rd;
   const rz = g.rz;
   const rh = H + (big ? 8 : 4);
@@ -815,8 +814,11 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
 
   // ── the main body: two shopping levels clad in cream stone with vertical fins
   // the body is notched where the rotunda stands: a block behind it and a wing either side
-  add('box', 'stone', 0, 0.35, (rBack - D / 2) / 2, coreW, H - 0.35, rBack + D / 2, cream);
-  for (const sd of [-1, 1]) add('box', 'stone', sd * (rd / 2 + sideW / 2), 0.35, (rBack + D / 2) / 2, sideW, H - 0.35, D / 2 - rBack, cream);
+  // the shell: a block behind the concourse, wings either side of the rotunda, and short walls
+  // either side of the passage from the rotunda into the concourse
+  add('box', 'stone', 0, 0.35, (-D / 2 - vd / 2) / 2, coreW, H - 0.35, D / 2 - vd / 2, cream);
+  for (const sd of [-1, 1]) add('box', 'stone', sd * (rd / 2 + sideW / 2), 0.35, (vd / 2 + D / 2) / 2, sideW, H - 0.35, D / 2 - vd / 2, cream);
+  if (rBack > vd / 2 + 0.2) for (const sd of [-1, 1]) add('box', 'stone', sd * (pass + (rd / 2 - pass) / 2), 0.35, (vd / 2 + rBack) / 2, rd / 2 - pass, H - 0.35, rBack - vd / 2, cream);
   // glazed shopfronts at ground level, a dark band of glass above, on the front wings and the back
   const faces: [number, number, number, number][] = [[0, -D / 2, coreW, Math.PI]];
   for (const sd of [-1, 1]) faces.push([sd * (rd / 2 + sideW / 2), D / 2, sideW, 0]);
@@ -834,9 +836,9 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
     add('box', 'glow', x, 3.7, D / 2 + 0.75, 3.8, 0.55, 0.08, shopCols[Math.floor(r(40 + x) * shopCols.length)]);
   }
   // cornice and a lit parapet strip, notched like the body
-  add('box', 'stone', 0, H, (rBack - D / 2) / 2, coreW + 1.2, 0.8, rBack + D / 2 + 0.6, '#d8cfbc');
+  add('box', 'stone', 0, H, (-D / 2 - 0.6 - vd / 2) / 2, coreW + 1.2, 0.8, D / 2 + 0.6 - vd / 2, '#d8cfbc');
   for (const sd of [-1, 1]) {
-    add('box', 'stone', sd * (rd / 2 + sideW / 2 + 0.3), H, (rBack + D / 2 + 0.6) / 2, sideW + 0.6, 0.8, D / 2 - rBack + 0.6, '#d8cfbc');
+    add('box', 'stone', sd * (rd / 2 + sideW / 2 + 0.3), H, (vd / 2 + D / 2 + 0.6) / 2, sideW + 0.6, 0.8, D / 2 + 0.6 - vd / 2, '#d8cfbc');
     add('box', 'glow', sd * (rd / 2 + sideW / 2 + 0.3), H + 0.82, D / 2 + 0.6, sideW + 0.4, 0.12, 0.1, brand);
   }
   // LED billboards on the upper level of the front wings
@@ -848,9 +850,10 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
     }
 
   // ── the glazed barrel-vault atrium running the length of the mall, ribbed in white steel
-  const vaultD = Math.min(14, D * 0.32);
-  const vaultL = coreW - 6;
-  add('box', 'stone', 0, H + 0.8, 0, vaultL + 1, 1.2, vaultD + 1.4, '#d8cfbc');
+  const vaultD = vd;
+  const vaultL = coreW;
+  // the vault springs from two stone beams over the concourse walls
+  for (const sd of [-1, 1]) add('box', 'stone', 0, H, sd * (vd / 2 + 0.35), vaultL, 2, 0.7, '#d8cfbc');
   add('cyl', 'atrium', vaultL / 2, H + 2, 0, vaultD, vaultL, vaultD, '#bfe2f0', 0, 0, Math.PI / 2);
   for (let x = -vaultL / 2; x <= vaultL / 2 + 0.01; x += 3) add('ring', 'metal', x, H + 2, 0, vaultD + 0.25, 1, vaultD + 0.25, '#e8ecf0', Math.PI / 2, Math.PI / 2);
   add('box', 'metal', 0, H + 2 + vaultD / 2 - 0.1, 0, vaultL, 0.25, 0.3, '#e8ecf0');
@@ -863,6 +866,100 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
     }
   }
 
+  // ── the concourse: a two-level shopping street under the glass vault
+  {
+    const cw = coreW;
+    const half = vd / 2;
+    const gw = big ? 2.6 : 2;
+    // marble floor with inlaid bands and a lit strip down each side
+    add('box', 'marble', 0, 0.35, 0, cw, 0.06, vd, '#f2eee6');
+    for (let x = -cw / 2 + 4; x < cw / 2 - 2; x += 8) add('box', 'stone', x, 0.42, 0, 0.35, 0.01, vd - 1, '#c9bfa8');
+    for (const sd of [-1, 1]) add('box', 'gold', 0, 0.42, sd * (half - gw - 0.4), cw - 2, 0.01, 0.12, '#c8a050');
+    // shopfronts on both levels along both sides, with lit fascia signs and stone pilasters
+    const unit = big ? 7 : 6;
+    for (const sd of [-1, 1]) {
+      const wz = sd * half;
+      const rot = sd > 0 ? Math.PI : 0;
+      for (let x = -cw / 2 + unit / 2; x < cw / 2 - unit / 2 + 0.01; x += unit) {
+        // the opening into the rotunda passage on the entrance side
+        if (sd > 0 && Math.abs(x) < pass + unit / 2) continue;
+        const col = shopCols[Math.floor(r(700 + x * 3 + sd) * shopCols.length)];
+        for (const [y0s, hgt] of [[0.41, 3.9], [5.6, 3.4]] as const) {
+          add('box', 'glass', x, y0s, wz - sd * 0.06, unit - 0.9, hgt, 0.08, '#b8d8e8', rot);
+          // goods glowing behind the glass
+          add('box', 'glow', x, y0s + 0.3, wz + sd * 0.25, unit - 1.6, hgt * 0.5, 0.05, r(800 + x + y0s) < 0.5 ? '#fff0d8' : '#e8f4ff', rot);
+          add('box', 'dark', x, y0s + hgt, wz - sd * 0.12, unit - 0.6, 0.75, 0.14, '#24262a', rot);
+          add('box', 'glow', x, y0s + hgt + 0.18, wz - sd * 0.2, unit * 0.55, 0.38, 0.04, col, rot);
+        }
+        add('box', 'stone', x - unit / 2, 0.41, wz - sd * 0.18, 0.5, H - 0.6, 0.36, '#e2dac8', rot);
+      }
+      // the upper gallery: a walkway with a glass balustrade, a lit underside and a handrail
+      add('box', 'marble', 0, 5.2, wz - sd * (gw / 2), cw, 0.4, gw, '#efeae0');
+      add('box', 'glow', 0, 5.15, wz - sd * (gw - 0.2), cw, 0.06, 0.3, '#fff2d6');
+      add('box', 'glass', 0, 5.6, wz - sd * gw, cw, 1.05, 0.06, '#cfe6f0');
+      add('box', 'metal', 0, 6.65, wz - sd * gw, cw, 0.08, 0.12, '#d8dce0');
+    }
+    // footbridges across the void between the galleries
+    for (let x = -cw / 2 + 10; x < cw / 2 - 6; x += big ? 18 : 15) {
+      if (Math.abs(x) < pass + 3) continue;
+      add('box', 'marble', x, 5.2, 0, 3, 0.4, vd - gw * 2 + 0.2, '#efeae0');
+      for (const sd of [-1, 1]) add('box', 'glass', x + sd * 1.5, 5.6, 0, 0.06, 1.05, vd - gw * 2, '#cfe6f0');
+    }
+    // escalators: a pair crossing in the middle of each half of the concourse, each a flight of
+    // steps between glass balustrades with lit handrails, landing on the gallery
+    const flight = (ex: number, ez: number, dir: number) => {
+      const steps = 18;
+      const run = 8.4;
+      const rise = 4.8;
+      for (let k = 0; k < steps; k++) {
+        const f = (k + 0.5) / steps;
+        const sx = ex + dir * (f - 0.5) * run;
+        const top = 0.41 + f * rise;
+        const sw = run / steps + 0.02;
+        // the tread, the truss below it, and on each side a glass panel and a lit handrail
+        add('box', 'metal', sx, top - 0.18, ez, sw, 0.18, 1.0, '#8a9098');
+        add('box', 'metal', sx, Math.max(0.41, top - 0.9), ez, sw, Math.min(0.72, top - 0.41), 1.2, '#c0c6cc');
+        for (const ss of [-1, 1]) {
+          add('box', 'glass', sx, top, ez + ss * 0.58, sw, 0.9, 0.04, '#cfe6f0');
+          add('box', 'glow', sx, top + 0.9, ez + ss * 0.58, sw, 0.06, 0.09, '#fff2d6');
+        }
+      }
+    };
+    for (const sd of [-1, 1]) {
+      const ex = sd * cw * 0.27;
+      if (vd >= 9) {
+        flight(ex, -1.1, 1);
+        flight(ex, 1.1, -1);
+      }
+    }
+    // kiosks, planters with trees and benches down the middle; banners and pendant lamps above
+    for (let x = -cw / 2 + 6; x < cw / 2 - 4; x += big ? 12 : 10) {
+      if (Math.abs(Math.abs(x) - cw * 0.27) < 6 || Math.abs(x) < pass + 2) continue;
+      const k = Math.floor(r(900 + x) * 3);
+      if (k === 0) {
+        add('box', 'wood', x, 0.41, 0, 2.6, 1.1, 1.6, '#7a5a3e');
+        add('box', 'metal', x, 2.6, 0, 3, 0.15, 2, '#e8e8e8');
+        add('box', 'glow', x, 1.6, 0, 2.4, 0.5, 1.62, shopCols[(x * 7) & 7] ?? '#ffffff');
+      } else {
+        add('cyl', 'stone', x, 0.41, 0, 1.8, 0.8, 1.8, '#d8cfbc');
+        add('cyl', 'bark', x, 1.2, 0, 0.25, 1.6, 0.25, '#6a5240');
+        add('sphere', 'leaf', x, 3.1, 0, 2.4, 2, 2.4, '#4f8a3a');
+        for (const sd of [-1, 1]) add('box', 'wood', x + sd * 2.2, 0.41, 0, 1.8, 0.45, 0.55, '#8a6a4a');
+      }
+    }
+    for (let x = -cw / 2 + 5; x < cw / 2 - 3; x += 6) {
+      add('cyl', 'metal', x, H - 1.5, 0, 0.03, 3.5 + vd * 0.3, 0.03, '#c8ccd0');
+      add('sphere', 'glow', x, H - 1.6, 0, 0.7, 0.45, 0.7, '#fff2d6');
+      if (Math.floor(x / 6) % 2 === 0) add('box', 'cloth', x + 3, H - 3.5, 0, 0.05, 2.6, 1.2, shopCols[Math.floor(r(950 + x) * shopCols.length)]);
+    }
+    // the ends of a small mall: glass walls with doors out to the side streets
+    if (!big)
+      for (const sd of [-1, 1]) {
+        add('box', 'glass', sd * (cw / 2 + 0.2), 0.35, 0, 0.12, H - 0.35, vd, '#bfe2f0');
+        add('box', 'glow', sd * (cw / 2 + 0.1), 3.6, 0, 0.05, 0.5, 4, brand);
+      }
+  }
+
   // ── anchor stores at both ends: taller, dark glass, each with a big lit logo
   if (big)
     for (const s of [-1, 1]) {
@@ -873,15 +970,28 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
       add('box', 'dark', ax, H - 3, D / 2 - 1.8, anchorW * 0.6, 4.6, 0.3, '#1a1c20');
       add('box', 'glow', ax, H - 2.7, D / 2 - 1.6, anchorW * 0.5, 4, 0.06, s < 0 ? '#ffffff' : '#ffcf5a');
       add('box', 'glass', ax, 0.35, D / 2 - 1.9, anchorW - 4, 6, 0.15, '#6f9cbc');
+      // the anchor's shopfront at the end of the concourse
+      add('box', 'glass', ax - s * (anchorW / 2 + 0.06), 0.41, 0, 0.08, 4.4, vd - 1, '#b8d8e8');
+      add('box', 'glow', ax - s * (anchorW / 2 + 0.1), 5.6, 0, 0.05, 1.6, vd * 0.6, s < 0 ? '#ffffff' : '#ffcf5a');
     }
 
   // ── the entrance rotunda: a glass drum taller than the mall, a ring canopy, a lantern dome
   add('cyl', 'stone', 0, 0.35, rz, rd + 1, 0.6, rd + 1, '#d8cfbc');
-  add('cyl', 'atrium', 0, 0.35, rz, rd, rh - 0.35, rd, '#bfe2f0');
+  // the drum, glazed in panels, with an open doorway at the front and the passage at the back
+  {
+    const segs = big ? 40 : 26;
+    for (let k = 0; k < segs; k++) {
+      const t = (k / segs) * Math.PI * 2;
+      const lx = (Math.sin(t) * rd) / 2;
+      const lz = rz + (Math.cos(t) * rd) / 2;
+      const low = Math.abs(lx) < pass + 0.4 ? 4.2 : 0.35;
+      add('box', 'atrium', lx, low, lz, (Math.PI * rd) / segs + 0.05, rh - low, 0.12, '#bfe2f0', t);
+    }
+  }
   const fins = big ? 28 : 16;
   for (let k = 0; k < fins; k++) {
     const t = (k / fins) * Math.PI * 2;
-    if (Math.cos(t) > 0.985) continue;
+    if (Math.abs(Math.sin(t) * rd) / 2 < pass + 0.3) continue;
     add('box', 'metal', Math.sin(t) * (rd / 2 + 0.12), 0.35, rz + Math.cos(t) * (rd / 2 + 0.12), 0.3, rh - 0.35, 0.5, '#eef0f2', t);
   }
   // floor bands outside the glass, and inside two gallery levels round an open well
@@ -893,7 +1003,7 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
       const t = (k / segs) * Math.PI * 2;
       const rr = rd / 2 - gw / 2 - 0.2;
       // leave the front open above the doors
-      if (Math.cos(t) > 0.92) continue;
+      if (Math.abs(Math.cos(t)) > 0.92) continue;
       add('box', 'marble', Math.sin(t) * rr, y, rz + Math.cos(t) * rr, (Math.PI * rd) / segs + 0.3, 0.4, gw, '#efeae0', t);
       add('box', 'glass', Math.sin(t) * (rr - gw / 2), y + 0.4, rz + Math.cos(t) * (rr - gw / 2), (Math.PI * (rd - gw * 2)) / segs + 0.2, 1, 0.08, '#cfe6f0', t);
       add('box', 'glow', Math.sin(t) * (rr - gw / 2), y - 0.05, rz + Math.cos(t) * (rr - gw / 2), (Math.PI * (rd - gw * 2)) / segs + 0.2, 0.08, 0.2, '#fff2d6', t);
@@ -939,25 +1049,25 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
     const sx = Math.sin(t) * rr;
     const sz = rz + Math.cos(t) * rr;
     const sw = (Math.PI * rd * 0.76) / 2 / shops;
+    if (Math.abs(sx) < pass + sw / 2 + 0.3) continue;
     add('box', 'glass', sx, 0.41, sz, sw - 0.4, 3.6, 0.1, '#a8cce0', t + Math.PI);
     add('box', 'glow', sx * 0.995, 4.1, rz + (sz - rz) * 0.995, sw - 0.6, 0.6, 0.06, shopCols[k % shopCols.length], t + Math.PI);
     add('box', 'stone', sx, 0.41, sz, 0.35, 4.8, 0.35, '#d8cfbc', t);
   }
-  for (const sd of [-1, 1]) {
-    const ex = sd * rd * 0.26;
-    const ez = rz - rd * 0.12;
-    // the escalator: a sloping truss with glass sides and a lit handrail
-    add('box', 'metal', ex, 2.6, ez, 1.5, 0.35, 10, '#c0c6cc', 0, sd * 0.48);
-    for (const ss of [-1, 1]) add('box', 'glass', ex + ss * 0.8, 3.1, ez, 0.06, 1, 10, '#cfe6f0', 0, sd * 0.48);
-    add('box', 'glow', ex, 3.7, ez, 1.6, 0.06, 10, '#fff2d6', 0, sd * 0.48);
-  }
   fountain(add, 0, rz + rd * 0.06, big ? 6 : 3.6, true);
-  // the chandelier: tiers of glowing rings on a cable
-  add('cyl', 'metal', 0, rh - 6, rz, 0.06, 6, 0.06, '#c8ccd0');
-  for (const [y, dd] of [[rh - 6, big ? 5 : 3], [rh - 7.2, big ? 3.6 : 2.2], [rh - 8.2, big ? 2 : 1.2]] as const) {
-    add('ring', 'glow', 0, y, rz, dd, 1, dd, '#fff2cc');
-    add('cyl', 'glow', 0, y, rz, dd * 0.5, 0.3, dd * 0.5, '#fff6e0');
-  }
+  // the chandelier: a gilt crown with three rings of crystal drops on fine cables
+  const cy = rh - (big ? 5 : 3.5);
+  add('cyl', 'metal', 0, cy, rz, 0.05, rh - cy, 0.05, '#c8ccd0');
+  add('ring', 'gold', 0, cy, rz, big ? 6 : 3.6, 1, big ? 6 : 3.6, '#d8b25a');
+  add('cyl', 'gold', 0, cy - 0.3, rz, big ? 1.4 : 0.9, 0.6, big ? 1.4 : 0.9, '#d8b25a');
+  for (const [rr2, n2, drop] of [[big ? 3 : 1.8, big ? 18 : 12, 1.6], [big ? 2 : 1.2, big ? 12 : 8, 2.6], [big ? 1 : 0.6, 6, 3.6]] as const)
+    for (let k = 0; k < n2; k++) {
+      const t = (k / n2) * Math.PI * 2 + rr2;
+      const px = Math.sin(t) * rr2;
+      const pz = rz + Math.cos(t) * rr2;
+      add('cyl', 'metal', px, cy - drop, pz, 0.03, drop, 0.03, '#d8dce0');
+      add('sphere', 'glow', px, cy - drop, pz, 0.32, 0.5, 0.32, '#fff4dc');
+    }
   for (const t of [0.8, 2.3, 3.9, 5.4]) {
     const bx = Math.sin(t) * rd * 0.3;
     const bz = rz + Math.cos(t) * rd * 0.3;

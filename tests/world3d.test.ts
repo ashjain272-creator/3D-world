@@ -215,8 +215,14 @@ describe('futuristic districts', () => {
       expect(hit(...g.toWorld(0, g.rz + g.rd / 2))).toBe(false);
       expect(hit(...g.toWorld(0, -g.D / 2 + 2))).toBe(true);
       expect(hit(...g.toWorld(g.rd / 2 + 3, g.D / 2 - 2))).toBe(true);
+      expect(hit(...g.toWorld(0, -g.vd / 2 - 1))).toBe(true);
       // the glass wall either side of the door blocks
       expect(hit(...g.toWorld(g.rd / 2, g.rz))).toBe(true);
+      // a walk from the rotunda through the passage and down the concourse is clear
+      for (let z = g.rz; z > 0; z -= 0.5) expect(hit(...g.toWorld(0, z))).toBe(false);
+      for (let x = -g.coreW / 2 + 1; x < g.coreW / 2 - 1; x += 0.5) expect(hit(...g.toWorld(x, 0))).toBe(false);
+      // and the concourse ends at walls
+      expect(hit(...g.toWorld(g.coreW / 2 + 0.3, 0))).toBe(true);
     }
   });
 

@@ -10,7 +10,7 @@ import { mallGeometry } from './layout';
  * mall, a mosque and a temple, and palm-lined boulevards. Everything is built
  * from a handful of instanced shapes so a whole district costs a few draw calls.
  */
-export type DShape = 'box' | 'cyl' | 'cone' | 'hemi' | 'sphere' | 'gable' | 'arch' | 'palmTrunk' | 'fronds' | 'oct' | 'hip' | 'ring' | 'dArc' | 'threeArc' | 'beamCone';
+export type DShape = 'box' | 'cyl' | 'cone' | 'hemi' | 'sphere' | 'gable' | 'arch' | 'palmTrunk' | 'fronds' | 'oct' | 'hip' | 'ring' | 'dArc' | 'threeArc' | 'beamCone' | 'torus' | 'halfTorus' | 'rod';
 export type DMat = 'plaster' | 'stone' | 'roof' | 'glass' | 'water' | 'gold' | 'metal' | 'leaf' | 'bark' | 'glow' | 'wood' | 'lawn' | 'cloth' | 'dark' | 'marble' | 'crowd' | 'pitch' | 'court' | 'net' | 'skylight' | 'paint' | 'beam' | 'nightBeam' | 'atrium';
 
 export interface DPiece {
@@ -841,12 +841,13 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
     add('box', 'stone', sd * (rd / 2 + sideW / 2 + 0.3), H, (vd / 2 + D / 2 + 0.6) / 2, sideW + 0.6, 0.8, D / 2 + 0.6 - vd / 2, '#d8cfbc');
     add('box', 'glow', sd * (rd / 2 + sideW / 2 + 0.3), H + 0.82, D / 2 + 0.6, sideW + 0.4, 0.12, 0.1, brand);
   }
-  // LED billboards on the upper level of the front wings
-  if (sideW > 12)
+  // a restrained bronze-framed name panel, softly backlit, on each wing
+  if (sideW > 8)
     for (const sd of [-1, 1]) {
-      const bw = Math.min(14, sideW * 0.55);
-      add('box', 'dark', sd * (rd / 2 + 3 + bw / 2), 7.6, D / 2 + 1.1, bw + 1, 5.5, 0.4, '#202226');
-      add('box', 'glow', sd * (rd / 2 + 3 + bw / 2), 7.9, D / 2 + 1.32, bw, 4.9, 0.05, sd < 0 ? '#ff7aa8' : '#7ac8ff');
+      const px = sd * (rd / 2 + sideW / 2);
+      add('box', 'metal', px, 9.6, D / 2 + 1.1, Math.min(7, sideW * 0.4), 1.5, 0.18, '#6a5032');
+      add('box', 'glow', px, 9.75, D / 2 + 1.2, Math.min(6.4, sideW * 0.4 - 0.6), 1.2, 0.04, '#e8cfa0');
+      add('rod', 'gold', px, 9.6, D / 2 + 1.22, 0.08, Math.min(7, sideW * 0.4), 0.08, '#c8a050', 0, 0, Math.PI / 2);
     }
 
   // ── the glazed barrel-vault atrium running the length of the mall, ribbed in white steel
@@ -974,7 +975,7 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
       for (let x = -anchorW / 2 + 1; x < anchorW / 2 - 0.5; x += 1.6) add('box', 'stone', ax + x, 0.35, D / 2 - 1.85, 0.35, H + 4, 0.7, '#e2dac8');
       for (const y of [6.8, 12.2]) add('box', 'stone', ax, y, D / 2 - 1.7, anchorW, 0.45, 0.6, '#d8cfbc');
       add('box', 'dark', ax, H - 3, D / 2 - 1.8, anchorW * 0.6, 4.6, 0.3, '#1a1c20');
-      add('box', 'glow', ax, H - 2.7, D / 2 - 1.6, anchorW * 0.5, 4, 0.06, s < 0 ? '#ffffff' : '#ffcf5a');
+      add('box', 'glow', ax, H - 2.7, D / 2 - 1.6, anchorW * 0.42, 2.6, 0.06, s < 0 ? '#e8e0d0' : '#e8c88a');
       add('box', 'glass', ax, 0.35, D / 2 - 1.9, anchorW - 4, 6, 0.15, '#6f9cbc');
       // the anchor's shopfront at the end of the concourse
       add('box', 'glass', ax - s * (anchorW / 2 + 0.06), 0.41, 0, 0.08, 4.4, vd - 1, '#b8d8e8');
@@ -1104,8 +1105,9 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
         add('cyl', 'marble', sd * (x + dx), 0.35, az, 0.42, 5.05, 0.42, '#f2eee6');
         // fluting, an astragal ring and a torus at the base
         for (let k = 0; k < 8; k++) add('box', 'marble', sd * (x + dx) + Math.sin(k * 0.785) * 0.21, 0.75, az + Math.cos(k * 0.785) * 0.21, 0.05, 4.1, 0.05, '#ded8cc', k * 0.785);
-        add('cyl', 'gold', sd * (x + dx), 4.75, az, 0.5, 0.1, 0.5, '#c8a050');
-        add('cyl', 'marble', sd * (x + dx), 0.75, az, 0.55, 0.18, 0.55, '#ece6da');
+        add('torus', 'gold', sd * (x + dx), 4.8, az, 0.5, 0.5, 0.5, '#c8a050');
+        add('torus', 'marble', sd * (x + dx), 0.8, az, 0.6, 0.7, 0.6, '#ece6da');
+        add('torus', 'marble', sd * (x + dx), 0.6, az, 0.66, 0.8, 0.66, '#e6e0d4');
         add('cyl', 'gold', sd * (x + dx), 5.0, az, 0.62, 0.4, 0.62, gold);
         add('box', 'marble', sd * (x + dx), 0.35, az, 0.7, 0.4, 0.7, '#e6e0d4');
       }
@@ -1120,18 +1122,23 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
         add('cone', 'gold', sd * (x + 2.1), 4.2, az - 1.4, 0.6, 0.3, 0.6, '#c8a050');
       }
       // a pointed arch between each pair of column bays, in carved stone
-      if (x + 4.2 <= x1 + 0.01) add('arch', 'stone', sd * (x + 2.1), 4.1, az + 0.05, 3.4, 1.3, 0.25, '#e8e0cc');
+      if (x + 4.2 <= x1 + 0.01) {
+        add('arch', 'stone', sd * (x + 2.1), 4.1, az + 0.05, 3.4, 1.3, 0.25, '#e8e0cc');
+        // a rounded moulding following the arch, with a keystone
+        add('halfTorus', 'stone', sd * (x + 2.1), 4.1, az + 0.22, 3.6, 2.8, 0.5, '#efe8d8');
+        add('box', 'stone', sd * (x + 2.1), 5.25, az + 0.25, 0.4, 0.5, 0.3, '#e2dac8');
+      }
     }
   }
   // mashrabiya screens of gilt diamond lattice over the upper glazing of each wing
   for (const sd of [-1, 1]) {
     const x0 = rd / 2 + 1.2;
     const x1 = coreW / 2 - 1;
-    const bw = sideW > 12 ? Math.min(14, sideW * 0.55) + 1 : 0;
-    const bx0 = rd / 2 + 3 - 0.5;
+    const bw = sideW > 8 ? Math.min(7, sideW * 0.4) + 0.6 : 0;
+    const bx0 = rd / 2 + sideW / 2 - bw / 2;
     for (let x = x0 + 0.25; x < x1; x += 0.5)
       for (let y = 7.6; y < H - 0.7; y += 0.5) {
-        if (bw && x > bx0 - 0.2 && x < bx0 + bw + 0.2) continue;
+        if (bw && x > bx0 - 0.2 && x < bx0 + bw + 0.2 && y > 9.3 && y < 11.4) continue;
         add('box', 'gold', sd * x, y, D / 2 + 0.95, 0.26, 0.26, 0.04, '#c8a050', 0, 0, Math.PI / 4);
         // eight-pointed stars at every other node
         if ((Math.round(x * 2) + Math.round(y * 2)) % 4 === 0) add('box', 'gold', sd * x, y, D / 2 + 0.98, 0.26, 0.26, 0.04, '#e0c070');
@@ -1146,6 +1153,8 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
     }
     for (let x = x0 + 0.5; x < x1; x += 1.0) add('box', 'stone', sd * x, H - 0.55, D / 2 + 1.0, 0.25, 0.45, 0.6, '#d8cfbc');
     add('box', 'stone', sd * (x0 + x1) / 2, H - 0.1, D / 2 + 1.05, x1 - x0, 0.3, 0.8, '#e2dac8');
+    add('rod', 'stone', sd * (x0 + x1) / 2, H - 0.15, D / 2 + 1.42, 0.36, x1 - x0, 0.36, '#ece4d2', 0, 0, Math.PI / 2);
+    add('rod', 'stone', sd * (x0 + x1) / 2, 7.45, D / 2 + 1.12, 0.22, x1 - x0, 0.22, '#ece4d2', 0, 0, Math.PI / 2);
     add('box', 'stone', sd * (x0 + x1) / 2, 7.05, D / 2 + 1, x1 - x0, 0.25, 0.3, '#d8cfbc');
   }
   // the rotunda: a gilt crown at the top of the drum, light strips on every fin

@@ -40,6 +40,11 @@ const SHAPES: Record<DShape, THREE.BufferGeometry> = {
   threeArc: new THREE.RingGeometry(0.4966, 0.5, 40, 1, -1.187, 2.374).rotateX(-Math.PI / 2),
   // hipped roof: a four-sided pyramid on a unit square base
   hip: new THREE.ConeGeometry(Math.SQRT1_2, 1, 4).rotateY(Math.PI / 4).translate(0, 0.5, 0),
+  // mouldings: a ring lying flat (column astragals and bases), a half ring standing up (arch
+  // mouldings, springing at y = 0) and a rod centred on its own axis (cornice rolls)
+  torus: new THREE.TorusGeometry(0.42, 0.08, 8, 24).rotateX(-Math.PI / 2),
+  halfTorus: new THREE.TorusGeometry(0.45, 0.05, 6, 20, Math.PI),
+  rod: new THREE.CylinderGeometry(0.5, 0.5, 1, 12),
   palmTrunk: palmTrunkGeo(0),
   fronds: frondsGeo(0),
 };

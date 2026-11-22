@@ -1266,8 +1266,8 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
       add('box', 'water', cx, 0.9, fz + 5.5, 17, 0.12, 5, '#4ab8d8');
       for (let k = 0; k < 6; k++) {
         const jh = 1.4 + r(400 + k + s) * 1.8;
-        add('cone', 'water', cx - 7.5 + k * 3, 1, fz + 5.5, 0.14, jh, 0.14, '#e8f8ff');
-        add('sphere', 'water', cx - 7.5 + k * 3, 1 + jh, fz + 5.5, 0.6, 0.35, 0.6, '#e8f8ff');
+        add('cone', 'water', cx - 7.5 + k * 3, 1, fz + 5.5, 0.08, jh, 0.08, '#e8f8ff');
+        for (let q = 0; q < 5; q++) add('sphere', 'water', cx - 7.5 + k * 3 + Math.cos(q * 1.26) * 0.35, 1 + jh * (0.75 + 0.05 * q), fz + 5.5 + Math.sin(q * 1.26) * 0.35, 0.12, 0.16, 0.12, '#e8f8ff');
       }
       add('box', 'glow', cx, 0.9, fz + 8.55, 17, 0.12, 0.05, '#7ae0ff');
     }

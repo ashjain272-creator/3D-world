@@ -899,7 +899,16 @@ function mall(out: DistrictData, b: Building, y0: number, warm: boolean) {
       add('box', 'glow', Math.sin(t) * (rr - gw / 2), y - 0.05, rz + Math.cos(t) * (rr - gw / 2), (Math.PI * (rd - gw * 2)) / segs + 0.2, 0.08, 0.2, '#fff2d6', t);
     }
   }
-  add('cyl', 'plaster', 0, 5.6, rz, rd + 9, 0.5, rd + 9, '#f4f2ee');
+  // the canopy: a ring of panels outside the glass only, so the rotunda stays open inside
+  {
+    const segs = big ? 40 : 24;
+    for (let k = 0; k < segs; k++) {
+      const t = (k / segs) * Math.PI * 2;
+      if (Math.cos(t) < -0.2) continue;
+      const rr = rd / 2 + 2.25;
+      add('box', 'plaster', Math.sin(t) * rr, 5.6, rz + Math.cos(t) * rr, (Math.PI * (rd + 9)) / segs + 0.25, 0.5, 4.5, '#f4f2ee', t);
+    }
+  }
   add('ring', 'glow', 0, 5.58, rz, rd + 9, 1, rd + 9, brand);
   for (let k = 0; k < 10; k++) {
     const t = -Math.PI / 2 + (k / 9) * Math.PI;

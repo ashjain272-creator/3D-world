@@ -663,3 +663,29 @@ In villa quarters there are no through cross-streets between collectors, only la
 **Tests:** a new test checks that no two buildings in a futuristic city overlap. It also checks that the capital is at least 500 m in radius and that every roundabout sits on a 4-way crossing.
 
 Screenshots and the plan map are in `docs/screenshots/corridor/`.
+
+## Phase 11: flagship malls
+
+Both malls are rebuilt in the style of Dubai's waterfront malls such as Marina Mall. The old ones were plain boxes with a dome.
+
+**Sites**
+- **Spine mall:** the flagship. It takes three by two blocks facing the spine (98 × 41 m) and is set back to leave room for a forecourt.
+- **Downtown mall:** 46 × 34 m, facing the lake.
+- **Expressway:** the connector road now keeps clear of malls as well as venues.
+
+**Building**
+- **Main body:** two levels clad in cream stone with vertical fins. Glazed shopfronts with lit shop signs run along the ground floor, and LED billboards hang on the upper level.
+- **Roof:** a ribbed glass barrel-vault atrium runs the full length of the mall. Around it sit skylights and rooftop plant.
+- **Anchor stores (flagship only):** dark-glass blocks at both ends, each with a big lit logo.
+- **Entrance rotunda:** a glass drum taller than the mall, with steel fins, a ring canopy on columns lit underneath, and a lattice glass dome with a spire. The mall's name is lit on the drum. Inside are gallery rings, escalators and a chandelier.
+- **Observation tower (flagship only):** a slender shaft with lit rings, a glazed viewing pod and a spire.
+
+**Forecourt (flagship)**
+- a drop-off lane with taxis
+- a row of flagpoles
+- two show-fountain basins with jets and underwater light
+- palms in planters, benches, and planted side walks
+
+**Tests:** malls must face the spine (front edge within 40 m of it) or sit in Downtown. Downtown ring towers keep clear of the mall.
+
+Screenshots are in `docs/screenshots/mall/`.

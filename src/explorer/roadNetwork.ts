@@ -64,7 +64,7 @@ export function generateHighways(layout: Layout, t: TerrainData): HighwayData | 
   for (const s of layout.streets) for (const v of [s.a[0], s.a[1]]) if (Math.abs(v) > 1) spacing = Math.min(spacing, Math.abs(v));
   if (!isFinite(spacing)) spacing = 40;
   // expressways must not cross landmarks or pass over the stadium and arena roofs
-  const venues = layout.buildings.filter((b) => b.kind === 'stadium' || b.kind === 'arena');
+  const venues = layout.buildings.filter((b) => b.kind === 'stadium' || b.kind === 'arena' || b.kind === 'mall');
   const clearOfLandmarks = (vertical: boolean, c: number) =>
     layout.landmarks.every((l) => Math.abs((vertical ? l.x : l.z) - c) > l.radius + 10) && venues.every((v) => Math.abs((vertical ? v.x : v.z) - c) > (vertical ? v.w : v.d) / 2 + 8);
   // the first clear avenue; with stadiums in the way an expressway may have none, and is left out
@@ -199,7 +199,7 @@ function corridorHighways(layout: Layout, t: TerrainData): HighwayData {
   const inlandZ = f.arterialZ - 36;
   alongX(inlandZ, 10, chord(inlandZ) + 24, 13, 2);
   // connectors from the coastal belt over the spine (a third level) down into the inland band
-  const venues = layout.buildings.filter((b) => b.kind === 'stadium' || b.kind === 'arena');
+  const venues = layout.buildings.filter((b) => b.kind === 'stadium' || b.kind === 'arena' || b.kind === 'mall');
   const za = f.coastRoadZ + 20;
   const zb = inlandZ - 14;
   const clear = (x: number) =>
@@ -207,7 +207,7 @@ function corridorHighways(layout: Layout, t: TerrainData): HighwayData {
     venues.every((v) => Math.abs(v.x - x) > v.w / 2 + 8 || v.z - v.d / 2 > zb || v.z + v.d / 2 < za) &&
     f.lakes.every((l) => Math.abs(l.x - x) > l.rx + 8 || l.z + l.rz < za || l.z - l.rz > zb) &&
     (!f.downtown || x < f.downtown.x0 - 4 || x > f.downtown.x1 + 4);
-  const candidates = f.downtown ? [f.downtown.x0 - 36, f.downtown.x1 + 36, f.downtown.x0 - 72, f.downtown.x1 + 72] : [-72, 72, -108, 108];
+  const candidates = f.downtown ? [f.downtown.x0 - 36, f.downtown.x1 + 36, f.downtown.x0 - 72, f.downtown.x1 + 72, f.downtown.x1 + 144, f.downtown.x1 + 180, f.downtown.x0 - 108] : [-72, 72, -108, 108];
   const chosen: number[] = [];
   for (const x of candidates) if (chosen.length < 2 && clear(x) && chosen.every((c) => Math.abs(c - x) > 60) && Math.abs(x) < chord(f.spineZ) - 30) chosen.push(x);
   for (const x of chosen) {

@@ -239,7 +239,7 @@ describe('futuristic districts', () => {
         expect(Math.hypot(sig.x - f.downtown!.x, sig.z - f.downtown!.z)).toBeLessThan(f.downtown!.a);
       }
       // malls sit on the spine or in Downtown
-      for (const m of l.buildings.filter((b) => b.kind === 'mall')) expect(Math.abs(m.z - f.spineZ) < 40 || (f.downtown && Math.abs(m.z - f.downtown.z) < f.downtown.b)).toBeTruthy();
+      for (const m of l.buildings.filter((b) => b.kind === 'mall')) expect(Math.abs(m.z - m.d / 2 - f.spineZ) < 40 || (f.downtown && Math.abs(m.z - f.downtown.z) < f.downtown.b)).toBeTruthy();
       // daily mosques cover every home within walking distance
       const mosques = l.buildings.filter((b) => b.kind === 'mosque' || b.kind === 'mosqueSmall');
       for (const h of l.buildings.filter((b) => b.kind === 'villa' || b.kind === 'oldhouse')) {

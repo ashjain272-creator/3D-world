@@ -406,7 +406,7 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     const sigH = s.kind === 'capital' ? rng.range(230, 260) : rng.range(170, 200);
     add({ x: cx - lake.rx - 13, z: cz, w: 20, d: 20, h: sigH, kind: 'supertall', role: 'work', door: [cx - lake.rx - 13, cz - 12], district: 'downtown' });
     signature = true;
-    add({ x: cx + lake.rx + 15, z: cz, w: 24, d: 22, h: 15, kind: 'mall', role: 'work', door: [cx + lake.rx + 15, cz - 12], district: 'downtown' });
+    add({ x: cx + lake.rx + 23, z: cz, w: 34, d: 46, h: 15, kind: 'mall', role: 'work', door: [cx + lake.rx + 4, cz], district: 'downtown' });
     // a wall of towers on both sides of the ring boulevard, the inner ones facing the lake, like
     // the towers around the Burj lake; gaps where the boulevard's four links leave the ring
     const ringTowers = (ra: number, rb: number, gaps: number[], hMin: number, hMax: number, size: number) => {
@@ -418,6 +418,7 @@ function futuristic(s: Settlement, rng: Rng): Layout {
         const tx = cx + Math.cos(t) * ra;
         const tz = cz + Math.sin(t) * rb;
         if (tx < dX0 + 9 || tx > dX1 - 9 || tz < dZ0 + 9 || tz > dZ1 - 9) continue;
+        if (buildings.some((o) => Math.abs(o.x - tx) < (o.w + size) / 2 + 3 && Math.abs(o.z - tz) < (o.d + size) / 2 + 3)) continue;
         const h = rng.range(hMin, hMax);
         add({ x: tx, z: tz, w: size, d: size, h, kind: h > 100 ? 'supertall' : 'tower', role: 'work', door: [tx, tz - size / 2 - 1], district: 'downtown' });
       }
@@ -516,11 +517,20 @@ function futuristic(s: Settlement, rng: Rng): Layout {
   {
     const i = Math.round(returnX / sp);
     const j = Math.round(spineZ / sp);
-    if (rectFree(i, j, 1, 1, ['mixed'], 10, 4)) {
-      claimed.add(`${i},${j}`);
-      const x = (i + 0.5) * sp;
-      const z = (j + 0.5) * sp;
-      add({ x, z, w: 28, d: 28, h: 15, kind: 'mall', role: 'work', door: [x, z + 14], district: 'mixed' });
+    // a flagship mall on three by two blocks facing the spine, falling back to smaller sites
+    const zones: Zone[] = ['mixed', 'wall', 'canal', 'jlt'];
+    const sites: [number, number, number, number][] = [[i - 1, j, 3, 2], [i, j, 3, 2], [i - 2, j, 3, 2], [i - 1, j, 2, 2], [i, j, 2, 1], [i, j, 1, 1]];
+    const site = sites.find(([a, c, wi, wj]) => rectFree(a, c, wi, wj, zones, 10, 4));
+    if (site) {
+      const [a, c, wi, wj] = site;
+      closeRect(a, c, wi, wj);
+      const x = (a + wi / 2) * sp;
+      const z = (c + wj / 2) * sp;
+      const w = wi * sp - 10;
+      const d = wj * sp - (wj > 1 ? 31 : 10);
+      // the front sits back from the spine to leave room for the forecourt and drop-off
+      const zc = wj > 1 ? c * sp + wj * sp - 4 - d / 2 : z;
+      add({ x, z: zc, w, d, h: 15, kind: 'mall', role: 'work', door: [x, zc - d / 2 - 1], district: 'mixed' });
     }
   }
 

@@ -107,8 +107,10 @@ export function generateTerrain(planet: Planet, regionIndex: number, biome: Biom
   // big district cities need more room before the framing mountains begin; the grid grows with
   // the area so detail per metre stays the same
   // an airfield behind the city needs more room still
-  const size = flats?.length ? Math.max(1640, Math.ceil((Math.max(...flats.map((r) => Math.max(Math.abs(r.x0), Math.abs(r.x1), Math.abs(r.z0), Math.abs(r.z1)))) + 150) / 0.47 / 2 / 20) * 40) : flatRadius > 450 ? 1640 : flatRadius > 300 ? 1200 : flatRadius > 240 ? 960 : WORLD_SIZE;
-  const res = Math.round((TERRAIN_RES * size) / WORLD_SIZE);
+  const size = flats?.length ? Math.max(1640, Math.ceil((Math.max(...flats.map((r) => Math.max(Math.abs(r.x0), Math.abs(r.x1), Math.abs(r.z0), Math.abs(r.z1)))) + 330) / 0.47 / 2 / 20) * 40) : flatRadius > 450 ? 1640 : flatRadius > 300 ? 1200 : flatRadius > 240 ? 960 : WORLD_SIZE;
+  // the grid grows with the map, but beyond the city the ground is countryside and mountains: cap it
+  // so a large map (an airport behind the capital) does not double the terrain's triangles
+  const res = Math.min(352, Math.round((TERRAIN_RES * size) / WORLD_SIZE));
   const heights = new Float32Array((res + 1) * (res + 1));
   const ridged = biome === 'mountain' || biome === 'volcanic';
   const dunes = biome === 'desert';
@@ -163,14 +165,18 @@ export function generateTerrain(planet: Planet, regionIndex: number, biome: Biom
     if (flatRadius <= 0) return h;
     const d = Math.sqrt(x * x + z * z);
     let t = clamp((d - flatRadius) / 70, 0, 1);
+    let nearFlat = Infinity;
     if (flats)
       for (const r of flats) {
         const dx = Math.max(r.x0 - x, 0, x - r.x1);
         const dz = Math.max(r.z0 - z, 0, z - r.z1);
+        nearFlat = Math.min(nearFlat, Math.hypot(dx, dz));
         t = Math.min(t, clamp(Math.hypot(dx, dz) / 70, 0, 1));
       }
     const s = t * t * (3 - 2 * t);
-    const land = flatHeight + (h - flatHeight) * s;
+    let land = flatHeight + (h - flatHeight) * s;
+    // around an airfield the ground stays above the water table, so no lake opens beside the runway
+    if (nearFlat < 500 && look.water !== null) land = Math.max(land, look.water + 1.2 + Math.max(0, 1 - nearFlat / 260) * (flatHeight - look.water - 1.2));
     if (coastZ === undefined) return land;
     // a coastal city: the ground shelves away beyond the shoreline under a sea that reaches the horizon
     const c = clamp((coastZ + 4 - z) / 14, 0, 1);

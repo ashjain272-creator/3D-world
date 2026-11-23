@@ -7,6 +7,7 @@ import { frondsGeo, palmTrunkGeo } from './flora';
 import { nightUniform } from './City';
 import type { DMat, DPiece, DShape, DistrictData } from './districts';
 import { flightPose } from './airport';
+import { sceneDebug } from './explorerStore';
 
 const archGeo = (() => {
   // semicircular head: half a cylinder lying along z, flat side down, radius 0.5, apex at y = 1
@@ -341,44 +342,60 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
 }
 
 /** An aircraft flying its circuit: its pieces as instanced meshes inside a moving group. */
+function instancesOf(pieces: DPiece[], mats: Record<DMat, THREE.Material>): THREE.InstancedMesh[] {
+  const g = new Map<string, DPiece[]>();
+  for (const p of pieces) {
+    const k = `${p.shape}|${p.mat}`;
+    const list = g.get(k);
+    if (list) list.push(p);
+    else g.set(k, [p]);
+  }
+  return [...g.entries()].map(([k, list]) => {
+    const [shape, mat] = k.split('|') as [DShape, DMat];
+    const m = new THREE.InstancedMesh(SHAPES[shape], mats[mat], list.length);
+    list.forEach((p, i) => {
+      m.setMatrixAt(i, p.m);
+      m.setColorAt(i, p.c);
+    });
+    m.frustumCulled = false;
+    m.castShadow = true;
+    return m;
+  });
+}
+
 function Flight({ f, mats, y0 }: { f: NonNullable<DistrictData['flights']>[number]; mats: Record<DMat, THREE.Material>; y0: number }) {
   const ref = useRef<THREE.Group>(null);
-  const meshes = useMemo(() => {
-    const g = new Map<string, DPiece[]>();
-    for (const p of f.pieces) {
-      const k = `${p.shape}|${p.mat}`;
-      const list = g.get(k);
-      if (list) list.push(p);
-      else g.set(k, [p]);
-    }
-    return [...g.entries()].map(([k, list]) => {
-      const [shape, mat] = k.split('|') as [DShape, DMat];
-      const m = new THREE.InstancedMesh(SHAPES[shape], mats[mat], list.length);
-      list.forEach((p, i) => {
-        m.setMatrixAt(i, p.m);
-        m.setColorAt(i, p.c);
-      });
-      m.frustumCulled = false;
-      m.castShadow = true;
-      return m;
-    });
-  }, [f, mats]);
+  const down = useRef<THREE.Group>(null);
+  const up = useRef<THREE.Group>(null);
+  const meshesDown = useMemo(() => instancesOf(f.pieces, mats), [f, mats]);
+  const meshesUp = useMemo(() => instancesOf(f.piecesUp, mats), [f, mats]);
+  const meshes = useMemo(() => [...meshesDown, ...meshesUp], [meshesDown, meshesUp]);
   useEffect(() => () => meshes.forEach((m) => m.dispose()), [meshes]);
   useFrame(({ clock }) => {
     const g = ref.current;
     if (!g) return;
-    const pose = flightPose(f.mode, f.runX0, f.runX1, clock.elapsedTime);
+    // a fixed time can be set for screenshots (sceneDebug.flightTime); otherwise the scene clock
+    const pose = flightPose(f.mode, f.runX0, f.runX1, (sceneDebug as { flightTime?: number }).flightTime ?? clock.elapsedTime);
     g.visible = !!pose;
     if (!pose) return;
+    if (down.current) down.current.visible = pose.gear;
+    if (up.current) up.current.visible = !pose.gear;
     g.position.set(pose.x, y0 + pose.y, f.runZ);
     // nose towards -x, pitched up by `pitch`
     g.rotation.set(-pose.pitch, -Math.PI / 2, 0, 'YXZ');
   });
   return (
     <group ref={ref}>
-      {meshes.map((m, i) => (
-        <primitive key={i} object={m} />
-      ))}
+      <group ref={down}>
+        {meshesDown.map((m, i) => (
+          <primitive key={i} object={m} />
+        ))}
+      </group>
+      <group ref={up} visible={false}>
+        {meshesUp.map((m, i) => (
+          <primitive key={i} object={m} />
+        ))}
+      </group>
     </group>
   );
 }

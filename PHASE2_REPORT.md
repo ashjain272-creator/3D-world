@@ -772,3 +772,42 @@ The futuristic capital now has an airport inland, behind the city. Its flattened
 - that the flights stay within the runway's length while on the ground.
 
 Screenshots are in `docs/screenshots/airport/`.
+
+## Phase 14: walk-in terminal, retracting gear, dry ground, and the airport's cost
+
+**Walk-in terminal and concourse**
+- **Walls:** the curtain walls are now thin glass panes with doorways at the kerb (nine entrance doors). The walls facing each other open onto two glazed link corridors at ground level, and the corridors open into the concourse. Colliders follow the walls (`airportColliders`).
+- **Check-in hall:**
+  - a marble floor with bands and a lit ceiling grid under the roof;
+  - interior tree columns and clerestory glazing up to the roof shell;
+  - four check-in islands, each with twelve desks around a baggage belt, a two-sided backlit sign band and queue lines of posts and belts;
+  - departure boards, two cafés with tables and stools, security arches and scanner tunnels at the links, benches and planters.
+- **Concourse:** travelators with glass balustrades, rows of seats at every gate facing the apron, gate desks with lit signs, duty-free islands, and a lit ceiling under the vault.
+
+**Gear:** each flying aircraft is built twice, gear down and gear stowed with the doors closed. `flightPose` reports when the gear is down: always while landing, and on take-off until about five seconds after lift-off. A screenshot hook (`sceneDebug.flightTime`) fixes the flight clock for photographs.
+
+**Dry ground:** within 500 m of an airfield, the terrain stays above the water table, so no lake opens beside the runway. Open water now appears only past the map's edge, as at every edge on that world.
+
+**Map size:** the margin beyond the airfield grew to 330 m, so mountains frame the runway. The terrain grid is capped at 352 cells a side, so the larger map does not double the terrain's triangles.
+
+**Airfield lights:** the hundreds of lamps and posts use eight-sided prisms instead of 18-sided cylinders and spheres.
+
+**Cost**
+
+Medium quality, headless software renderer, same three views. Before means the build just before the airport (`ad52a33`); after means this build.
+
+| view | before: fps / draw calls / triangles | after: fps / draw calls / triangles |
+|---|---|---|
+| street in the city | 0.97 / 357 / 1.50 M | 0.86 / 431 / 1.81 M |
+| city from the air | 0.74 / 821 / 1.98 M | 0.68 / 864 / 2.25 M |
+| looking at the airport | 1.07 / 327 / 1.45 M | 0.84 / 440 / 1.78 M |
+
+- **Before these optimisations:** the airport added 0.6 M triangles.
+- **Now:** it adds about 0.3 M, which costs 8–11% frame time in city views and 21% when looking straight at the airfield.
+- **Caveat:** the software renderer is CPU-bound, so the absolute fps says nothing about a GPU.
+
+**Tests:** the airport test now also:
+- walks from the kerb through a door, across the hall, down a link and along the concourse;
+- checks that the walls stand between the doors;
+- checks that the ground stays above water 450 m around the airfield;
+- checks that the departing aircraft stows its gear once climbing, and the arriving one has it down.

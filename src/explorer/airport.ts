@@ -119,6 +119,11 @@ export function aircraft(add: Add, kind: AircraftKind, liv: Livery, opts: { frei
       for (const az of axles) for (const s of [-1, 1]) add('cyl', 'dark', lx + s * 0.45, 0.6, L * 0.0 + az, 1.2, 0.4, 1.2, '#1a1a1c', 0, 0, Math.PI / 2);
     }
   }
+  if (opts.gearUp) {
+    // closed gear doors flush with the belly
+    add('box', 'plaster', 0, p.belly + 0.02, zFwd - 1, 0.9, 0.06, 2.2, '#d8dadc');
+    for (const s of [-1, 1]) add('box', 'plaster', s * d * 0.32, p.belly + d * 0.05, 0, d * 0.4, 0.06, 3.4, '#d8dadc');
+  }
   // antennas on the crown, the APU exhaust at the tail
   add('box', 'dark', 0, cy + d / 2, L * 0.15, 0.08, 0.5, 0.6, '#3a3e44', 0, -0.4);
   add('cyl', 'dark', 0, cy + d * 0.18, zAft - L * 0.205, 0.35, 0.4, 0.35, '#2a2e34', 0, -Math.PI / 2);
@@ -149,15 +154,25 @@ export function airport(out: DistrictData, a: AirportPlan, y0: number, warm: boo
   fence(add, a);
   floodlights(add, a);
   // the airfield's lights read from across the city at night: never cull them as small props
-  for (let i = first; i < out.pieces.length; i++) if (out.pieces[i].mat === 'glow' || out.pieces[i].mat === 'nightBeam') out.pieces[i].small = false;
+  for (let i = first; i < out.pieces.length; i++) {
+    const p = out.pieces[i];
+    if (p.mat === 'glow' || p.mat === 'nightBeam') p.small = false;
+    // hundreds of lamps and posts: eight-sided prisms read the same as round ones at this size
+    if ((p.shape === 'sphere' || p.shape === 'cyl') && p.mat === 'glow') p.shape = 'oct';
+    if (p.shape === 'cyl' && (p.mat === 'metal' || p.mat === 'dark') && Math.max(p.m.elements[0], p.m.elements[10]) < 1.3) p.shape = 'oct';
+  }
   // two aircraft that fly: one landing, one taking off, on the same runway in turn
   out.flights = (['land', 'takeoff'] as const).map((mode, i) => {
-    const local: DistrictData = { pieces: [], lights: [] };
-    const f = frame(local, 0, 0, 0, [0, 1]);
-    aircraft(f.add, mode === 'land' ? 'narrow' : 'wide', LIVERIES[i === 0 ? 0 : 3]);
-    // landing lights on the wing roots
-    for (const sx of [-1, 1]) f.add('sphere', 'glow', sx * 3, AIRCRAFT[mode === 'land' ? 'narrow' : 'wide'].belly + 0.6, 6, 0.6, 0.6, 0.6, '#fffbe8');
-    return { pieces: local.pieces, mode, runZ: a.runZ, runX0: a.runX0, runX1: a.runX1 };
+    // the same aircraft twice: gear down, and gear stowed with the doors closed
+    const build = (gearUp: boolean) => {
+      const local: DistrictData = { pieces: [], lights: [] };
+      const f = frame(local, 0, 0, 0, [0, 1]);
+      aircraft(f.add, mode === 'land' ? 'narrow' : 'wide', LIVERIES[i === 0 ? 0 : 3], { gearUp });
+      // landing lights on the wing roots
+      for (const sx of [-1, 1]) f.add('sphere', 'glow', sx * 3, AIRCRAFT[mode === 'land' ? 'narrow' : 'wide'].belly + 0.6, 6, 0.6, 0.6, 0.6, '#fffbe8');
+      return local.pieces;
+    };
+    return { pieces: build(false), piecesUp: build(true), mode, runZ: a.runZ, runX0: a.runX0, runX1: a.runX1 };
   });
 }
 
@@ -166,7 +181,7 @@ export function airport(out: DistrictData, a: AirportPlan, y0: number, warm: boo
  * heading and pitch, or null while it is out of sight between cycles. Both land and take off
  * towards -x, into the same wind.
  */
-export function flightPose(mode: 'land' | 'takeoff', runX0: number, runX1: number, t: number): { x: number; y: number; pitch: number } | null {
+export function flightPose(mode: 'land' | 'takeoff', runX0: number, runX1: number, t: number): { x: number; y: number; pitch: number; gear: boolean } | null {
   const T = ((t % 110) + 110) % 110;
   if (mode === 'land') {
     const xTD = runX1 - 300;
@@ -178,7 +193,7 @@ export function flightPose(mode: 'land' | 'takeoff', runX0: number, runX1: numbe
       // a 3 degree glide, flaring over the last three seconds
       const glide = (x - xTD) * 0.0524;
       const y = left < 3 ? glide * (left / 3) * (left / 3) * 0.6 + glide * 0.4 * (left / 3) : glide;
-      return { x, y: y + 0.01, pitch: left < 3 ? 0.035 + (3 - left) * 0.02 : 0.035 };
+      return { x, y: y + 0.01, pitch: left < 3 ? 0.035 + (3 - left) * 0.02 : 0.035, gear: true };
     }
     const tr = T - tApp;
     const a = 2.6;
@@ -186,7 +201,7 @@ export function flightPose(mode: 'land' | 'takeoff', runX0: number, runX1: numbe
     if (tr > tStop) return null;
     const x = xTD - (v * tr - (a * tr * tr) / 2);
     if (x < runX0 + 40) return null;
-    return { x, y: 0, pitch: tr < 2 ? 0.095 * (1 - tr / 2) : 0 };
+    return { x, y: 0, pitch: tr < 2 ? 0.095 * (1 - tr / 2) : 0, gear: true };
   }
   const t0 = 52;
   if (T < t0) return null;
@@ -195,14 +210,15 @@ export function flightPose(mode: 'land' | 'takeoff', runX0: number, runX1: numbe
   const vR = 78;
   const tR = vR / a;
   const x0 = runX1 - 40;
-  if (tt < tR) return { x: x0 - (a * tt * tt) / 2, y: 0, pitch: 0 };
+  if (tt < tR) return { x: x0 - (a * tt * tt) / 2, y: 0, pitch: 0, gear: true };
   const xR = x0 - (a * tR * tR) / 2;
   const tc = tt - tR;
   if (tc > 32) return null;
   const v = 85;
   const pitch = Math.min(0.14, tc * 0.05);
   const climb = tc < 3 ? 0 : (tc - 3) * v * 0.14;
-  return { x: xR - v * tc, y: climb + (tc < 3 ? tc * tc * 0.6 : 5.4), pitch };
+  // the gear comes up once the aircraft is climbing away, about five seconds after lift-off
+  return { x: xR - v * tc, y: climb + (tc < 3 ? tc * tc * 0.6 : 5.4), pitch, gear: tc < 5 };
 }
 
 /** Seven-segment runway designator digits, drawn along the runway (reading from the threshold). */
@@ -454,8 +470,29 @@ function terminal(add: Add, a: AirportPlan, r: (k: number) => number, tree: (x: 
   const H = 17;
   // plinth, glass curtain walls with mullions, a lit interior glow
   add('box', 'marble', cx, 0, cz, W + 4, 0.4, D + 4, '#e6e1d6');
-  add('box', 'glass', cx, 0.4, cz, W, H - 0.4, D, '#6f9cbc');
-  for (let x = t.x0; x <= t.x1 + 0.01; x += 3) for (const z of [t.z0 - 0.1, t.z1 + 0.1]) add('box', 'metal', x, 0.4, z, 0.18, H - 0.4, 0.3, '#e8ecf0');
+  // the curtain walls are thin glass panes, open at the doors and where the links join, so the
+  // hall can be walked through
+  const pane = (x0: number, x1: number, z: number) => {
+    if (x1 - x0 < 0.2) return;
+    add('box', 'glass', (x0 + x1) / 2, 0.4, z, x1 - x0, H - 0.4, 0.12, '#6f9cbc');
+  };
+  const wall = (z: number, gaps: number[], gw: number) => {
+    let x = t.x0;
+    for (const g of [...gaps].sort((p, q) => p - q)) {
+      pane(x, g - gw / 2, z);
+      // above the opening the glass continues
+      add('box', 'glass', g, gw > 6 ? 5.4 : 3.6, z, gw, H - (gw > 6 ? 5.4 : 3.6), 0.12, '#6f9cbc');
+      x = g + gw / 2;
+    }
+    pane(x, t.x1, z);
+  };
+  wall(t.z0, a.doors, 5);
+  wall(t.z1, a.links, 8.4);
+  for (const sx of [t.x0, t.x1]) add('box', 'glass', sx, 0.4, cz, 0.12, H - 0.4, D, '#6f9cbc');
+  for (let x = t.x0; x <= t.x1 + 0.01; x += 3) {
+    if (a.doors.some((d) => Math.abs(d - x) < 2.6)) continue;
+    for (const z of [t.z0 - 0.1, t.z1 + 0.1]) if (z < cz || !a.links.some((l) => Math.abs(l - x) < 4.3)) add('box', 'metal', x, 0.4, z, 0.18, H - 0.4, 0.3, '#e8ecf0');
+  }
   for (const y of [5.5, 11]) for (const z of [t.z0 - 0.12, t.z1 + 0.12]) add('box', 'metal', cx, y, z, W, 0.25, 0.3, '#e8ecf0');
   // the vaulted roof: a faceted shell spanning front to back with deep overhangs, white ribs below
   const over = 14;
@@ -476,6 +513,10 @@ function terminal(add: Add, a: AirportPlan, r: (k: number) => number, tree: (x: 
     add('box', k === n / 2 - 1 || k === n / 2 ? 'skylight' : 'metal', cx, (yA + yB) / 2 - 0.3, (zA + zB) / 2, W + 24, 0.6, Math.hypot(zB - zA, yB - yA) + 0.1, k === n / 2 - 1 || k === n / 2 ? '#bfe4f4' : '#f2f4f6', 0, -tilt);
   }
   add('box', 'glow', cx, H - 0.6, t.z0 - over + 0.6, W + 22, 0.15, 0.3, '#fff0d4');
+  // clerestory glazing between the top of the walls and the roof shell
+  const yWall = yc + Math.sqrt(R0 * R0 - (D / 2) * (D / 2));
+  for (const z of [t.z0, t.z1]) add('box', 'atrium', cx, H, z, W, yWall - H, 0.1, '#bfe2f0');
+  terminalHall(add, a, H, r);
   // tree columns carrying the overhang above the kerb: a trunk branching into four arms
   for (let x = t.x0 - 6; x <= t.x1 + 6.01; x += 18) {
     const z = t.z0 - over + 3;
@@ -504,10 +545,12 @@ function terminal(add: Add, a: AirportPlan, r: (k: number) => number, tree: (x: 
     const lx = cx + s * 60;
     const zA = t.z1;
     const zB = a.conc.z0;
-    add('box', 'atrium', lx, 6, (zA + zB) / 2, 9, 5, zB - zA, '#bfe2f0');
-    add('box', 'metal', lx, 11, (zA + zB) / 2, 9.6, 0.5, zB - zA, '#e8ecf0');
-    add('box', 'metal', lx, 5.6, (zA + zB) / 2, 9.6, 0.4, zB - zA, '#e8ecf0');
-    for (const z of [zA + 5, zB - 5]) add('cyl', 'metal', lx, 0, z, 1.2, 5.6, 1.2, '#d8dce0');
+    // a glazed corridor on the ground: glass sides, a lit roof, a marble floor
+    for (const sd of [-1, 1]) add('box', 'atrium', lx + sd * 4.5, 0.4, (zA + zB) / 2, 0.1, 4.6, zB - zA, '#bfe2f0');
+    add('box', 'metal', lx, 5, (zA + zB) / 2, 9.8, 0.5, zB - zA, '#e8ecf0');
+    add('box', 'glow', lx, 4.95, (zA + zB) / 2, 6, 0.05, zB - zA - 1, '#fff2d6');
+    add('box', 'marble', lx, 0.4, (zA + zB) / 2, 9, 0.05, zB - zA, '#efeae0');
+    for (let z = zA + 2; z < zB; z += 4) for (const sd of [-1, 1]) add('box', 'metal', lx + sd * 4.55, 0.4, z, 0.15, 4.6, 0.15, '#d8dce0');
   }
   // palms or evergreens along the forecourt
   for (let x = t.x0; x <= t.x1; x += 12) tree(x, a.curbZ - 9, 40 + x);
@@ -522,8 +565,19 @@ function concourse(add: Add, a: AirportPlan, r: (k: number) => number) {
   const cz = (c.z0 + c.z1) / 2;
   const H = 12;
   add('box', 'marble', cx, 0, cz, W + 2, 0.4, D + 2, '#e6e1d6');
-  add('box', 'glass', cx, 0.4, cz, W, H - 0.4, D, '#6f9cbc');
-  for (let x = c.x0; x <= c.x1 + 0.01; x += 2.5) for (const z of [c.z0 - 0.1, c.z1 + 0.1]) add('box', 'metal', x, 0.4, z, 0.14, H - 0.4, 0.25, '#e8ecf0');
+  // thin glass walls, open where the links join
+  {
+    let x = c.x0;
+    for (const l of [...a.links].sort((p, q) => p - q)) {
+      add('box', 'glass', (x + l - 4.2) / 2, 0.4, c.z0, l - 4.2 - x, H - 0.4, 0.12, '#6f9cbc');
+      add('box', 'glass', l, 5.4, c.z0, 8.4, H - 5.4, 0.12, '#6f9cbc');
+      x = l + 4.2;
+    }
+    add('box', 'glass', (x + c.x1) / 2, 0.4, c.z0, c.x1 - x, H - 0.4, 0.12, '#6f9cbc');
+    add('box', 'glass', cx, 0.4, c.z1, W, H - 0.4, 0.12, '#6f9cbc');
+  }
+  for (let x = c.x0; x <= c.x1 + 0.01; x += 2.5) for (const z of [c.z0 - 0.1, c.z1 + 0.1]) if (z > cz || !a.links.some((l) => Math.abs(l - x) < 4.3)) add('box', 'metal', x, 0.4, z, 0.14, H - 0.4, 0.25, '#e8ecf0');
+  concourseHall(add, a, H, r);
   add('box', 'metal', cx, 5.6, c.z1 + 0.12, W, 0.3, 0.3, '#e8ecf0');
   // a glazed vault the length of the concourse, ribbed every 6 m, ending in rounded glass ends
   const n = 10;
@@ -548,6 +602,131 @@ function concourse(add: Add, a: AirportPlan, r: (k: number) => number) {
     add('box', 'glow', g.x - 8, 8.7, c.z1 + 0.42, 3.2, 1.4, 0.05, i % 2 ? '#ffd27a' : '#7ae0ff');
   }
   void r;
+}
+
+/** The check-in hall: islands of desks under backlit signs, queue lines, boards, shops, security. */
+function terminalHall(add: Add, a: AirportPlan, H: number, r: (k: number) => number) {
+  const t = a.term;
+  const W = t.x1 - t.x0;
+  const D = t.z1 - t.z0;
+  const cx = (t.x0 + t.x1) / 2;
+  const cz = (t.z0 + t.z1) / 2;
+  // polished stone floor with bands, and a lit ceiling grid under the roof
+  add('box', 'marble', cx, 0.4, cz, W - 0.4, 0.05, D - 0.4, '#efeae2');
+  for (let x = t.x0 + 6; x < t.x1; x += 12) add('box', 'stone', x, 0.46, cz, 0.3, 0.01, D - 1, '#c9bfa8');
+  for (let x = t.x0 + 8; x < t.x1 - 4; x += 16) add('box', 'glow', x, H - 0.3, cz, 1.2, 0.12, D - 4, '#fff6e6');
+  // interior tree columns holding up the vault
+  for (let x = t.x0 + 30; x < t.x1 - 20; x += 40)
+    for (const z of [t.z0 + 10, t.z1 - 10]) {
+      add('cyl', 'metal', x, 0.4, z, 0.9, H - 4, 0.9, '#eef0f2');
+      for (let q = 0; q < 4; q++) {
+        const ang = q * (Math.PI / 2) + Math.PI / 4;
+        add('cyl', 'metal', x + Math.cos(ang) * 1.3, H - 4, z + Math.sin(ang) * 1.3, 0.35, 5.5, 0.35, '#eef0f2', 0, Math.sin(ang) * 0.5, -Math.cos(ang) * 0.5);
+      }
+    }
+  const airlines = ['#b0122a', '#0e5a3a', '#1a3a7a', '#5a2a6a', '#0a7aa8', '#d86a1a', '#2a2a2e', '#c8a050'];
+  for (const [i, dx] of [-95, -25, 25, 95].entries()) {
+    const ix = a.xa + dx;
+    // the island: a row of desks each side of a baggage belt, a backlit sign band overhead
+    add('box', 'stone', ix, 0.4, cz, 24, 1.1, 4, '#d8d4cc');
+    add('box', 'dark', ix, 1.5, cz, 24, 0.3, 1.2, '#3a3e44');
+    for (let k = 0; k < 6; k++)
+      for (const sd of [-1, 1]) {
+        const dxk = -10 + k * 4;
+        add('box', 'wood', ix + dxk, 0.4, cz + sd * 2.6, 2.8, 1.05, 1.1, '#8a6a4a');
+        add('box', 'glow', ix + dxk, 1.5, cz + sd * 2.6, 0.6, 0.4, 0.05, '#cfe8ff');
+        add('box', 'dark', ix + dxk, 1.45, cz + sd * 3.2, 0.5, 0.5, 0.3, '#2a2e34');
+      }
+    add('box', 'metal', ix, 1.5, cz, 0.3, 3.6, 0.3, '#c8ccd0');
+    add('box', 'dark', ix, 5, cz, 24, 1.8, 0.6, '#1e2024');
+    for (const sd of [-1, 1]) add('box', 'glow', ix, 5.2, cz + sd * 0.32, 22, 1.4, 0.04, airlines[(i * 2 + (sd > 0 ? 1 : 0)) % airlines.length]);
+    // queue lines of posts and belts in front of the desks
+    for (const sd of [-1, 1])
+      for (let q = 0; q < 3; q++)
+        for (let k = 0; k < 7; k++) {
+          const px = ix - 9 + k * 3;
+          const pz = cz + sd * (5.5 + q * 1.6);
+          add('cyl', 'metal', px, 0.4, pz, 0.12, 1, 0.12, '#c8ccd0');
+          if (k < 6) add('box', 'cloth', px + 1.5, 1.25, pz, 3, 0.08, 0.04, '#1a3a7a');
+        }
+  }
+  // departure boards hanging over the hall, shops and a café along the walls, security at the links
+  for (const sd of [-1, 1]) {
+    const bx = cx + sd * 60;
+    add('box', 'dark', bx, 7.5, t.z0 + 4, 14, 4, 0.4, '#16181c');
+    for (let row = 0; row < 7; row++) add('box', 'glow', bx, 7.9 + row * 0.5, t.z0 + 4.22, 13, 0.3, 0.04, row % 2 ? '#ffd27a' : '#f4f4f0');
+    add('cyl', 'metal', bx - 6, 11.5, t.z0 + 4, 0.05, 5, 0.05, '#c8ccd0');
+    add('cyl', 'metal', bx + 6, 11.5, t.z0 + 4, 0.05, 5, 0.05, '#c8ccd0');
+  }
+  for (const sx of [t.x0 + 8, t.x1 - 8]) {
+    // a café at each end of the hall: counter, tables and stools
+    add('box', 'wood', sx, 0.4, t.z1 - 6, 10, 1.1, 1.5, '#6a4a32');
+    add('box', 'glow', sx, 3.6, t.z1 - 6.8, 9, 0.8, 0.05, '#ffcf8a');
+    for (let k = 0; k < 6; k++) {
+      const tx = sx - 6 + (k % 3) * 6;
+      const tz = t.z1 - 14 - Math.floor(k / 3) * 5;
+      add('cyl', 'metal', tx, 0.4, tz, 1.1, 0.75, 1.1, '#f0f0f0');
+      for (let q = 0; q < 3; q++) add('cyl', 'wood', tx + Math.cos(q * 2.1) * 1.1, 0.4, tz + Math.sin(q * 2.1) * 1.1, 0.5, 0.45, 0.5, '#8a6a4a');
+    }
+  }
+  for (const l of a.links) {
+    // security: walk-through arches and scanner tunnels either side of the link
+    for (const sd of [-1, 1]) {
+      add('box', 'metal', l + sd * 2.6, 0.4, t.z1 - 7, 0.3, 2.3, 0.6, '#d8dce0');
+      add('box', 'dark', l + sd * 6.5, 0.4, t.z1 - 7, 1.4, 1.2, 5, '#3a3e44');
+      add('box', 'metal', l + sd * 6.5, 1.6, t.z1 - 7, 1.6, 0.9, 1.6, '#c8ccd0');
+    }
+    add('box', 'metal', l, 2.7, t.z1 - 7, 5.5, 0.3, 0.6, '#d8dce0');
+    add('box', 'glow', l, 3.2, t.z1 - 7, 4, 0.5, 0.05, '#7ae0ff');
+  }
+  // benches and planters
+  for (let x = t.x0 + 14; x < t.x1 - 10; x += 28) {
+    add('box', 'wood', x, 0.4, t.z0 + 6, 3.4, 0.45, 0.6, '#8a6a4a');
+    add('cyl', 'stone', x + 4, 0.4, t.z0 + 6, 1.4, 0.8, 1.4, '#d8cfbc');
+    add('sphere', 'leaf', x + 4, 1.6, t.z0 + 6, 1.6, 1.4, 1.6, '#4f8a3a');
+  }
+  void r;
+}
+
+/** The airside concourse: gate lounges with seats and desks, travelators, duty-free islands, boards. */
+function concourseHall(add: Add, a: AirportPlan, H: number, r: (k: number) => number) {
+  const c = a.conc;
+  const W = c.x1 - c.x0;
+  const cx = (c.x0 + c.x1) / 2;
+  const cz = (c.z0 + c.z1) / 2;
+  add('box', 'marble', cx, 0.4, cz, W - 0.4, 0.05, c.z1 - c.z0 - 0.4, '#efeae2');
+  // travelators down the middle: belts with glass balustrades and lit handrails
+  for (let x = c.x0 + 20; x < c.x1 - 40; x += 60) {
+    if (a.links.some((l) => Math.abs(l - (x + 20)) < 26)) continue;
+    for (const sd of [-1, 1]) {
+      add('box', 'dark', x + 20, 0.42, cz + sd * 1.2, 40, 0.12, 1.4, '#3a3e44');
+      add('box', 'glass', x + 20, 0.5, cz + sd * 2, 40, 0.9, 0.05, '#cfe6f0');
+      add('box', 'glow', x + 20, 1.4, cz + sd * 2, 40, 0.06, 0.08, '#fff2d6');
+    }
+  }
+  // each gate: rows of seats facing the apron, a gate desk with its sign, a board
+  for (const [i, g] of a.gates.entries()) {
+    for (let row = 0; row < 3; row++)
+      for (let k = 0; k < 10; k++) {
+        const sx = g.x - 10 + k * 2.1;
+        const sz = c.z1 - 3 - row * 1.6;
+        add('box', 'cloth', sx, 0.85, sz, 1.8, 0.12, 0.6, '#3a4a5a');
+        add('box', 'cloth', sx, 0.95, sz - 0.3, 1.8, 0.6, 0.1, '#3a4a5a');
+        add('box', 'metal', sx, 0.4, sz, 0.1, 0.45, 0.5, '#9aa0a8');
+      }
+    add('box', 'wood', g.x + 12, 0.4, c.z1 - 3, 3, 1.1, 1.2, '#6a4a32');
+    add('box', 'dark', g.x + 12, 2.6, c.z1 - 3.5, 2.6, 1.2, 0.1, '#16181c');
+    add('box', 'glow', g.x + 12, 2.7, c.z1 - 3.56, 2.3, 0.9, 0.04, i % 2 ? '#ffd27a' : '#7ae0ff');
+  }
+  // duty-free islands and a lounge between the gates, on the landside half
+  for (let x = c.x0 + 40; x < c.x1 - 20; x += 75) {
+    if (a.links.some((l) => Math.abs(l - x) < 12)) continue;
+    add('box', 'wood', x, 0.4, c.z0 + 3.5, 10, 1.2, 3, '#6a4a32');
+    add('box', 'glow', x, 1.6, c.z0 + 3.5, 9.6, 0.5, 2.6, ['#ffe6c0', '#e8f4ff', '#ffd8e8'][Math.floor(r(1500 + x) * 3)]);
+    add('box', 'dark', x, 4.5, c.z0 + 3.5, 10, 1, 0.3, '#16181c');
+    add('box', 'glow', x, 4.6, c.z0 + 3.34, 8, 0.7, 0.04, '#c8a050');
+  }
+  for (let x = c.x0 + 10; x < c.x1; x += 12) add('box', 'glow', x, H - 0.4, cz, 1, 0.1, c.z1 - c.z0 - 4, '#fff6e6');
 }
 
 function tower(add: Add, a: AirportPlan) {

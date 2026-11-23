@@ -252,6 +252,36 @@ describe('futuristic districts', () => {
     for (const b of l.buildings) expect(b.z + b.d / 2).toBeLessThan(rect.z0 + 10);
     const veg = generateVegetation(t, l, 'medium');
     for (const c of veg.colliders) expect(c.x > rect.x0 && c.x < rect.x1 && c.z > rect.z0 && c.z < rect.z1).toBe(false);
+    // you can walk from the kerb through a door, across the hall, down a link and along the concourse
+    const hit = (x: number, z: number) =>
+      l.colliders.some((c) => (c.type === 'circle' ? Math.hypot(c.x - x, c.z - z) < c.hw + 0.3 : Math.abs(c.x - x) < c.hw + 0.3 && Math.abs(c.z - z) < c.hd + 0.3));
+    const door = a.doors.reduce((p, q) => (Math.abs(q - a.links[0]) < Math.abs(p - a.links[0]) ? q : p));
+    const route: [number, number][] = [];
+    for (let z = a.curbZ + 9; z < a.term.z0 + 3; z += 0.5) route.push([door, z]);
+    for (let x = door; Math.abs(x - a.links[0]) > 0.5; x += Math.sign(a.links[0] - door) * 0.5) route.push([x, a.term.z0 + 3]);
+    for (let z = a.term.z0 + 3; z < (a.conc.z0 + a.conc.z1) / 2; z += 0.5) route.push([a.links[0], z]);
+    for (let x = a.conc.x0 + 2; x < a.conc.x1 - 2; x += 0.5) route.push([x, (a.conc.z0 + a.conc.z1) / 2]);
+    for (const [x, z] of route) expect(hit(x, z), `blocked at ${x.toFixed(1)},${z.toFixed(1)}`).toBe(false);
+    // while the halls' walls stand between doors
+    expect(hit((a.doors[0] + a.doors[1]) / 2, a.term.z0)).toBe(true);
+    expect(hit((a.conc.x0 + a.conc.x1) / 2, a.conc.z1)).toBe(true);
+    // no lake opens beside the airfield
+    if (t.waterLevel !== null)
+      for (let x = rect.x0 - 450; x <= rect.x1 + 450; x += 40)
+        for (const z of [rect.z0 - 60, rect.z1 + 60, rect.z1 + 150]) if (Math.abs(x) < t.size * 0.47 && Math.abs(z) < t.size * 0.47) expect(t.height(x, z)).toBeGreaterThan(t.waterLevel);
+    // the departing aircraft stows its gear once it is climbing away, the arriving one has it down
+    let stowed = false;
+    for (let tt = 0; tt < 110; tt += 0.25) {
+      const dep = flightPose('takeoff', a.runX0, a.runX1, tt);
+      if (dep && dep.y > 40) {
+        expect(dep.gear).toBe(false);
+        stowed = true;
+      }
+      if (dep && dep.y < 0.5) expect(dep.gear).toBe(true);
+      const arr = flightPose('land', a.runX0, a.runX1, tt);
+      if (arr) expect(arr.gear).toBe(true);
+    }
+    expect(stowed).toBe(true);
     // the flights stay on the runway centreline while on the ground
     for (let tt = 0; tt < 110; tt += 0.5)
       for (const mode of ['land', 'takeoff'] as const) {

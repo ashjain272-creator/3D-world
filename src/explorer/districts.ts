@@ -32,7 +32,7 @@ export interface DistrictData {
   /** Pool and fountain surfaces (lit from below at night). */
   lights: [number, number][];
   /** Aircraft that fly: their pieces around the origin (nose along +z), and their route. */
-  flights?: { pieces: DPiece[]; mode: 'land' | 'takeoff'; runZ: number; runX0: number; runX1: number }[];
+  flights?: { pieces: DPiece[]; piecesUp: DPiece[]; mode: 'land' | 'takeoff'; runZ: number; runX0: number; runX1: number }[];
 }
 
 /** Grid spacing of futuristic cities (see layout.ts). */

@@ -179,6 +179,10 @@ export interface AirportPlan {
   fuel: ARect;
   parks: ARect[];
   gates: { x: number; kind: AircraftKind }[];
+  /** Entrance doors along the terminal's kerb side (x), each 5 m wide. */
+  doors: number[];
+  /** The glazed links from the terminal to the concourse (x), each 9 m wide, at ground level. */
+  links: number[];
   /** +1 when the hangars are east of the concourse, -1 when west. */
   side: number;
 }
@@ -238,6 +242,8 @@ export function airportPlan(R: number, xa: number): AirportPlan {
       { x0: xa + 40, x1: xa + 205, z0: R + 8, z1: R + 38 },
     ].filter((p) => !(p.x0 < xa + side * 230 + 32 && p.x1 > xa + side * 230 - 32)),
     gates,
+    doors: Array.from({ length: 9 }, (_, k) => xa - 100 + k * 26),
+    links: [xa - 60, xa + 60],
     side,
   };
 }
@@ -246,8 +252,33 @@ export function airportPlan(R: number, xa: number): AirportPlan {
 export function airportColliders(a: AirportPlan, R: number): Collider[] {
   const out: Collider[] = [];
   const box = (r: ARect) => out.push({ type: 'box', x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2, hw: (r.x1 - r.x0) / 2, hd: (r.z1 - r.z0) / 2 });
-  box(a.term);
-  box(a.conc);
+  // the terminal and the concourse are hollow halls: glass walls with doorways at the kerb and
+  // where the links join, the links themselves glazed corridors on the ground
+  const wallX = (z: number, x0: number, x1: number, gaps: [number, number][]) => {
+    let x = x0;
+    for (const [g0, g1] of [...gaps].sort((p, q) => p[0] - q[0])) {
+      if (g0 > x) box({ x0: x, x1: g0, z0: z - 0.4, z1: z + 0.4 });
+      x = Math.max(x, g1);
+    }
+    if (x < x1) box({ x0: x, x1, z0: z - 0.4, z1: z + 0.4 });
+  };
+  const wallZ = (x: number, z0: number, z1: number) => box({ x0: x - 0.4, x1: x + 0.4, z0, z1 });
+  const t = a.term;
+  const c = a.conc;
+  wallX(t.z0, t.x0, t.x1, a.doors.map((d) => [d - 2.5, d + 2.5]));
+  wallX(t.z1, t.x0, t.x1, a.links.map((l) => [l - 4.2, l + 4.2]));
+  wallZ(t.x0, t.z0, t.z1);
+  wallZ(t.x1, t.z0, t.z1);
+  wallX(c.z0, c.x0, c.x1, a.links.map((l) => [l - 4.2, l + 4.2]));
+  wallX(c.z1, c.x0, c.x1, []);
+  wallZ(c.x0, c.z0, c.z1);
+  wallZ(c.x1, c.z0, c.z1);
+  for (const l of a.links) {
+    wallZ(l - 4.6, t.z1, c.z0);
+    wallZ(l + 4.6, t.z1, c.z0);
+  }
+  // the check-in islands in the hall
+  for (const dx of [-95, -25, 25, 95]) box({ x0: a.xa + dx - 12, x1: a.xa + dx + 12, z0: (t.z0 + t.z1) / 2 - 2, z1: (t.z0 + t.z1) / 2 + 2 });
   box(a.cargo);
   box(a.fire);
   for (const p of a.parks) box({ x0: p.x0 + 4, x1: p.x1 - 4, z0: p.z0 + 2, z1: p.z1 - 2 });

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createNoise2D } from 'simplex-noise';
 import { Rng } from '../sim/rng';
 import type { Collider, Layout } from './layout';
-import type { TerrainData } from './terrain';
+import { inFlat, type TerrainData } from './terrain';
 import { generateStructures, type StructureData } from './structures';
 
 /** One instance of a part: transform, colour, and position for tiling. */
@@ -267,7 +267,7 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
     const x = rng.range(-t.size * 0.47, t.size * 0.47);
     const z = rng.range(-t.size * 0.47, t.size * 0.47);
     const d = Math.hypot(x, z);
-    const inCity = (layout.radius > 0 && d < layout.radius + 10) || (t.coastZ !== undefined && z < t.coastZ + 6);
+    const inCity = (layout.radius > 0 && d < layout.radius + 10) || (t.coastZ !== undefined && z < t.coastZ + 6) || inFlat(t, x, z, 12);
     if (inCity && !(layout.style === 'organic' && rng.chance(0.08))) continue;
     if (layout.colliders.some((c) => Math.hypot(c.x - x, c.z - z) < c.hw + 4)) continue;
     if (Math.hypot(x - layout.spawn.x, z - layout.spawn.z) < 18) continue;
@@ -297,7 +297,7 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
 
   // ── Undergrowth: bushes in clumps, ferns in jungle/forest, reeds along shores, dry shrubs in deserts.
   const placeable = (x: number, z: number, minAboveWater = 0.5): number | null => {
-    if ((layout.radius > 0 && Math.hypot(x, z) < layout.radius + 6) || (t.coastZ !== undefined && z < t.coastZ + 6)) return null;
+    if ((layout.radius > 0 && Math.hypot(x, z) < layout.radius + 6) || (t.coastZ !== undefined && z < t.coastZ + 6) || inFlat(t, x, z, 12)) return null;
     if (blockedByStructure(x, z, 1)) return null;
     const h = t.height(x, z);
     if (t.waterLevel !== null && h < t.waterLevel + minAboveWater) return null;
@@ -325,7 +325,7 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
       const z = rng.range(-t.size * 0.47, t.size * 0.47);
       const h = t.height(x, z);
       if (h < t.waterLevel - 0.6 || h > t.waterLevel + 0.9) continue;
-      if ((layout.radius > 0 && Math.hypot(x, z) < layout.radius + 6) || (t.coastZ !== undefined && z < t.coastZ + 6)) continue;
+      if ((layout.radius > 0 && Math.hypot(x, z) < layout.radius + 6) || (t.coastZ !== undefined && z < t.coastZ + 6) || inFlat(t, x, z, 12)) continue;
       const s = rng.range(0.9, 1.8);
       put('reed', x, Math.max(h, t.waterLevel - 0.4), z, s, s * rng.range(1.2, 2), s, new THREE.Color('#6f8a3e').offsetHSL(rng.range(-0.04, 0.04), 0, rng.range(-0.06, 0.06)), 0, rng.range(0, 6), 0);
     }
@@ -413,7 +413,7 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
       const z = rng.range(-t.size * 0.47, t.size * 0.47);
       const h = t.height(x, z);
       if (h < t.waterLevel - 0.3 || h > t.waterLevel + 1.6) continue;
-      if ((layout.radius > 0 && Math.hypot(x, z) < layout.radius + 6) || (t.coastZ !== undefined && z < t.coastZ + 6)) continue;
+      if ((layout.radius > 0 && Math.hypot(x, z) < layout.radius + 6) || (t.coastZ !== undefined && z < t.coastZ + 6) || inFlat(t, x, z, 12)) continue;
       const s = rng.range(0.08, 0.3);
       put('rock2', x, h - s * 0.3, z, s * 1.3, s * 0.7, s, new THREE.Color(t.look.cliff).offsetHSL(rng.range(-0.03, 0.03), -0.05, rng.range(-0.1, 0.15)), 0, rng.range(0, 6), 0);
     }
@@ -425,7 +425,7 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
   for (let i = 0; i < rockCount; i++) {
     let x = rng.range(-t.size * 0.48, t.size * 0.48);
     let z = rng.range(-t.size * 0.48, t.size * 0.48);
-    if ((layout.radius > 0 && Math.hypot(x, z) < layout.radius + 6) || (t.coastZ !== undefined && z < t.coastZ + 6)) continue;
+    if ((layout.radius > 0 && Math.hypot(x, z) < layout.radius + 6) || (t.coastZ !== undefined && z < t.coastZ + 6) || inFlat(t, x, z, 12)) continue;
     if (blockedByStructure(x, z, 2)) continue;
     if (Math.hypot(x - layout.spawn.x, z - layout.spawn.z) < 14) continue;
     const cluster = rng.chance(0.4) ? 2 + Math.floor(rng.next() * 4) : 1;
@@ -451,7 +451,7 @@ export function generateVegetation(t: TerrainData, layout: Layout, quality: 'low
     for (let i = 0; i < (quality === 'low' ? 30 : 80); i++) {
       const x = rng.range(-t.size * 0.45, t.size * 0.45);
       const z = rng.range(-t.size * 0.45, t.size * 0.45);
-      if ((layout.radius > 0 && Math.hypot(x, z) < layout.radius + 10) || (t.coastZ !== undefined && z < t.coastZ + 6)) continue;
+      if ((layout.radius > 0 && Math.hypot(x, z) < layout.radius + 10) || (t.coastZ !== undefined && z < t.coastZ + 6) || inFlat(t, x, z, 12)) continue;
       if (blockedByStructure(x, z, 3) || Math.hypot(x - layout.spawn.x, z - layout.spawn.z) < 20 || t.slope(x, z) > 0.45) continue;
       const n = 3 + Math.floor(rng.next() * 6);
       const big = rng.range(1, 3.2);

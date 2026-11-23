@@ -3,7 +3,7 @@ import { ExplorerScene } from '../../explorer/ExplorerScene';
 import { Minimap } from '../../explorer/Minimap';
 import { TOPICS, respond, type Topic } from '../../explorer/dialogue';
 import { playerState, sceneDebug, useExplorer } from '../../explorer/explorerStore';
-import { buildColliderGrid, coastLine, generateLayout, settlementRadius, wildLayout, groundWildLayout } from '../../explorer/layout';
+import { airportRect, buildColliderGrid, coastLine, generateLayout, settlementRadius, wildLayout, groundWildLayout } from '../../explorer/layout';
 import { generateVegetation } from '../../explorer/vegetation';
 import { generateCloudCity } from '../../explorer/cloudCity';
 import { generateHighways } from '../../explorer/roadNetwork';
@@ -73,7 +73,7 @@ function Explorer({ target }: { target: Target }) {
   const system = w.systems[planet.systemId];
   const civ = settlement ? w.civs[settlement.civId] : region.ownerCivId ? w.civs[region.ownerCivId] : undefined;
   const civColor = civ?.color ?? '#6fd6ff';
-  const terrain = useMemo(() => cloudCity?.terrain ?? generateTerrain(planet, regionIndex, region.biome, settlement ? settlementRadius(settlement) + 20 : 0, settlement ? coastLine(settlement) : undefined), [cloudCity, planet, regionIndex, region.biome, settlement]);
+  const terrain = useMemo(() => cloudCity?.terrain ?? generateTerrain(planet, regionIndex, region.biome, settlement ? settlementRadius(settlement) + 20 : 0, settlement ? coastLine(settlement) : undefined, settlement && airportRect(settlement) ? [airportRect(settlement)!] : undefined), [cloudCity, planet, regionIndex, region.biome, settlement]);
   const layout = useMemo(() => {
     if (cloudCity) return cloudCity.layout;
     if (settlement) return generateLayout(settlement);
@@ -85,6 +85,7 @@ function Explorer({ target }: { target: Target }) {
   sceneDebug.footprints = vegetation.structures.footprints;
   sceneDebug.buildings = layout.buildings.map((b) => ({ x: b.x, z: b.z, w: b.w, d: b.d, h: b.h, kind: b.kind, district: b.district, tone: b.tone }));
   (sceneDebug as { roundabouts?: [number, number][] }).roundabouts = layout.features?.roundabouts ?? [];
+  (sceneDebug as { airport?: unknown }).airport = layout.features?.airport;
   sceneDebug.poi = vegetation.poi;
   sceneDebug.shore = useMemo(() => {
     if (terrain.waterLevel === null) return null;

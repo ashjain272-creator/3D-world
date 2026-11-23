@@ -3,6 +3,7 @@ import type { Building, Layout } from './layout';
 import { footballStadium, nbaArena } from './venues';
 import { cityFeatures, mosqueSmall, oldHouse } from './cityFeatures';
 import { mallGeometry } from './layout';
+import { airport } from './airport';
 
 /**
  * Architecture for the special districts of futuristic cities: mansions in five
@@ -10,7 +11,7 @@ import { mallGeometry } from './layout';
  * mall, a mosque and a temple, and palm-lined boulevards. Everything is built
  * from a handful of instanced shapes so a whole district costs a few draw calls.
  */
-export type DShape = 'box' | 'cyl' | 'cone' | 'hemi' | 'sphere' | 'gable' | 'arch' | 'palmTrunk' | 'fronds' | 'oct' | 'hip' | 'ring' | 'dArc' | 'threeArc' | 'beamCone' | 'torus' | 'halfTorus' | 'rod';
+export type DShape = 'box' | 'cyl' | 'cone' | 'hemi' | 'sphere' | 'gable' | 'arch' | 'palmTrunk' | 'fronds' | 'oct' | 'hip' | 'ring' | 'dArc' | 'threeArc' | 'beamCone' | 'torus' | 'halfTorus' | 'rod' | 'wingR' | 'wingL' | 'fin';
 export type DMat = 'plaster' | 'stone' | 'roof' | 'glass' | 'water' | 'gold' | 'metal' | 'leaf' | 'bark' | 'glow' | 'wood' | 'lawn' | 'cloth' | 'dark' | 'marble' | 'crowd' | 'pitch' | 'court' | 'net' | 'skylight' | 'paint' | 'beam' | 'nightBeam' | 'atrium';
 
 export interface DPiece {
@@ -30,6 +31,8 @@ export interface DistrictData {
   sea?: number;
   /** Pool and fountain surfaces (lit from below at night). */
   lights: [number, number][];
+  /** Aircraft that fly: their pieces around the origin (nose along +z), and their route. */
+  flights?: { pieces: DPiece[]; mode: 'land' | 'takeoff'; runZ: number; runX0: number; runX1: number }[];
 }
 
 /** Grid spacing of futuristic cities (see layout.ts). */
@@ -94,6 +97,7 @@ export function generateDistricts(layout: Layout, y0: number, warm: boolean): Di
     }
   }
   if (layout.features) cityFeatures(out, layout, y0, warm);
+  if (layout.features?.airport) airport(out, layout.features.airport, y0, warm);
   if (warm) boulevardPalms(out, layout, y0);
   return out;
 }

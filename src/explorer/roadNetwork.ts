@@ -227,6 +227,33 @@ function corridorHighways(layout: Layout, t: TerrainData): HighwayData {
     }
     roads.push(finishRoad('express', pts, 13, 2, false, true));
   }
+  // the airport expressway: off the inland expressway at the access line, over the outer band on
+  // pillars, down to the ground beyond the city and onto the terminal kerb road
+  if (f.airport) {
+    const ap = f.airport;
+    const x = ap.xa;
+    const zs = inlandZ;
+    const zd0 = R + 4;
+    const zd1 = ap.curbZ - 12;
+    const pts: THREE.Vector3[] = [];
+    for (let z = zs; z <= ap.curbZ + 0.01; z += 6) {
+      const ground = t.height(x, z) + 0.35;
+      let k = 1;
+      if (z > zd0) k = 1 - Math.min(1, (z - zd0) / (zd1 - zd0));
+      const e = k * k * (3 - 2 * k);
+      // up from the inland deck to clear the houses of the outer band, then down to the airfield
+      const lift = Math.min(1, (z - zs) / 40);
+      pts.push(new THREE.Vector3(x, ground * (1 - e) + level(x, z, 10 + 3 * lift * lift * (3 - 2 * lift)) * e, z));
+    }
+    if (pts[pts.length - 1].z < ap.curbZ - 0.01) pts.push(new THREE.Vector3(x, t.height(x, ap.curbZ) + 0.35, ap.curbZ));
+    roads.push(finishRoad('express', pts, 13, 2, false, true));
+    // the kerb road in front of the terminal, two lanes each way
+    const t0 = ap.term.x0 - 40;
+    const t1 = ap.term.x1 + 40;
+    const kerb: THREE.Vector3[] = [];
+    for (let xx = t0; xx <= t1 + 0.01; xx += 8) kerb.push(new THREE.Vector3(xx, t.height(xx, ap.curbZ) + 0.35, ap.curbZ));
+    roads.push(finishRoad('express', kerb, 15, 2, false, true));
+  }
   // ground boulevards with traffic
   for (const z of [f.coastRoadZ, f.spineZ, f.arterialZ]) {
     const half = chord(z) - 8;

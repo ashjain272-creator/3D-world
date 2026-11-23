@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { coastLine, generateLayout, mallGeometry, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
+import { AIRCRAFT, airportRect, coastLine, generateLayout, mallGeometry, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
 import { generateTerrain, type TerrainData } from '../src/explorer/terrain';
 import { generateVegetation } from '../src/explorer/vegetation';
 import { deckSampler, generateHighways, sampleRoad } from '../src/explorer/roadNetwork';
+import { flightPose } from '../src/explorer/airport';
 import { VILLA_STYLES, generateDistricts, villaStyle } from '../src/explorer/districts';
 import type { Biome, World } from '../src/sim/types';
 import { freshWorld } from './helpers';
@@ -199,6 +200,67 @@ describe('futuristic districts', () => {
         for (const [x, z] of l.features!.roundabouts) expect(l.streets.filter((st) => (st.a[0] === x && st.a[1] === z) || (st.b[0] === x && st.b[1] === z)).length).toBe(4);
       }
     }
+  });
+
+  it('gives the capital an airport on flattened ground behind the city, reached by an expressway', () => {
+    const s = cities.find((c) => c.kind === 'capital')!;
+    const l = generateLayout(s);
+    const a = l.features!.airport!;
+    expect(a).toBeDefined();
+    const rect = airportRect(s)!;
+    // the airport lies beyond the city, inland, and inside its flattened rectangle
+    expect(a.term.z0).toBeGreaterThan(l.radius);
+    for (const r of [a.term, a.conc, a.cargo, a.fire, a.fuel, ...a.hangars, ...a.parks]) {
+      expect(r.x0).toBeGreaterThanOrEqual(rect.x0);
+      expect(r.x1).toBeLessThanOrEqual(rect.x1);
+      expect(r.z1).toBeLessThanOrEqual(rect.z1);
+    }
+    expect(a.runZ + a.runW / 2).toBeLessThan(rect.z1);
+    expect(a.runX1 - a.runX0).toBeGreaterThan(1200);
+    // the order from the city outwards: kerb, terminal, concourse, apron, taxiway, runway
+    expect(a.curbZ).toBeLessThan(a.term.z0);
+    expect(a.term.z1).toBeLessThan(a.conc.z0);
+    expect(a.conc.z1).toBeLessThan(a.apronZ1);
+    expect(a.apronZ1).toBeLessThan(a.taxiZ);
+    expect(a.taxiZ).toBeLessThan(a.runZ - a.runW / 2);
+    // parked aircraft never touch wingtips, and all stand at the concourse
+    expect(a.gates.length).toBeGreaterThanOrEqual(6);
+    for (let i = 1; i < a.gates.length; i++) {
+      const p = a.gates[i - 1];
+      const q = a.gates[i];
+      expect(q.x - p.x).toBeGreaterThan((AIRCRAFT[p.kind].span + AIRCRAFT[q.kind].span) / 2 + 4);
+    }
+    for (const g of a.gates) expect(Math.abs(g.x - (a.conc.x0 + a.conc.x1) / 2)).toBeLessThan((a.conc.x1 - a.conc.x0) / 2);
+    // the terrain is flat under the runway, the apron and the terminal
+    const pl = w.planets[s.planetId];
+    const t = generateTerrain(pl, s.regionIndex, pl.regions[s.regionIndex].biome, l.radius + 20, coastLine(s), [rect]);
+    for (let x = a.runX0 - 100; x <= a.runX1 + 100; x += 50) for (const z of [a.runZ, a.taxiZ, a.conc.z1 + 40, a.term.z0]) expect(Math.abs(t.height(x, z) - t.flatHeight)).toBeLessThan(0.05);
+    // the expressway reaches the kerb road at ground level, and nothing tall stands under its deck
+    const roads = generateHighways(l, t)!.roads;
+    const access = roads.find((r) => r.kind === 'express' && Math.abs(r.pts[0].x - a.xa) < 0.5 && Math.abs(r.pts[r.pts.length - 1].z - a.curbZ) < 4)!;
+    expect(access).toBeDefined();
+    const end = access.pts[access.pts.length - 1];
+    expect(end.y - t.height(end.x, end.z)).toBeLessThan(0.5);
+    for (const p of access.pts) {
+      for (const b of l.buildings) {
+        const hw = (b.plot?.w ?? b.w) / 2;
+        const hd = (b.plot?.d ?? b.d) / 2;
+        if (Math.abs((b.plot?.x ?? b.x) - p.x) < hw + 6 && Math.abs((b.plot?.z ?? b.z) - p.z) < hd) expect(t.flatHeight + b.h).toBeLessThan(p.y - 1);
+      }
+    }
+    // no city building stands on the airfield, and no trees grow on it
+    for (const b of l.buildings) expect(b.z + b.d / 2).toBeLessThan(rect.z0 + 10);
+    const veg = generateVegetation(t, l, 'medium');
+    for (const c of veg.colliders) expect(c.x > rect.x0 && c.x < rect.x1 && c.z > rect.z0 && c.z < rect.z1).toBe(false);
+    // the flights stay on the runway centreline while on the ground
+    for (let tt = 0; tt < 110; tt += 0.5)
+      for (const mode of ['land', 'takeoff'] as const) {
+        const pose = flightPose(mode, a.runX0, a.runX1, tt);
+        if (pose && pose.y < 0.5) {
+          expect(pose.x).toBeGreaterThan(a.runX0 - 1);
+          expect(pose.x).toBeLessThan(a.runX1 + 1);
+        }
+      }
   });
 
   it('lets you walk into a mall through its rotunda doorway', () => {

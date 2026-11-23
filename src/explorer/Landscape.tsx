@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { createNoise2D } from 'simplex-noise';
 import { Rng } from '../sim/rng';
 import type { Layout } from './layout';
-import { mixHex, type TerrainData } from './terrain';
+import { inFlat, mixHex, type TerrainData } from './terrain';
 import { BUMP_GLSL, NOISE_GLSL, detail, env } from './env';
 
 export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout: Layout; waterColor: string }) {
@@ -22,12 +22,18 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
     const cityGround = new THREE.Color(
       layout.style === 'futuristic' ? '#5a6068' : layout.style === 'organic' ? mixHex(t.look.grassColor, '#6a8a4a', 0.4) : mixHex(t.look.sand, '#a08a68', 0.5),
     );
+    const airfield = new THREE.Color((t.look.snow ?? 0) > 0.3 ? '#c8ccd0' : mixHex(t.look.grassColor, '#8a9a5a', 0.5));
     const rng = new Rng(t.seed);
     const n2 = createNoise2D(() => rng.next());
     const dry = new THREE.Color(t.look.sand).lerp(new THREE.Color(t.look.mid), 0.4);
     const lush = new THREE.Color(t.look.grassColor).offsetHSL(0, 0.05, -0.06);
-    const maxH = Math.max(...t.heights);
-    const minH = Math.min(...t.heights);
+    // a loop, not a spread: a large map has more heights than a call can take arguments
+    let maxH = -Infinity;
+    let minH = Infinity;
+    for (const h of t.heights) {
+      if (h > maxH) maxH = h;
+      if (h < minH) minH = h;
+    }
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
       const z = pos.getZ(i);
@@ -46,6 +52,8 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
       if (s > 0.55) c.lerp(cliff, Math.min(1, (s - 0.55) * 2));
       const d = Math.hypot(x, z);
       if (layout.radius > 0 && d < layout.radius + 8) c.lerp(cityGround, Math.min(1, (layout.radius + 8 - d) / 20) * 0.8);
+      // the airfield: mown grass (sand on warm worlds) between the paved areas
+      if (inFlat(t, x, z, 6)) c.lerp(airfield, 0.75);
       const j = (rng.next() - 0.5) * 0.04 + n2(x / 4, z / 4) * 0.015;
       colors[i * 3] = c.r + j;
       colors[i * 3 + 1] = c.g + j;

@@ -87,6 +87,8 @@ export interface CityFeatures {
   compounds: { x: number; z: number; w: number; d: number }[];
   /** Centres of roundabouts at collector crossings. */
   roundabouts: [number, number][];
+  /** The capital's airport, inland behind the city. */
+  airport?: AirportPlan;
 }
 
 /**
@@ -141,6 +143,129 @@ function mallColliders(b: Building): Collider[] {
     const [x, z] = g.toWorld(lx, lz);
     out.push({ type: 'circle', x, z, hw: 0.45, hd: 0 });
   }
+  return out;
+}
+
+export interface ARect {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+}
+export type AircraftKind = 'narrow' | 'wide' | 'quad';
+/**
+ * The international airport of a futuristic capital, inland behind the city: the landside
+ * forecourt and car parks, the terminal, a long airside concourse with its gates, the apron, a
+ * parallel taxiway and the runway, with the tower, hangars, cargo, fire station and fuel farm.
+ * Every distance is in metres from the city centre; the runway runs along x.
+ */
+export interface AirportPlan {
+  /** x of the access road and the middle of the terminal. */
+  xa: number;
+  rect: ARect;
+  curbZ: number;
+  term: ARect;
+  conc: ARect;
+  apronZ1: number;
+  taxiZ: number;
+  runZ: number;
+  runX0: number;
+  runX1: number;
+  runW: number;
+  tower: { x: number; z: number };
+  hangars: ARect[];
+  cargo: ARect;
+  fire: ARect;
+  fuel: ARect;
+  parks: ARect[];
+  gates: { x: number; kind: AircraftKind }[];
+  /** +1 when the hangars are east of the concourse, -1 when west. */
+  side: number;
+}
+
+export const AIRCRAFT: Record<AircraftKind, { len: number; span: number; d: number; belly: number; fin: number }> = {
+  narrow: { len: 38, span: 35, d: 3.95, belly: 1.5, fin: 7.4 },
+  wide: { len: 63, span: 61, d: 6.2, belly: 2.6, fin: 11 },
+  quad: { len: 68, span: 66, d: 6.5, belly: 2.8, fin: 12 },
+};
+
+/** The flattened rectangle the airport needs (futuristic capitals only). */
+export function airportRect(s: Settlement): ARect | undefined {
+  if (s.style !== 'futuristic' || s.kind !== 'capital') return undefined;
+  const R = settlementRadius(s);
+  return { x0: -770, x1: 770, z0: R - 10, z1: R + 345 };
+}
+
+export function airportPlan(R: number, xa: number): AirportPlan {
+  const side = xa <= 0 ? 1 : -1;
+  const conc = { x0: xa - 250, x1: xa + 250, z0: R + 128, z1: R + 148 };
+  const gates: AirportPlan['gates'] = [];
+  const pattern: AircraftKind[] = ['wide', 'narrow', 'narrow', 'quad', 'narrow', 'wide', 'narrow', 'narrow', 'wide', 'narrow'];
+  let x = conc.x0 + 10;
+  for (const kind of pattern) {
+    const sp = AIRCRAFT[kind].span;
+    if (x + sp > conc.x1 - 10) break;
+    gates.push({ x: x + sp / 2, kind });
+    x += sp + 9;
+  }
+  const hx = side > 0 ? conc.x1 + 30 : conc.x0 - 30 - 150;
+  const hangars = [
+    { x0: hx, x1: hx + 70, z0: R + 150, z1: R + 212 },
+    { x0: hx + 80, x1: hx + 150, z0: R + 150, z1: R + 212 },
+  ];
+  const cx = side > 0 ? conc.x0 - 30 - 110 : conc.x1 + 30;
+  const cargo = { x0: cx, x1: cx + 110, z0: R + 128, z1: R + 158 };
+  const fx = side > 0 ? cargo.x0 - 70 : cargo.x1 + 25;
+  return {
+    xa,
+    rect: { x0: -770, x1: 770, z0: R - 10, z1: R + 345 },
+    curbZ: R + 48,
+    term: { x0: xa - 120, x1: xa + 120, z0: R + 62, z1: R + 108 },
+    conc,
+    apronZ1: R + 228,
+    taxiZ: R + 246,
+    runZ: R + 292,
+    runX0: -650,
+    runX1: 650,
+    runW: 45,
+    tower: { x: xa + side * 165, z: R + 118 },
+    hangars,
+    cargo,
+    fire: { x0: fx, x1: fx + 45, z0: R + 180, z1: R + 222 },
+    fuel: { x0: xa + side * 230 - 30, x1: xa + side * 230 + 30, z0: R + 14, z1: R + 44 },
+    parks: [
+      { x0: xa - 205, x1: xa - 40, z0: R + 8, z1: R + 38 },
+      { x0: xa + 40, x1: xa + 205, z0: R + 8, z1: R + 38 },
+    ].filter((p) => !(p.x0 < xa + side * 230 + 32 && p.x1 > xa + side * 230 - 32)),
+    gates,
+    side,
+  };
+}
+
+/** Walls of the airport's buildings and its parked aircraft, for the walker. */
+export function airportColliders(a: AirportPlan, R: number): Collider[] {
+  const out: Collider[] = [];
+  const box = (r: ARect) => out.push({ type: 'box', x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2, hw: (r.x1 - r.x0) / 2, hd: (r.z1 - r.z0) / 2 });
+  box(a.term);
+  box(a.conc);
+  box(a.cargo);
+  box(a.fire);
+  for (const p of a.parks) box({ x0: p.x0 + 4, x1: p.x1 - 4, z0: p.z0 + 2, z1: p.z1 - 2 });
+  // hangars: back and side walls; the doors facing the apron stand open
+  for (const h of a.hangars) {
+    box({ x0: h.x0, x1: h.x1, z0: h.z0, z1: h.z0 + 1 });
+    box({ x0: h.x0, x1: h.x0 + 1, z0: h.z0, z1: h.z1 });
+    box({ x0: h.x1 - 1, x1: h.x1, z0: h.z0, z1: h.z1 });
+  }
+  out.push({ type: 'circle', x: a.tower.x, z: a.tower.z, hw: 9, hd: 0 });
+  for (let k = 0; k < 4; k++) out.push({ type: 'circle', x: a.fuel.x0 + 8 + (k % 2) * 44, z: a.fuel.z0 + 8 + Math.floor(k / 2) * 14, hw: 6, hd: 0 });
+  // the parked aircraft: fuselage and engines
+  for (const g of a.gates) {
+    const p = AIRCRAFT[g.kind];
+    const nose = a.conc.z1 + 7;
+    out.push({ type: 'box', x: g.x, z: nose + p.len / 2, hw: p.d / 2, hd: p.len / 2, top: p.belly + p.d });
+  }
+  void R;
   return out;
 }
 
@@ -895,6 +1020,28 @@ function futuristic(s: Settlement, rng: Rng): Layout {
   }
   const kept = buildings.filter((_, q) => !removed.has(q));
 
+  // ── the airport (capitals): its access road leaves the inland expressway along a street line
+  // clear of anything taller than a house, so the deck can pass over on its pillars
+  let airport: AirportPlan | undefined;
+  if (s.kind === 'capital') {
+    const inlandZ = arterialZ - sp;
+    const cands: number[] = [];
+    for (let i = 0; i <= 8; i++) for (const sg of i === 0 ? [1] : [1, -1]) cands.push(sg * i * sp);
+    cands.sort((a, b) => (Math.round(a / sp) % 4 === 0 ? 0 : 1) - (Math.round(b / sp) % 4 === 0 ? 0 : 1) || Math.abs(a) - Math.abs(b));
+    const clear = (x: number) =>
+      kept.every((b) => {
+        const hw = (b.plot?.w ?? b.w) / 2;
+        const hd = (b.plot?.d ?? b.d) / 2;
+        const bx = b.plot?.x ?? b.x;
+        const bz = b.plot?.z ?? b.z;
+        if (Math.abs(bx - x) > hw + 7.5 || bz + hd < inlandZ - 8 || bz - hd > R + 10) return true;
+        // houses pass under the deck; anything with a tower, minaret or stand does not
+        return b.h < 10 && (b.kind === 'villa' || b.kind === 'oldhouse' || b.kind === 'shop' || b.kind === 'park');
+      }) && lakes.every((l) => Math.abs(l.x - x) > l.rx + 10 || l.z + l.rz < inlandZ || l.z - l.rz > R);
+    const xa = cands.find(clear);
+    if (xa !== undefined) airport = airportPlan(R, xa);
+  }
+
   // ── streets: the grid, minus closed rectangles, the sea, the canals; plus ring, estate roads, lanes
   const nodes: [number, number][] = [];
   const idx = new Map<string, number>();
@@ -968,6 +1115,7 @@ function futuristic(s: Settlement, rng: Rng): Layout {
   // roundabouts where two collectors cross (never under the spine expressway or beside Downtown)
   for (let q = 0; q < nodes.length; q++) {
     const [x, z] = nodes[q];
+    if (airport && Math.abs(x - airport.xa) < 1) continue;
     if (graph.adj[q].length !== 4 || !(majorV(x) || majorH(z)) || z === spineZ || z === coastRoadZ || z === arterialZ - sp) continue;
     // only where wide roads meet: at least two of the four arms are collectors or boulevards
     if (streets.filter((st) => st.w >= 11 && ((st.a[0] === x && st.a[1] === z) || (st.b[0] === x && st.b[1] === z))).length < 2) continue;
@@ -993,9 +1141,11 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     jlt,
     compounds,
     roundabouts,
+    airport,
   };
   const avoid = (x: number, z: number) => z < coastRoadZ + 8 || nearWater(x, z, 16) || lakes.some((l) => ((x - l.x) / (l.rx + 10)) ** 2 + ((z - l.z) / (l.rz + 10)) ** 2 < 1);
   const out = finish('futuristic', s, rng, R, kept, streets, graph, [plaza], lights, sp, avoid);
+  if (airport) out.colliders.push(...airportColliders(airport, R));
   return { ...out, features };
 }
 

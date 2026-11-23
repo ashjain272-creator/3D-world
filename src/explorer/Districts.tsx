@@ -1,11 +1,12 @@
 import { useFrame } from '@react-three/fiber';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { TiledInstances, type LodLevel } from './lod';
 import { env, foliageMaterial, texturedMaterial } from './env';
 import { frondsGeo, palmTrunkGeo } from './flora';
 import { nightUniform } from './City';
 import type { DMat, DPiece, DShape, DistrictData } from './districts';
+import { flightPose } from './airport';
 
 const archGeo = (() => {
   // semicircular head: half a cylinder lying along z, flat side down, radius 0.5, apex at y = 1
@@ -14,6 +15,22 @@ const archGeo = (() => {
   g.scale(1, 2, 1);
   return g;
 })();
+
+/** A wing planform on the right (+x) or, mirrored, the left side. */
+function planform(side: number): THREE.BufferGeometry {
+  const sh = new THREE.Shape();
+  const pts: [number, number][] = [
+    [0, 0],
+    [1, -1.6],
+    [1, -1.85],
+    [0, -1],
+  ];
+  const ordered = side > 0 ? pts : pts.map(([x, y]) => [-x, y] as [number, number]).reverse();
+  sh.moveTo(...ordered[0]);
+  for (const p of ordered.slice(1)) sh.lineTo(...p);
+  sh.lineTo(...ordered[0]);
+  return new THREE.ExtrudeGeometry(sh, { depth: 1, bevelEnabled: false }).rotateX(Math.PI / 2).translate(0, 0.5, 0);
+}
 
 const SHAPES: Record<DShape, THREE.BufferGeometry> = {
   box: new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0),
@@ -45,6 +62,20 @@ const SHAPES: Record<DShape, THREE.BufferGeometry> = {
   torus: new THREE.TorusGeometry(0.42, 0.08, 8, 24).rotateX(-Math.PI / 2),
   halfTorus: new THREE.TorusGeometry(0.45, 0.05, 6, 20, Math.PI),
   rod: new THREE.CylinderGeometry(0.5, 0.5, 1, 12),
+  // aircraft surfaces: a swept, tapered wing panel (root chord 1 along -z from its leading edge at
+  // the origin, semi-span 1 along +x or -x, thickness 1 centred on y) and the fin (root chord 1,
+  // height 1, swept back, thickness 1 centred on x)
+  wingR: planform(1),
+  wingL: planform(-1),
+  fin: (() => {
+    const sh = new THREE.Shape();
+    sh.moveTo(0, 0);
+    sh.lineTo(-1.1, 1);
+    sh.lineTo(-1.45, 1);
+    sh.lineTo(-1, 0);
+    sh.lineTo(0, 0);
+    return new THREE.ExtrudeGeometry(sh, { depth: 1, bevelEnabled: false }).rotateY(-Math.PI / 2).translate(0.5, 0, 0);
+  })(),
   palmTrunk: palmTrunkGeo(0),
   fronds: frondsGeo(0),
 };
@@ -303,6 +334,50 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
       )}
       {groups.map((g) => (
         <TiledInstances key={g.k} items={g.items} levels={g.levels} tileSize={240} name={`district-${g.k}`} />
+      ))}
+      {data.flights?.map((f, i) => <Flight key={i} f={f} mats={mats} y0={y0} />)}
+    </group>
+  );
+}
+
+/** An aircraft flying its circuit: its pieces as instanced meshes inside a moving group. */
+function Flight({ f, mats, y0 }: { f: NonNullable<DistrictData['flights']>[number]; mats: Record<DMat, THREE.Material>; y0: number }) {
+  const ref = useRef<THREE.Group>(null);
+  const meshes = useMemo(() => {
+    const g = new Map<string, DPiece[]>();
+    for (const p of f.pieces) {
+      const k = `${p.shape}|${p.mat}`;
+      const list = g.get(k);
+      if (list) list.push(p);
+      else g.set(k, [p]);
+    }
+    return [...g.entries()].map(([k, list]) => {
+      const [shape, mat] = k.split('|') as [DShape, DMat];
+      const m = new THREE.InstancedMesh(SHAPES[shape], mats[mat], list.length);
+      list.forEach((p, i) => {
+        m.setMatrixAt(i, p.m);
+        m.setColorAt(i, p.c);
+      });
+      m.frustumCulled = false;
+      m.castShadow = true;
+      return m;
+    });
+  }, [f, mats]);
+  useEffect(() => () => meshes.forEach((m) => m.dispose()), [meshes]);
+  useFrame(({ clock }) => {
+    const g = ref.current;
+    if (!g) return;
+    const pose = flightPose(f.mode, f.runX0, f.runX1, clock.elapsedTime);
+    g.visible = !!pose;
+    if (!pose) return;
+    g.position.set(pose.x, y0 + pose.y, f.runZ);
+    // nose towards -x, pitched up by `pitch`
+    g.rotation.set(-pose.pitch, -Math.PI / 2, 0, 'YXZ');
+  });
+  return (
+    <group ref={ref}>
+      {meshes.map((m, i) => (
+        <primitive key={i} object={m} />
       ))}
     </group>
   );

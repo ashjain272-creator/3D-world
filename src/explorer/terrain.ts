@@ -73,6 +73,8 @@ export interface TerrainData {
   flatRadius: number;
   /** Coastal cities: the sea lies at z below this. */
   coastZ?: number;
+  /** Flattened rectangles beyond the city (an airfield). */
+  flats?: FlatRect[];
   flatHeight: number;
   seed: number;
   height: (x: number, z: number) => number;
@@ -85,14 +87,27 @@ export interface TerrainData {
  * Generate a local heightfield for a region. Deterministic per planet+region.
  * A circular zone around the origin is flattened for settlements.
  */
-export function generateTerrain(planet: Planet, regionIndex: number, biome: Biome, flatRadius: number, coastZ?: number): TerrainData {
+export interface FlatRect {
+  x0: number;
+  x1: number;
+  z0: number;
+  z1: number;
+}
+
+/** True where (x, z) lies on one of the terrain's flattened rectangles (an airfield), with a margin. */
+export function inFlat(t: Pick<TerrainData, 'flats'>, x: number, z: number, pad = 0): boolean {
+  return !!t.flats?.some((r) => x > r.x0 - pad && x < r.x1 + pad && z > r.z0 - pad && z < r.z1 + pad);
+}
+
+export function generateTerrain(planet: Planet, regionIndex: number, biome: Biome, flatRadius: number, coastZ?: number, flats?: FlatRect[]): TerrainData {
   const seed = hashInts(planet.seed, regionIndex, 77);
   const rng = new Rng(seed);
   const n2 = createNoise2D(() => rng.next());
   const look = biomeLook(biome, planet);
   // big district cities need more room before the framing mountains begin; the grid grows with
   // the area so detail per metre stays the same
-  const size = flatRadius > 450 ? 1640 : flatRadius > 300 ? 1200 : flatRadius > 240 ? 960 : WORLD_SIZE;
+  // an airfield behind the city needs more room still
+  const size = flats?.length ? Math.max(1640, Math.ceil((Math.max(...flats.map((r) => Math.max(Math.abs(r.x0), Math.abs(r.x1), Math.abs(r.z0), Math.abs(r.z1)))) + 150) / 0.47 / 2 / 20) * 40) : flatRadius > 450 ? 1640 : flatRadius > 300 ? 1200 : flatRadius > 240 ? 960 : WORLD_SIZE;
   const res = Math.round((TERRAIN_RES * size) / WORLD_SIZE);
   const heights = new Float32Array((res + 1) * (res + 1));
   const ridged = biome === 'mountain' || biome === 'volcanic';
@@ -147,7 +162,13 @@ export function generateTerrain(planet: Planet, regionIndex: number, biome: Biom
     const h = raw(x, z);
     if (flatRadius <= 0) return h;
     const d = Math.sqrt(x * x + z * z);
-    const t = clamp((d - flatRadius) / 70, 0, 1);
+    let t = clamp((d - flatRadius) / 70, 0, 1);
+    if (flats)
+      for (const r of flats) {
+        const dx = Math.max(r.x0 - x, 0, x - r.x1);
+        const dz = Math.max(r.z0 - z, 0, z - r.z1);
+        t = Math.min(t, clamp(Math.hypot(dx, dz) / 70, 0, 1));
+      }
     const s = t * t * (3 - 2 * t);
     const land = flatHeight + (h - flatHeight) * s;
     if (coastZ === undefined) return land;
@@ -182,5 +203,5 @@ export function generateTerrain(planet: Planet, regionIndex: number, biome: Biom
     const dz = height(x, z + e) - height(x, z - e);
     return Math.sqrt(dx * dx + dz * dz) / (2 * e);
   };
-  return { size, res, heights, look, waterLevel: look.water, flatRadius, flatHeight, seed, height, slope, coastZ };
+  return { size, res, heights, look, waterLevel: look.water, flatRadius, flatHeight, seed, height, slope, coastZ, flats };
 }

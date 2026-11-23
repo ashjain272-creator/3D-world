@@ -707,3 +707,68 @@ You can now walk into both malls, all the way through.
 **The rotunda chandelier** is now a gilt crown with three rings of crystal drops on fine cables.
 
 **Colliders** follow the new shell. A test walks from the rotunda centre through the passage and along the whole concourse without hitting anything. It also checks that the shopping wings, the back block and the concourse ends are solid.
+
+## Phase 13: the international airport
+
+The futuristic capital now has an airport inland, behind the city. Its flattened rectangle is 1.54 km × 0.355 km. Terrain gets an optional list of flat rectangles, and the map grows to fit them: 2.16 km for the capital. No vegetation, rocks or grass are placed on the airfield, which is shaded as mown grass, or as pale ground on frozen worlds.
+
+**Layout, from the city outwards**
+- **Landside:** car parks, the gateway sign, the kerb road, the forecourt, the terminal, and glazed link bridges to the concourse.
+- **Airside:** the apron, the parallel taxiway, then the 1.3 km × 45 m runway.
+- **Plan:** `airportPlan()` in `layout.ts` holds the whole plan. The builder and the colliders both read it.
+
+**Access road**
+- An elevated expressway leaves the inland expressway along a street line. The line is chosen so that only houses stand under the deck.
+- The deck climbs to clear the outer band, comes down to the ground beyond the city and ends on the terminal kerb road.
+- No roundabout is placed on the access line.
+
+**Runway**
+- Asphalt with shoulders and darker rubbered touchdown zones; blast pads with yellow chevrons.
+- Edge lines and centreline dashes, threshold piano keys, and seven-segment "09"/"27" designators.
+- Aiming points and touchdown-zone bars.
+- Lights: white edge lights, centreline lights, green threshold bars and red end bars.
+- An approach light system out to 300 m with a crossbar, PAPI units, and windsocks.
+
+**Taxiways and apron**
+- **Taxiways:** a yellow centreline and blue edge lights; square links at the runway ends and two 30° rapid exits; holding-position markings with lit signs; apron links.
+- **Apron:** concrete slabs with joints; each stand has a lead-in line, stop bar, red equipment lines and a stand number.
+- **Floodlights:** masts whose light pools on the stands after dark.
+
+**Buildings**
+- **Terminal:** curtain-wall glazing, and a faceted vaulted roof with a skylight ridge and deep overhangs. Tree columns carry the overhang over the kerb. Glazed end walls, a departures sign, entrance doors, a row of flags, a taxi rank and buses.
+- **Concourse:** about 500 m long under a ribbed glass vault, with rounded glass ends and lit gate numbers.
+- **Control tower:** 88 m, with a tapering shaft, four fins, lit rings, a glazed cab, a radome and beacons.
+- **Support buildings:**
+  - two hangars with curved roofs and open, lit doors, each with an airliner inside;
+  - a cargo terminal with docks, containers, trucks and a freighter;
+  - a fire station with two crash tenders;
+  - a fuel farm of four tanks with spiral stairs in a bund;
+  - a radar mast;
+  - car parks with three decks of parked cars.
+- **Fence:** posts and mesh around the airside.
+
+**Aircraft**
+- **Types:** narrow-body twin, wide-body twin and a four-engined double-deck jet, in seven liveries.
+- **Built from:**
+  - a fuselage with nose and tail cones and a belly fairing; cheatline, windows (two decks on the four-engined jet) and cockpit glazing; doors;
+  - swept, tapered wing panels (new `wingR`/`wingL` planform shapes) with dihedral, winglets and flap-track fairings;
+  - engines with intake lips, fan faces, spinners and exhausts, on pylons;
+  - a swept tailplane and a swept fin (new `fin` shape) with the airline's emblem and a dorsal fillet;
+  - navigation lights, beacons and strobes; gear with wheel bogies; antennas and an APU exhaust.
+- **At the stands:** eight aircraft at the concourse with jet bridges (rotunda, glazed tunnel, drive column). Around each are a pushback tug, cones, a belt loader with a baggage-cart train and a ground power unit; wide-bodies also get a catering truck with its box raised and a fuel truck.
+- **Elsewhere:** one aircraft taxiing and one holding short of the runway.
+
+**Flights:** two aircraft fly, both in the same direction. One makes a 3° approach, flares, touches down and rolls out. The other rolls, rotates and climbs out.
+
+**Fix:** with the larger map, `Math.max(...heights)` exceeded the call-argument limit and crashed the view. It is now a loop.
+
+**Tests:** the airport test checks:
+- the order of the bands;
+- that everything lies inside the flattened rectangle;
+- the stand spacing;
+- that the terrain is flat under the runway, apron and terminal;
+- that the access road reaches the kerb at ground level, and nothing under its deck reaches it;
+- that no city building or tree stands on the airfield;
+- that the flights stay within the runway's length while on the ground.
+
+Screenshots are in `docs/screenshots/airport/`.

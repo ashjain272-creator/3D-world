@@ -811,3 +811,30 @@ Medium quality, headless software renderer, same three views. Before means the b
 - checks that the walls stand between the doors;
 - checks that the ground stays above water 450 m around the airfield;
 - checks that the departing aircraft stows its gear once climbing, and the arriving one has it down.
+
+## Phase 15: a larger, more detailed terminal and concourse
+
+**Sizes**
+- **Terminal:** from 240 × 46 × 17 m to 340 × 64 × 22 m.
+- **Concourse:** from 500 × 20 × 12 m to 560 × 28 × 15 m, with up to twelve stands.
+- **Airside:** the apron, taxiway and runway moved 28 m further out to make room. The flattened rectangle now runs to R + 375.
+- **Links:** three glazed corridors (one in the middle).
+- **Doors:** thirteen entrance doors.
+
+**Terminal**
+- **Roof:** a 55 m great hall in the middle, under its own vault rising 22 m, with white ribs and a skylight ridge. The two wing vaults rise 10 m. Glazed gables fill where the hall rises above the wings, with clerestories over the walls and glazed end walls. The roof edges carry lit fascias, and plant stands on the wings.
+- **Landside face:**
+  - white fins every 6 m and sun louvres across the upper storey;
+  - over the great hall, a portal: two lit pylons and a lintel carrying the airport's name;
+  - a gilt diamond lattice screen, and a cantilevered, lit canopy on columns;
+  - a reflecting pool with jets on the forecourt.
+- **Inside:**
+  - four check-in islands, placed by the plan;
+  - departures mezzanines along both wings: slabs on columns with glass balustrades, lit shopfronts, and escalator pairs up from the hall;
+  - in the great hall: an indoor garden of trees round a fountain, a round information desk, departure screens, hanging boards, and a sculpture of three gilt rings in the vault.
+
+**Concourse**
+- A taller vault and a domed hub over the middle where the central link arrives: a glazed drum with steel fins, a gilt crown, a lattice-ringed dome, a spire and a lit ring.
+- Lit airline names along the airside face, and larger gate signs.
+
+**Walking:** the garden and the information desk block the walker. The walk-through test still passes, from the kerb through a door, across the hall, down a link and along the concourse.

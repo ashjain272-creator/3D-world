@@ -183,6 +183,8 @@ export interface AirportPlan {
   doors: number[];
   /** The glazed links from the terminal to the concourse (x), each 9 m wide, at ground level. */
   links: number[];
+  /** Centres (x) of the check-in islands in the hall, each 24 m long and 4 m deep. */
+  islands: number[];
   /** +1 when the hangars are east of the concourse, -1 when west. */
   side: number;
 }
@@ -197,14 +199,14 @@ export const AIRCRAFT: Record<AircraftKind, { len: number; span: number; d: numb
 export function airportRect(s: Settlement): ARect | undefined {
   if (s.style !== 'futuristic' || s.kind !== 'capital') return undefined;
   const R = settlementRadius(s);
-  return { x0: -770, x1: 770, z0: R - 10, z1: R + 345 };
+  return { x0: -770, x1: 770, z0: R - 10, z1: R + 375 };
 }
 
 export function airportPlan(R: number, xa: number): AirportPlan {
   const side = xa <= 0 ? 1 : -1;
-  const conc = { x0: xa - 250, x1: xa + 250, z0: R + 128, z1: R + 148 };
+  const conc = { x0: xa - 280, x1: xa + 280, z0: R + 146, z1: R + 174 };
   const gates: AirportPlan['gates'] = [];
-  const pattern: AircraftKind[] = ['wide', 'narrow', 'narrow', 'quad', 'narrow', 'wide', 'narrow', 'narrow', 'wide', 'narrow'];
+  const pattern: AircraftKind[] = ['wide', 'narrow', 'narrow', 'quad', 'narrow', 'wide', 'narrow', 'narrow', 'wide', 'narrow', 'quad', 'narrow'];
   let x = conc.x0 + 10;
   for (const kind of pattern) {
     const sp = AIRCRAFT[kind].span;
@@ -214,36 +216,37 @@ export function airportPlan(R: number, xa: number): AirportPlan {
   }
   const hx = side > 0 ? conc.x1 + 30 : conc.x0 - 30 - 150;
   const hangars = [
-    { x0: hx, x1: hx + 70, z0: R + 150, z1: R + 212 },
-    { x0: hx + 80, x1: hx + 150, z0: R + 150, z1: R + 212 },
+    { x0: hx, x1: hx + 70, z0: R + 176, z1: R + 238 },
+    { x0: hx + 80, x1: hx + 150, z0: R + 176, z1: R + 238 },
   ];
   const cx = side > 0 ? conc.x0 - 30 - 110 : conc.x1 + 30;
-  const cargo = { x0: cx, x1: cx + 110, z0: R + 128, z1: R + 158 };
+  const cargo = { x0: cx, x1: cx + 110, z0: R + 150, z1: R + 180 };
   const fx = side > 0 ? cargo.x0 - 70 : cargo.x1 + 25;
   return {
     xa,
-    rect: { x0: -770, x1: 770, z0: R - 10, z1: R + 345 },
+    rect: { x0: -770, x1: 770, z0: R - 10, z1: R + 375 },
     curbZ: R + 48,
-    term: { x0: xa - 120, x1: xa + 120, z0: R + 62, z1: R + 108 },
+    term: { x0: xa - 170, x1: xa + 170, z0: R + 62, z1: R + 126 },
     conc,
-    apronZ1: R + 228,
-    taxiZ: R + 246,
-    runZ: R + 292,
+    apronZ1: R + 256,
+    taxiZ: R + 274,
+    runZ: R + 320,
     runX0: -650,
     runX1: 650,
     runW: 45,
-    tower: { x: xa + side * 165, z: R + 118 },
+    tower: { x: xa + side * 220, z: R + 136 },
     hangars,
     cargo,
-    fire: { x0: fx, x1: fx + 45, z0: R + 180, z1: R + 222 },
+    fire: { x0: fx, x1: fx + 45, z0: R + 206, z1: R + 248 },
     fuel: { x0: xa + side * 230 - 30, x1: xa + side * 230 + 30, z0: R + 14, z1: R + 44 },
     parks: [
       { x0: xa - 205, x1: xa - 40, z0: R + 8, z1: R + 38 },
       { x0: xa + 40, x1: xa + 205, z0: R + 8, z1: R + 38 },
     ].filter((p) => !(p.x0 < xa + side * 230 + 32 && p.x1 > xa + side * 230 - 32)),
     gates,
-    doors: Array.from({ length: 9 }, (_, k) => xa - 100 + k * 26),
-    links: [xa - 60, xa + 60],
+    doors: Array.from({ length: 13 }, (_, k) => xa - 156 + k * 26).filter((d) => Math.abs(d - xa) > 10 || d === xa),
+    links: [xa - 97, xa, xa + 97],
+    islands: [-130, -65, 65, 130].map((dx) => xa + dx),
     side,
   };
 }
@@ -278,7 +281,10 @@ export function airportColliders(a: AirportPlan, R: number): Collider[] {
     wallZ(l + 4.6, t.z1, c.z0);
   }
   // the check-in islands in the hall
-  for (const dx of [-95, -25, 25, 95]) box({ x0: a.xa + dx - 12, x1: a.xa + dx + 12, z0: (t.z0 + t.z1) / 2 - 2, z1: (t.z0 + t.z1) / 2 + 2 });
+  for (const ix of a.islands) box({ x0: ix - 12, x1: ix + 12, z0: (t.z0 + t.z1) / 2 - 2, z1: (t.z0 + t.z1) / 2 + 2 });
+  // the indoor garden and the information desk in the great hall
+  out.push({ type: 'circle', x: a.xa, z: (t.z0 + t.z1) / 2 + 4, hw: 11.5, hd: 0 });
+  out.push({ type: 'circle', x: a.xa, z: t.z0 + 9, hw: 3.8, hd: 0 });
   box(a.cargo);
   box(a.fire);
   for (const p of a.parks) box({ x0: p.x0 + 4, x1: p.x1 - 4, z0: p.z0 + 2, z1: p.z1 - 2 });

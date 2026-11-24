@@ -253,6 +253,39 @@ describe('futuristic districts', () => {
     expect(Math.hypot(end[0] - p.hotel.x, end[1] - p.hotel.z)).toBeLessThan(40);
   });
 
+  it('builds a walk-in theme park whose rides move inside its walls', () => {
+    for (const s of cities.filter((c) => c.kind === 'capital' || c.kind === 'city')) {
+      const l = generateLayout(s);
+      const park = l.buildings.find((b) => b.kind === 'themepark')!;
+      expect(park).toBeDefined();
+      const d = generateDistricts(l, 0, true);
+      const inside = (x: number, z: number) => Math.abs(x - park.x) < park.w / 2 + 0.5 && Math.abs(z - park.z) < park.d / 2 + 0.5;
+      // every mover that starts inside the park stays inside it: coaster cars, wheel, tower, rings
+      const rides = (d.movers ?? []).filter((m) => {
+        const p = m.pose(0);
+        return p && inside(p.x, p.z);
+      });
+      expect(rides.length).toBeGreaterThanOrEqual(4 + 3 + 7);
+      let looped = false;
+      for (const m of rides)
+        for (let t = 0; t < 200; t += 0.5) {
+          const p = m.pose(t)!;
+          expect(inside(p.x, p.z), `ride at ${p.x.toFixed(1)},${p.z.toFixed(1)}`).toBe(true);
+          if ((p.pitch ?? 0) > 2.5) looped = true;
+        }
+      // a coaster car goes over the top of the loop
+      expect(looped).toBe(true);
+      // the gate is open and the walls hold
+      const hit = (x: number, z: number) => l.colliders.some((c) => (c.type === 'circle' ? Math.hypot(c.x - x, c.z - z) < c.hw + 0.3 : Math.abs(c.x - x) < c.hw + 0.3 && Math.abs(c.z - z) < c.hd + 0.3));
+      const [gx, gz] = park.door;
+      const ux = Math.sign(park.x - gx) * (Math.abs(park.x - gx) > 1 ? 1 : 0);
+      const uz = Math.sign(park.z - gz) * (Math.abs(park.z - gz) > 1 ? 1 : 0);
+      for (let k = -3; k <= 8; k++) expect(hit(gx + ux * k, gz + uz * k)).toBe(false);
+      // (the wall stands 5 m in from the street, where the gate is)
+      expect(hit(gx + ux * 5 + uz * 20, gz + uz * 5 + ux * 20)).toBe(true);
+    }
+  });
+
   it('runs trains along the metro and boats on the water', () => {
     const s = cities.find((c) => c.kind === 'capital')!;
     const l = generateLayout(s);
@@ -274,8 +307,11 @@ describe('futuristic districts', () => {
     };
     let trains = 0;
     let boats = 0;
+    const tp = l.buildings.find((b) => b.kind === 'themepark');
     for (const m of movers) {
       const p0 = m.pose(0)!;
+      // theme park rides are tested on their own
+      if (tp && Math.abs(p0.x - tp.x) < tp.w / 2 + 1 && Math.abs(p0.z - tp.z) < tp.d / 2 + 1) continue;
       if (p0.y > 3 && f.palm && Math.abs(p0.x - f.palm.xp) < 20 && p0.z < f.coastRoadZ) {
         // the palm monorail: always over its guideway
         for (let t = 0; t < 300; t += 1) {

@@ -4,6 +4,7 @@ import { footballStadium, nbaArena } from './venues';
 import { cityFeatures, mosqueSmall, oldHouse } from './cityFeatures';
 import { mallGeometry } from './layout';
 import { airport } from './airport';
+import { themePark } from './themepark';
 
 /**
  * Architecture for the special districts of futuristic cities: mansions in five
@@ -58,7 +59,7 @@ export function hashRand(seed: number) {
 }
 
 export function generateDistricts(layout: Layout, y0: number, warm: boolean): DistrictData {
-  const out: DistrictData = { pieces: [], lights: [] };
+  const out: DistrictData = { pieces: [], lights: [], movers: [] };
   if (layout.style !== 'futuristic') return out;
 
   for (const b of layout.buildings) {
@@ -86,6 +87,9 @@ export function generateDistricts(layout: Layout, y0: number, warm: boolean): Di
         break;
       case 'stadium':
         footballStadium(out, frame(out, b.x, b.z, y0, b.door).add, b, warm);
+        break;
+      case 'themepark':
+        themePark(out, b, y0, warm);
         break;
       case 'arena':
         nbaArena(frame(out, b.x, b.z, y0, b.door).add, b);

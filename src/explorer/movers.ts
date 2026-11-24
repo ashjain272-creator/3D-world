@@ -13,6 +13,8 @@ export interface Pose {
   /** Turn about y: the mover's front points along (sin yaw, cos yaw). */
   yaw: number;
   roll?: number;
+  /** Nose up about the mover's own sideways axis (a coaster car going round a loop). */
+  pitch?: number;
 }
 
 export interface Mover {
@@ -123,5 +125,55 @@ export function shuttle(route: P2[], stops: number[], speed: number, dwell: numb
     }
     const p = along(route, dist, s);
     return { x: p.x, y: y + Math.sin(t * 1.5 + phase * 7) * bob, z: p.z, yaw: back ? p.yaw + Math.PI : p.yaw };
+  };
+}
+
+/** A point on a ride's track: position, heading and pitch (pitch can run a full turn in a loop). */
+export interface TrackPoint {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+  /** Chain lift: the car is pulled up slowly here. */
+  lift?: boolean;
+}
+
+/**
+ * Ride a closed track like a coaster: crawl up the lift, then run at the speed the drop gives
+ * (energy from the highest point), waiting at the station between circuits. `lag` puts cars of a
+ * train behind one another (metres).
+ */
+export function coaster(track: TrackPoint[], dwell: number, lag: number): (t: number) => Pose {
+  const n = track.length;
+  const top = Math.max(...track.map((p) => p.y));
+  const seg: number[] = [];
+  const time: number[] = [0];
+  for (let i = 0; i < n - 1; i++) {
+    const a = track[i];
+    const b = track[i + 1];
+    const ds = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    seg.push(ds);
+    const v = a.lift ? 3.2 : Math.max(4, Math.sqrt(16 + 2 * 9.81 * Math.max(0, top - (a.y + b.y) / 2)) * 0.85);
+    time.push(time[i] + ds / v);
+  }
+  const run = time[n - 1];
+  const cycle = run + dwell;
+  const lagT = lag / 6;
+  const lerpAng = (a: number, b: number, u: number) => {
+    let d = b - a;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return a + d * u;
+  };
+  return (t) => {
+    let u = (((t - lagT) % cycle) + cycle) % cycle;
+    if (u >= run) u = 0;
+    let i = 0;
+    while (i < n - 2 && time[i + 1] < u) i++;
+    const f = (u - time[i]) / (time[i + 1] - time[i] || 1);
+    const a = track[i];
+    const b = track[i + 1];
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, z: a.z + (b.z - a.z) * f, yaw: lerpAng(a.yaw, b.yaw, f), pitch: a.pitch + (b.pitch - a.pitch) * f };
   };
 }

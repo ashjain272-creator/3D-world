@@ -414,7 +414,7 @@ function MoverView({ m, mats, y0 }: { m: Mover; mats: Record<DMat, THREE.Materia
     g.visible = !!p;
     if (!p) return;
     g.position.set(p.x, y0 + p.y, p.z);
-    g.rotation.set(0, p.yaw, p.roll ?? 0, 'YXZ');
+    g.rotation.set(-(p.pitch ?? 0), p.yaw, p.roll ?? 0, 'YXZ');
   });
   return (
     <group ref={ref}>

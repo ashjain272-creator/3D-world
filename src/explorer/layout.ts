@@ -4,7 +4,7 @@ import type { ArchitectureStyle, Landmark, Settlement } from '../sim/types';
 export type BuildingKind =
   | 'tower' | 'block' | 'slab' | 'dome' | 'treehouse' | 'pod' | 'house' | 'hall' | 'windmill' | 'silo'
   // futuristic districts
-  | 'supertall' | 'villa' | 'shop' | 'mall' | 'mosque' | 'temple' | 'church' | 'park' | 'stadium' | 'arena' | 'oldhouse' | 'mosqueSmall';
+  | 'supertall' | 'villa' | 'shop' | 'mall' | 'mosque' | 'temple' | 'church' | 'park' | 'stadium' | 'arena' | 'oldhouse' | 'mosqueSmall' | 'themepark';
 
 /** Districts of a futuristic city (see `futuristic`). */
 export type District = 'downtown' | 'mixed' | 'souk' | 'villas' | 'marina';
@@ -330,6 +330,40 @@ export function airportColliders(a: AirportPlan, R: number): Collider[] {
   return out;
 }
 
+/** Width across the gate and depth of a theme park in its own frame (local +z towards the gate). */
+export function themeParkFrame(b: Pick<Building, 'x' | 'z' | 'w' | 'd' | 'door'>) {
+  const alongX = Math.abs(b.door[0] - b.x) > Math.abs(b.door[1] - b.z);
+  const W = alongX ? b.d : b.w;
+  const D = alongX ? b.w : b.d;
+  const ry = Math.atan2(b.door[0] - b.x, b.door[1] - b.z);
+  const toWorld = (lx: number, lz: number): [number, number] => [b.x + lx * Math.cos(ry) + lz * Math.sin(ry), b.z - lx * Math.sin(ry) + lz * Math.cos(ry)];
+  return { W, D, alongX, toWorld };
+}
+
+/** A theme park is open ground inside a wall with a gate; its big rides block the walker. */
+function themeParkColliders(b: Building): Collider[] {
+  const { W, D, alongX, toWorld } = themeParkFrame(b);
+  const out: Collider[] = [];
+  const box = (lx: number, lz: number, w: number, d: number) => {
+    const [x, z] = toWorld(lx, lz);
+    out.push({ type: 'box', x, z, hw: (alongX ? d : w) / 2, hd: (alongX ? w : d) / 2 });
+  };
+  box(0, -D / 2, W, 0.8);
+  box(-W / 2, 0, 0.8, D);
+  box(W / 2, 0, 0.8, D);
+  box((-W / 2 - 8) / 2, D / 2, W / 2 - 8, 0.8);
+  box((W / 2 + 8) / 2, D / 2, W / 2 - 8, 0.8);
+  const circ = (lx: number, lz: number, rr: number) => {
+    const [x, z] = toWorld(lx, lz);
+    out.push({ type: 'circle', x, z, hw: rr, hd: 0 });
+  };
+  circ(-W * 0.18 / 2 * 2 * 0.5, -D * 0.72 / 2, 4.5);
+  circ(-W / 2 * 0.25, D / 2 * 0.3, 8);
+  circ(W / 2 * 0.15, -D / 2 * 0.2, 4.5);
+  box(W / 2 * 0.55, -D / 2 * 0.42 - 16, 44, 3);
+  return out;
+}
+
 export function settlementRadius(s: Settlement): number {
   // futuristic cities are laid out in districts (downtown, villa estates, souk, mixed), which need room
   if (s.style === 'futuristic') return s.kind === 'capital' ? 520 : s.kind === 'city' ? 380 : s.kind === 'town' ? 150 : 95;
@@ -572,7 +606,7 @@ function futuristic(s: Settlement, rng: Rng): Layout {
   const door = (cx: number, cz: number): [number, number] => [cx, cz - sp / 2 + 0.01];
 
   // sports venues in the outer band (a sports city), falling back to the mixed band
-  const venuePlan: [BuildingKind, number, number][] = s.kind === 'capital' ? [['stadium', 5, 4], ['arena', 4, 4]] : s.kind === 'city' ? [['arena', 4, 4]] : [];
+  const venuePlan: [BuildingKind, number, number][] = s.kind === 'capital' ? [['stadium', 5, 4], ['arena', 4, 4], ['themepark', 4, 3]] : s.kind === 'city' ? [['arena', 4, 4], ['themepark', 4, 3]] : [];
   const placed: { x: number; z: number }[] = [];
   for (const [kind, wi0, wj0] of venuePlan) {
     let best = null as [number, number, number, number] | null;
@@ -602,7 +636,7 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     placed.push({ x: cx, z: cz });
     const wide = wi >= wj;
     const vdoor: [number, number] = wide ? [cx, cz - (wj * sp) / 2] : [cx - Math.sign(cx || 1) * (wi * sp) / 2, cz];
-    add({ x: cx, z: cz, w: wi * sp - 10, d: wj * sp - 10, h: kind === 'stadium' ? 38 : 31, kind, role: 'civic', door: vdoor, district: 'mixed' });
+    add({ x: cx, z: cz, w: wi * sp - 10, d: wj * sp - 10, h: kind === 'stadium' ? 38 : kind === 'themepark' ? 30 : 31, kind, role: kind === 'themepark' ? 'work' : 'civic', door: vdoor, district: 'mixed' });
   }
 
   // Downtown: a boulevard ring round a lake, the signature supertall on the lake's edge, the mall
@@ -1494,7 +1528,7 @@ function finish(
     }
     landmarks.push({ id: lm.id, name: lm.name, kind: lm.kind, description: lm.description, x, z, radius });
   });
-  const colliders: Collider[] = buildings.filter((b) => b.kind !== 'park' && b.kind !== 'mall').map((b) =>
+  const colliders: Collider[] = buildings.filter((b) => b.kind !== 'park' && b.kind !== 'mall' && b.kind !== 'themepark').map((b) =>
     b.kind === 'dome' || b.kind === 'treehouse' || b.kind === 'pod' || b.kind === 'silo' || b.kind === 'windmill'
       ? { type: 'circle', x: b.x, z: b.z, hw: (b.kind === 'treehouse' ? 2.4 : Math.max(b.w, b.d) / 2) * 0.95, hd: 0 }
       : b.plot?.rot !== undefined
@@ -1502,6 +1536,7 @@ function finish(
         : { type: 'box', x: b.x, z: b.z, hw: (b.rot ? b.d : b.w) / 2, hd: (b.rot ? b.w : b.d) / 2 },
   );
   for (const b of buildings) if (b.kind === 'mall') colliders.push(...mallColliders(b));
+  for (const b of buildings) if (b.kind === 'themepark') colliders.push(...themeParkColliders(b));
   for (const l of landmarks) if (l.kind !== 'market' && l.kind !== 'garden') colliders.push({ type: 'circle', x: l.x, z: l.z, hw: l.radius * 0.55, hd: 0 });
   const homes = buildings.map((b, i) => (b.role === 'home' ? i : -1)).filter((i) => i >= 0);
   const works = buildings.map((b, i) => (b.role !== 'home' ? i : -1)).filter((i) => i >= 0);

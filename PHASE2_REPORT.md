@@ -838,3 +838,58 @@ Medium quality, headless software renderer, same three views. Before means the b
 - Lit airline names along the airside face, and larger gate signs.
 
 **Walking:** the garden and the information desk block the walker. The walk-through test still passes, from the kerb through a door, across the hall, down a link and along the concourse.
+
+## Phase 16: a living, broken-up city with an island, a theme park, desert life and a height-aware draw distance
+
+**Things that move** (`movers.ts`). A mover is a set of pieces with a pose that is a pure function of time, so tests and screenshots can ask where anything is at any moment.
+- **Metro:** trains on two tracks shuttle between all four stations, easing in and waiting at each.
+- **Creek and canals:** water taxis cross between their piers, dhows work up and down the creek, and yachts cruise out of the marina to sea and back.
+- **Island:** a monorail shuttles out to the island's hotel, and boats circle the island's lagoon.
+- **Theme park:** coaster cars ride the track, including round a vertical loop. The wheel turns, the drop tower climbs and falls, the carousel spins, and rings drift round the lazy river.
+- **Desert:** camels run laps and buggies bounce over the dunes.
+
+**The palm island** (`palm.ts`), off the coast between the creek and the marina mouths, on raised terrain strips.
+- **Trunk:** apartment slabs along a boulevard, with the monorail in the median.
+- **Fronds:** twelve fronds of beach villas, full mansions with plots facing each frond's road, plus mosques placed by catchment. Each frond has private beaches and a thatched beach club at its tip.
+- **Crescent:** a breakwater with resort hotels and a rock-armoured outer edge. At the apex stands a grand hotel: twin towers joined by a bridge over a great gilt arch.
+- **Access:** a causeway from the coastal road.
+- **Terrain:** the ground stays level a few metres inside the drawn sand and drops steeply below sea level, so the channels between fronds stay clean.
+
+**The theme and water park** (`themepark.ts`): a venue in the outer band, open behind a themed gate.
+- **Rides:** a looping coaster with a lift hill, drop and camelbacks; an observation wheel; a drop tower; a carousel; food stalls.
+- **Water park:** a wave pool with a beach, a lazy river, a slide tower with three spiral flumes and a speed slide, a splash pad and cabanas.
+
+**The desert edge** (`desert.ts`, desert and wasteland worlds only).
+- **Safari camp:** Bedouin tents round a majlis and fire pit, an oasis of date palms, couched camels and 4x4s.
+- **Camel track:** a racing oval with a grandstand and royal box. The camp and the track stand on graded ground the terrain levels for them, between the two expressways that leave the city.
+- **Dunes:** a buggy course over the open dunes.
+
+**Breaking the grid**
+- **Diagonal avenue:** the longest clear line from a fan of starts and angles out from Downtown.
+- **Curved boulevard:** an arc round Downtown.
+- **Both:** palm-lined planted medians and lamp posts. They clear ordinary buildings, drop lake-tower podiums in their way, and stop short of mosques, venues, malls, supertalls, estates and compounds.
+- **Mixed districts:** some side streets between neighbouring blocks are dropped, never a collector and at most one per crossing, so blocks come in varied sizes.
+
+**Height-aware draw distance** (`lod.tsx`)
+- **Shared scale:** `drawDistance.t` follows the camera's height above the ground, eased over about half a second. Every tiled instance level draws to `maxDist × (groundScale … 1.15)`.
+- **On foot:** small props keep 40%, district details 50%, building details 50%, near buildings 60%, and the skyline (the far building level and tall district pieces) 85%.
+- **From high up:** everything draws in full.
+- **Fog, movers and cars:** the fog closes in on foot. Movers cull with distance. Highway cars beyond the reach are packed out of the draw count.
+- **Low detail far away:** rounded district shapes (spheres, cylinders, cones, domes, rings, rods, palms) switch to low-detail stand-ins beyond 150 m. Lamps always use them.
+
+**Cost** (medium quality, headless software renderer; before is the previous commit):
+
+| view | before: fps / draw calls / triangles | after: fps / draw calls / triangles |
+|---|---|---|
+| street | 0.82 / 672 / 2.11 M | 0.78 / 588 / 1.70 M |
+| walking the spine | 0.65 / 797 / 2.48 M | 0.83 / 641 / 1.72 M |
+| walking Downtown | 0.81 / 744 / 2.20 M | 0.89 / 615 / 1.65 M |
+| city from the air | 0.65 / 1052 / 2.41 M | 0.79 / 733 / 1.49 M |
+| airport from the air | 0.76 / 663 / 2.10 M | 0.89 / 614 / 1.68 M |
+
+**Tests** cover:
+- trains staying on the viaduct and stopping at every station, and boats staying on water;
+- the island's fronds inside the crescent and apart, its buildings on its land, level ground under them, and the monorail reaching the hotel;
+- the theme park's rides staying inside its walls, a car going over the loop, and the gate being open;
+- the desert sites being out of the city, on graded ground and clear of roads, with camels and buggies on the ground, and none of it on wet worlds;
+- the avenues being clear of buildings and podiums, and at least one of them not running along the grid.

@@ -1,9 +1,10 @@
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { Rng } from '../sim/rng';
 import { nightUniform } from './City';
 import { texturedMaterial } from './env';
+import { distanceScale } from './lod';
 import { sampleRoad, type HighwayData, type Road } from './roadNetwork';
 
 type Quality = 'low' | 'medium' | 'high';
@@ -273,6 +274,7 @@ const CAR_COLORS = ['#e8e8ec', '#1c1e22', '#8a9098', '#b8262a', '#1f3f7a', '#f0f
 
 /** Cars driving on every road level, both directions, each in its lane at its own speed, with head and tail lights. */
 function Traffic({ roads, quality, mats }: { roads: Road[]; quality: Quality; mats: Record<string, THREE.Material> }) {
+  const { camera } = useThree();
   const cars = useMemo(() => {
     const rng = new Rng(roads.length * 101 + 9);
     const out: { r: Road; d: number; dir: number; lane: number; speed: number; c: THREE.Color }[] = [];
@@ -312,7 +314,13 @@ function Traffic({ roads, quality, mats }: { roads: Road[]; quality: Quality; ma
       if (l.instanceColor) l.instanceColor.needsUpdate = true;
       init.current = true;
     }
-    cars.forEach((car, i) => {
+    // every car keeps driving, but only those near the camera are drawn: they are packed into the
+    // front of the instance buffers and the draw count is cut to them
+    const reach = 520 * distanceScale(0.45);
+    const camX = camera.position.x;
+    const camZ = camera.position.z;
+    let i = 0;
+    cars.forEach((car) => {
       const r = car.r;
       const total = r.dist[r.dist.length - 1];
       car.d += car.speed * dt * car.dir;
@@ -321,6 +329,8 @@ function Traffic({ roads, quality, mats }: { roads: Road[]; quality: Quality; ma
         if (car.d < 0) car.d += total;
       }
       let ang = sampleRoad(r, car.d, tmp.p);
+      if ((tmp.p.x - camX) ** 2 + (tmp.p.z - camZ) ** 2 > reach * reach) return;
+      b.setColorAt(i, car.c);
       if (car.dir < 0) ang += Math.PI;
       // keep right: offset from the centre line by lane
       const laneW = r.kind === 'street' ? 2.6 : (r.width / 2 - 1.2) / Math.max(1, r.lanes);
@@ -350,7 +360,13 @@ function Traffic({ roads, quality, mats }: { roads: Road[]; quality: Quality; ma
           tmp.m.compose(new THREE.Vector3(tmp.v.x + fx * along + sx * side, tmp.v.y - 0.36, tmp.v.z + fz * along + sz * side), tmp.q, tmp.one);
           wh.setMatrixAt(i * 4 + k++, tmp.m);
         }
+      i++;
     });
+    b.count = i;
+    c.count = i;
+    l.count = i * 4;
+    wh.count = i * 4;
+    if (b.instanceColor) b.instanceColor.needsUpdate = true;
     b.instanceMatrix.needsUpdate = true;
     c.instanceMatrix.needsUpdate = true;
     l.instanceMatrix.needsUpdate = true;

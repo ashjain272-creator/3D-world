@@ -9,6 +9,38 @@ export interface LodLevel {
   maxDist: number;
   castShadow?: boolean;
   receiveShadow?: boolean;
+  /**
+   * The share of maxDist kept when the camera is down at street level (default 0.45). Tall things
+   * that make the skyline keep more; small props keep less. From high up every level draws in full.
+   */
+  groundScale?: number;
+}
+
+/**
+ * How far things draw, following the camera's height above the ground: `t` is 0 walking in the
+ * street and 1 high above the city (see DrawDistance). Shared by every tiled instance set, the
+ * movers and the fog.
+ */
+export const drawDistance = { t: 1, groundY: 0 };
+
+/** Updates `drawDistance.t` from the camera's height above the ground each frame. */
+export function DrawDistance({ groundY }: { groundY: number }) {
+  const { camera } = useThree();
+  useFrame((_, dt) => {
+    drawDistance.groundY = groundY;
+    const h = camera.position.y - groundY;
+    const target = Math.max(0, Math.min(1, (h - 25) / 135));
+    // ease towards the target over about half a second (by time, not frames), so climbing a tower
+    // or landing does not pop the far city in and out
+    drawDistance.t += (target - drawDistance.t) * Math.min(1, dt * 4);
+  });
+  return null;
+}
+
+/** The distance scale for a level at the current camera height. */
+export function distanceScale(groundScale = 0.45): number {
+  const t = drawDistance.t;
+  return groundScale + (1.15 - groundScale) * t;
 }
 
 export interface LodItem {
@@ -84,7 +116,7 @@ export function TiledInstances({ items, levels, tileSize = 120, name = 'instance
       const d = Math.max(0, Math.hypot(camera.position.x - t.cx, camera.position.z - t.cz) - t.radius);
       let shown = -1;
       for (let i = 0; i < levels.length; i++) {
-        if (d < levels[i].maxDist) {
+        if (d < levels[i].maxDist * distanceScale(levels[i].groundScale)) {
           shown = i;
           break;
         }

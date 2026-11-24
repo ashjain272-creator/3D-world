@@ -322,15 +322,16 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
   // Building LOD: lit-window shader up close, a flat material far away, culled beyond.
   const boxLevels = useMemo(
     () => [
-      { geometry: unitBox, material: layout.style === 'frontier' ? mats.frontier : mats.futuristic, maxDist: quality === 'low' ? 260 : 420, castShadow: shadows, receiveShadow: true },
-      { geometry: unitBox, material: mats.far, maxDist: quality === 'low' ? 700 : 1400 },
+      { geometry: unitBox, material: layout.style === 'frontier' ? mats.frontier : mats.futuristic, maxDist: quality === 'low' ? 260 : 420, castShadow: shadows, receiveShadow: true, groundScale: 0.6 },
+      // the far, plain level carries the skyline: it keeps most of its reach at street level
+      { geometry: unitBox, material: mats.far, maxDist: quality === 'low' ? 700 : 1400, groundScale: 0.85 },
     ],
     [layout.style, mats, quality, shadows],
   );
   const detailLevels = useMemo(
     () => ({
-      box: [{ geometry: unitBox, material: mats.plain, maxDist: quality === 'low' ? 140 : 260, castShadow: shadows, receiveShadow: true }],
-      round: [{ geometry: unitCyl, material: mats.plain, maxDist: quality === 'low' ? 140 : 260, castShadow: shadows }],
+      box: [{ geometry: unitBox, material: mats.plain, maxDist: quality === 'low' ? 140 : 260, castShadow: shadows, receiveShadow: true, groundScale: 0.5 }],
+      round: [{ geometry: unitCyl, material: mats.plain, maxDist: quality === 'low' ? 140 : 260, castShadow: shadows, groundScale: 0.5 }],
     }),
     [mats, quality, shadows],
   );

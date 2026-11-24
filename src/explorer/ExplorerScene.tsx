@@ -20,6 +20,7 @@ import { SkyWeather } from './SkyWeather';
 import { PostFX } from '../ui/components/PostFX';
 import { setDetail } from './env';
 import { sceneDebug } from './explorerStore';
+import { DrawDistance } from './lod';
 import type { TerrainData } from './terrain';
 
 interface Props {
@@ -73,6 +74,7 @@ export function ExplorerScene(p: Props) {
         )}
         {p.highways && <Highways data={p.highways} quality={quality} civColor={p.civColor} />}
         <City layout={p.layout} t={p.terrain} quality={quality} civColor={p.civColor} />
+        <DrawDistance groundY={p.terrain.flatHeight} />
         {p.settlement && <Inhabitants settlementId={p.settlement.id} layout={p.layout} t={p.terrain} onPick={p.onPick} />}
         {(p.settlement || p.cloud) && <Crowd layout={p.layout} t={p.terrain} population={p.settlement?.population ?? 3000} quality={quality} planetId={p.planet.id} />}
         <PostFX quality={quality} bloom={0.6} threshold={0.82} grade={1} />

@@ -1,7 +1,7 @@
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { TiledInstances, type LodLevel } from './lod';
+import { TiledInstances, distanceScale, type LodLevel } from './lod';
 import { env, foliageMaterial, texturedMaterial } from './env';
 import { frondsGeo, palmTrunkGeo } from './flora';
 import { nightUniform } from './City';
@@ -17,6 +17,58 @@ const archGeo = (() => {
   g.scale(1, 2, 1);
   return g;
 })();
+
+/**
+ * Low-detail stand-ins for the rounded shapes, drawn beyond ~150 m where the full ones' extra
+ * facets cannot be seen: the same size and placement, a fraction of the triangles.
+ */
+const LOW: Partial<Record<DShape, THREE.BufferGeometry>> = {
+  cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 6).translate(0, 0.5, 0),
+  cone: new THREE.ConeGeometry(0.5, 1, 6).translate(0, 0.5, 0),
+  sphere: new THREE.IcosahedronGeometry(0.5, 0),
+  hemi: new THREE.SphereGeometry(0.5, 8, 3, 0, Math.PI * 2, 0, Math.PI / 2),
+  torus: new THREE.TorusGeometry(0.42, 0.08, 4, 10).rotateX(-Math.PI / 2),
+  halfTorus: new THREE.TorusGeometry(0.45, 0.05, 3, 8, Math.PI),
+  rod: new THREE.CylinderGeometry(0.5, 0.5, 1, 5),
+  ring: new THREE.RingGeometry(0.494, 0.5, 20).rotateX(-Math.PI / 2),
+  palmTrunk: (() => {
+    const g = new THREE.CylinderGeometry(0.1, 0.17, 1, 5, 3).translate(0, 0.5, 0);
+    const p = g.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < p.count; i++) p.setX(i, p.getX(i) + 0.18 * p.getY(i) * p.getY(i));
+    g.computeVertexNormals();
+    return g;
+  })(),
+  fronds: (() => {
+    // six flat leaves instead of eight curved ones
+    const parts: THREE.BufferGeometry[] = [];
+    for (let k = 0; k < 6; k++) {
+      const leaf = new THREE.PlaneGeometry(1, 0.28, 2, 1).translate(0.5, 0, 0);
+      const p = leaf.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < p.count; i++) p.setY(i, p.getY(i) * (0.4 + 0.6 * Math.sin(Math.min(1, p.getX(i)) * Math.PI)));
+      for (let i = 0; i < p.count; i++) p.setZ(i, -p.getX(i) * p.getX(i) * 0.55);
+      leaf.rotateX(Math.PI / 2);
+      leaf.rotateY((k / 6) * Math.PI * 2);
+      parts.push(leaf);
+    }
+    let n = 0;
+    for (const q of parts) n += q.attributes.position.count;
+    const pos = new Float32Array(n * 3);
+    let o = 0;
+    const idx: number[] = [];
+    for (const q of parts) {
+      const base = o / 3;
+      pos.set(q.attributes.position.array as Float32Array, o);
+      o += q.attributes.position.count * 3;
+      const qi = q.index!;
+      for (let i = 0; i < qi.count; i++) idx.push(base + qi.getX(i));
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
+  })(),
+};
 
 /** A wing planform on the right (+x) or, mirrored, the left side. */
 function planform(side: number): THREE.BufferGeometry {
@@ -310,7 +362,9 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
   const groups = useMemo(() => {
     const g = new Map<string, DPiece[]>();
     for (const p of data.pieces) {
-      const k = `${p.shape}|${p.mat}|${p.small ? 's' : 'b'}`;
+      // tall pieces (towers, the hotel, the control tower) keep the skyline from the street
+      const tall = !p.small && p.m.elements[13] + Math.abs(p.m.elements[5]) > y0 + 35;
+      const k = `${p.shape}|${p.mat}|${p.small ? 's' : tall ? 't' : 'b'}`;
       const list = g.get(k);
       if (list) list.push(p);
       else g.set(k, [p]);
@@ -322,10 +376,19 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
       return {
         k,
         items: list,
-        levels: [{ geometry: SHAPES[shape], material: mats[mat], maxDist: (small ? 240 : 1100) * far, castShadow: shadows && !small, receiveShadow: true }] as LodLevel[],
+        levels: (mat === 'glow' && LOW[shape]
+          ? // lamps are small and self-lit: the low-detail shape reads the same at any distance
+            [{ geometry: LOW[shape]!, material: mats[mat], maxDist: (small ? 240 : 1100) * far, groundScale: small ? 0.4 : size === 't' ? 0.85 : 0.5 }]
+          : LOW[shape]
+          ? [
+              // full detail close by, the low-detail stand-in beyond
+              { geometry: SHAPES[shape], material: mats[mat], maxDist: 150 * far, castShadow: shadows && !small, receiveShadow: true, groundScale: 1 },
+              { geometry: LOW[shape]!, material: mats[mat], maxDist: (small ? 240 : 1100) * far, receiveShadow: true, groundScale: small ? 0.4 : size === 't' ? 0.85 : 0.5 },
+            ]
+          : [{ geometry: SHAPES[shape], material: mats[mat], maxDist: (small ? 240 : 1100) * far, castShadow: shadows && !small, receiveShadow: true, groundScale: small ? 0.4 : size === 't' ? 0.85 : 0.5 }]) as LodLevel[],
       };
     });
-  }, [data, mats, shadows, quality]);
+  }, [data, mats, shadows, quality, y0]);
   return (
     <group>
       {data.sea !== undefined && (
@@ -405,14 +468,16 @@ function Flight({ f, mats, y0 }: { f: NonNullable<DistrictData['flights']>[numbe
 /** A train or a boat on its route: instanced pieces in a group moved by the mover's pose. */
 function MoverView({ m, mats, y0 }: { m: Mover; mats: Record<DMat, THREE.Material>; y0: number }) {
   const ref = useRef<THREE.Group>(null);
+  const { camera } = useThree();
   const meshes = useMemo(() => instancesOf(m.pieces, mats), [m, mats]);
   useEffect(() => () => meshes.forEach((x) => x.dispose()), [meshes]);
   useFrame(({ clock }) => {
     const g = ref.current;
     if (!g) return;
     const p = m.pose((sceneDebug as { flightTime?: number }).flightTime ?? clock.elapsedTime);
-    g.visible = !!p;
-    if (!p) return;
+    // movers are small: past a distance that follows the camera's height they are not drawn
+    g.visible = !!p && Math.hypot(p.x - camera.position.x, p.z - camera.position.z) < 650 * distanceScale(0.5);
+    if (!p || !g.visible) return;
     g.position.set(p.x, y0 + p.y, p.z);
     g.rotation.set(-(p.pitch ?? 0), p.yaw, p.roll ?? 0, 'YXZ');
   });

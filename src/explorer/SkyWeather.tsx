@@ -3,6 +3,7 @@ import { Stars } from '@react-three/drei';
 import { skyAt, skyFragment, skyPalette, skyVertex } from './skyDome';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
+import { drawDistance } from './lod';
 import { Rng } from '../sim/rng';
 import { localHour } from '../sim/time';
 import type { Planet, StarSystem } from '../sim/types';
@@ -161,8 +162,10 @@ export function SkyWeather({ planet, system, quality, warm = false, cold = false
       scene.fog.color.copy(fogColor);
       const dense = wx === 'fog' ? 0.25 : wx === 'dust' ? 0.35 : wx === 'storm' ? 0.5 : wx === 'snow' ? 0.85 : wx === 'rain' ? 0.65 : 1;
       // a long, clear haze so a whole city reads from the air
-      scene.fog.near = 80 * dense;
-      scene.fog.far = (quality === 'low' ? 1100 : 2600) * dense;
+      // on foot the haze closes in to match the shorter draw distance; from the air it opens out
+      const reach = 0.5 + 0.5 * drawDistance.t;
+      scene.fog.near = 80 * dense * reach;
+      scene.fog.far = (quality === 'low' ? 1100 : 2600) * dense * reach;
     }
     scene.background = fogColor;
     if (stars.current) (stars.current.material as THREE.PointsMaterial).opacity = night * (1 - overcast);

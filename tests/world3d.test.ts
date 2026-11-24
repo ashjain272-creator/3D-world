@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { AIRCRAFT, airportRect, coastLine, generateLayout, mallGeometry, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
+import { AIRCRAFT, airportRect, coastLine, desertFlats, generateLayout, mallGeometry, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
 import { generateTerrain, type TerrainData } from '../src/explorer/terrain';
 import { generateVegetation } from '../src/explorer/vegetation';
 import { deckSampler, generateHighways, sampleRoad } from '../src/explorer/roadNetwork';
@@ -284,6 +284,47 @@ describe('futuristic districts', () => {
       // (the wall stands 5 m in from the street, where the gate is)
       expect(hit(gx + ux * 5 + uz * 20, gz + uz * 5 + ux * 20)).toBe(true);
     }
+  });
+
+  it('puts a safari camp, a camel track and a dune-buggy course in the desert round a city on a dry world', () => {
+    const dw = freshWorld('desert-14');
+    const s = Object.values(dw.settlements).find((c) => c.name === 'Isearis')!;
+    const pl = dw.planets[s.planetId];
+    expect(pl.regions[s.regionIndex].biome).toBe('desert');
+    const l = generateLayout(s);
+    const t = generateTerrain(pl, s.regionIndex, 'desert', l.radius + 20, coastLine(s), [...(airportRect(s) ? [airportRect(s)!] : []), ...desertFlats(s)], l.features?.palm?.land);
+    const y0 = t.flatHeight;
+    const d = generateDistricts(l, y0, true, t);
+    // the camp and the camel track stand on graded ground
+    for (const p of [d.desert!.camp!, d.desert!.track!]) for (const [dx, dz] of [[0, 0], [20, 10], [-25, -12]]) expect(Math.abs(t.height(p[0] + dx, p[1] + dz) - y0)).toBeLessThan(0.05);
+    expect(d.desert).toBeDefined();
+    const sites = [d.desert!.camp, d.desert!.track, d.desert!.dunes];
+    for (const p of sites) {
+      expect(p).not.toBeNull();
+      const [x, z] = p!;
+      // out in the desert: beyond the city, on dry land, inside the map
+      expect(Math.hypot(x, z)).toBeGreaterThan(l.radius + 40);
+      expect(z).toBeGreaterThan(l.features!.shoreZ + 60);
+      expect(Math.abs(x)).toBeLessThan(t.size * 0.47);
+      expect(Math.abs(z)).toBeLessThan(t.size * 0.47);
+    }
+    // no road crosses the camp or the track
+    const roads = generateHighways(l, t)!.roads;
+    for (const p of [d.desert!.camp!, d.desert!.track!])
+      for (const rd of roads) for (const q of rd.pts) expect(Math.abs(q.x - p[0]) < 70 && Math.abs(q.z - p[1]) < 48, `road at ${q.x.toFixed(0)},${q.z.toFixed(0)}`).toBe(false);
+    // camels and buggies run on the ground, near their own site
+    const runners = (d.movers ?? []).filter((m) => {
+      const p = m.pose(0)!;
+      return sites.some((q) => Math.hypot(p.x - q![0], p.z - q![1]) < 90);
+    });
+    expect(runners.length).toBe(6 + 5);
+    for (const m of runners)
+      for (let tt = 0; tt < 120; tt += 1) {
+        const p = m.pose(tt)!;
+        expect(Math.abs(p.y - (t.height(p.x, p.z) - y0))).toBeLessThan(0.3);
+      }
+    // and none of it appears on a world that is not dry
+    expect(generateDistricts(l, y0, true).desert).toBeUndefined();
   });
 
   it('runs trains along the metro and boats on the water', () => {

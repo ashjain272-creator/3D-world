@@ -2,6 +2,7 @@ import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
+import { sceneDebug } from './explorerStore';
 import { Smoke } from './Smoke';
 import { Districts } from './Districts';
 import { generateDistricts } from './districts';
@@ -342,7 +343,8 @@ export function City({ layout, t, quality, civColor }: { layout: Layout; t: Terr
 
   const groups = useMemo(() => buildGroups(layout.buildings, y0, layout.style, civColor), [layout, y0, civColor]);
   // mansions, souk, mall, places of worship and palm boulevards (palms only on warm worlds)
-  const districts = useMemo(() => generateDistricts(layout, y0, (t.look.snow ?? 0) < 0.3), [layout, y0, t]);
+  const districts = useMemo(() => generateDistricts(layout, y0, (t.look.snow ?? 0) < 0.3, t), [layout, y0, t]);
+  (sceneDebug as { desert?: unknown }).desert = districts.desert;
   const streetGeo = useMemo(() => {
     const parts: THREE.BufferGeometry[] = [];
     for (const s of layout.streets) {

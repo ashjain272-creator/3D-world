@@ -77,6 +77,8 @@ export interface TerrainData {
   flats?: FlatRect[];
   /** Raised strips of land in the sea (an island). */
   lands?: LandStrip[];
+  /** The region's biome. */
+  biome?: Biome;
   flatHeight: number;
   seed: number;
   height: (x: number, z: number) => number;
@@ -94,6 +96,8 @@ export interface FlatRect {
   x1: number;
   z0: number;
   z1: number;
+  /** How the ground is shaded: mown airfield (default) or plain sand. */
+  ground?: 'airfield' | 'sand';
 }
 
 /** True where (x, z) lies on one of the terrain's flattened rectangles (an airfield), with a margin. */
@@ -228,5 +232,5 @@ export function generateTerrain(planet: Planet, regionIndex: number, biome: Biom
     const dz = height(x, z + e) - height(x, z - e);
     return Math.sqrt(dx * dx + dz * dz) / (2 * e);
   };
-  return { size, res, heights, look, waterLevel: look.water, flatRadius, flatHeight, seed, height, slope, coastZ, flats, lands };
+  return { size, res, heights, look, waterLevel: look.water, flatRadius, flatHeight, seed, height, slope, coastZ, flats, lands, biome };
 }

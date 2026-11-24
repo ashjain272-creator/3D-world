@@ -53,7 +53,7 @@ export function TerrainMesh({ t, layout, waterColor }: { t: TerrainData; layout:
       const d = Math.hypot(x, z);
       if (layout.radius > 0 && d < layout.radius + 8) c.lerp(cityGround, Math.min(1, (layout.radius + 8 - d) / 20) * 0.8);
       // the airfield: mown grass (sand on warm worlds) between the paved areas
-      if (inFlat(t, x, z, 6)) c.lerp(airfield, 0.75);
+      if (inFlat({ flats: t.flats?.filter((f) => f.ground !== 'sand') }, x, z, 6)) c.lerp(airfield, 0.75);
       const j = (rng.next() - 0.5) * 0.04 + n2(x / 4, z / 4) * 0.015;
       colors[i * 3] = c.r + j;
       colors[i * 3 + 1] = c.g + j;

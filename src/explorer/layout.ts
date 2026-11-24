@@ -91,6 +91,8 @@ export interface CityFeatures {
   airport?: AirportPlan;
   /** A palm-shaped island off the coast (capitals). */
   palm?: PalmPlan;
+  /** Where a safari camp and a camel track go if the city stands in a desert (graded flat). */
+  desertSites: { camp: [number, number]; track: [number, number] };
 }
 
 /** A segment with a radius: a strip of land (terrain is raised under these). */
@@ -362,6 +364,28 @@ function themeParkColliders(b: Building): Collider[] {
   circ(W / 2 * 0.15, -D / 2 * 0.2, 4.5);
   box(W / 2 * 0.55, -D / 2 * 0.42 - 16, 44, 3);
   return out;
+}
+
+/** Graded sites beside the city for desert features: one on each flank, clear of the airport. */
+export function desertSitesFor(R: number): CityFeatures['desertSites'] {
+  // between the two expressways that leave the city on each flank (the spine and the inland one)
+  const sp = 36;
+  const snap = (v: number) => Math.round(v / sp) * sp;
+  const spineZ = snap(-0.36 * R);
+  const inlandZ = Math.max(snap(0.36 * R), spineZ + 4 * sp) - sp;
+  const z = (spineZ + inlandZ) / 2;
+  return { camp: [R + 120, z], track: [-(R + 120), z] };
+}
+
+/** The flats a desert city's terrain needs under its camp and camel track. */
+export function desertFlats(s: Settlement): { x0: number; x1: number; z0: number; z1: number; ground: 'sand' }[] {
+  if (s.style !== 'futuristic') return [];
+  const R = settlementRadius(s);
+  const d = desertSitesFor(R);
+  return [
+    { x0: d.camp[0] - 36, x1: d.camp[0] + 36, z0: d.camp[1] - 36, z1: d.camp[1] + 36, ground: 'sand' },
+    { x0: d.track[0] - 62, x1: d.track[0] + 62, z0: d.track[1] - 40, z1: d.track[1] + 40, ground: 'sand' },
+  ];
 }
 
 export function settlementRadius(s: Settlement): number {
@@ -1348,6 +1372,7 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     roundabouts,
     airport,
     palm,
+    desertSites: desertSitesFor(R),
   };
   const avoid = (x: number, z: number) => z < coastRoadZ + 8 || nearWater(x, z, 16) || lakes.some((l) => ((x - l.x) / (l.rx + 10)) ** 2 + ((z - l.z) / (l.rz + 10)) ** 2 < 1);
   const out = finish('futuristic', s, rng, R, kept, streets, graph, [plaza], lights, sp, avoid);

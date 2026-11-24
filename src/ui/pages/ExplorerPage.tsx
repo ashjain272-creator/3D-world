@@ -3,7 +3,7 @@ import { ExplorerScene } from '../../explorer/ExplorerScene';
 import { Minimap } from '../../explorer/Minimap';
 import { TOPICS, respond, type Topic } from '../../explorer/dialogue';
 import { playerState, sceneDebug, useExplorer } from '../../explorer/explorerStore';
-import { airportRect, buildColliderGrid, coastLine, generateLayout, settlementRadius, wildLayout, groundWildLayout } from '../../explorer/layout';
+import { airportRect, buildColliderGrid, coastLine, desertFlats, generateLayout, settlementRadius, wildLayout, groundWildLayout } from '../../explorer/layout';
 import { generateVegetation } from '../../explorer/vegetation';
 import { generateCloudCity } from '../../explorer/cloudCity';
 import { generateHighways } from '../../explorer/roadNetwork';
@@ -12,7 +12,7 @@ import { OCC_COLORS } from '../../explorer/People';
 import { hasSurface } from '../../sim/generate/cosmos';
 import { OCCUPATIONS } from '../../sim/data/society';
 import { formatDate, localHour } from '../../sim/time';
-import type { Planet, Settlement } from '../../sim/types';
+import type { Biome, Planet, Settlement } from '../../sim/types';
 import { ageOf, fmtPop, fullName } from '../../sim/world';
 import { sim } from '../../state/runner';
 import { navigate, useRoute } from '../../state/router';
@@ -49,6 +49,13 @@ function resolveTarget(parts: string[]): Target | null {
   return null;
 }
 
+/** Ground the terrain levels for a settlement: its airfield, and in a desert its camp and camel track. */
+function flatsFor(s: Settlement | undefined, biome: Biome) {
+  if (!s) return undefined;
+  const out = [...(airportRect(s) ? [airportRect(s)!] : []), ...(biome === 'desert' || biome === 'wasteland' ? desertFlats(s) : [])];
+  return out.length ? out : undefined;
+}
+
 export function ExplorerPage() {
   const route = useRoute();
   useEffect(() => {
@@ -78,7 +85,7 @@ function Explorer({ target }: { target: Target }) {
   const terrain = useMemo(
     () =>
       cloudCity?.terrain ??
-      generateTerrain(planet, regionIndex, region.biome, settlement ? settlementRadius(settlement) + 20 : 0, settlement ? coastLine(settlement) : undefined, settlement && airportRect(settlement) ? [airportRect(settlement)!] : undefined, cityLayout?.features?.palm?.land),
+      generateTerrain(planet, regionIndex, region.biome, settlement ? settlementRadius(settlement) + 20 : 0, settlement ? coastLine(settlement) : undefined, flatsFor(settlement, region.biome), cityLayout?.features?.palm?.land),
     [cloudCity, planet, regionIndex, region.biome, settlement, cityLayout],
   );
   const layout = useMemo(() => {

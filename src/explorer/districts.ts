@@ -5,6 +5,7 @@ import { cityFeatures, mosqueSmall, oldHouse } from './cityFeatures';
 import { mallGeometry } from './layout';
 import { airport } from './airport';
 import { themePark } from './themepark';
+import { desertEdge } from './desert';
 
 /**
  * Architecture for the special districts of futuristic cities: mansions in five
@@ -32,6 +33,8 @@ export interface DistrictData {
   sea?: number;
   /** Pool and fountain surfaces (lit from below at night). */
   lights: [number, number][];
+  /** Desert sites beyond the city (safari camp, camel track, dune course), if any. */
+  desert?: { camp: [number, number] | null; track: [number, number] | null; dunes: [number, number] | null };
   /** Things that move on fixed routes (trains, boats): pieces round the origin and a pose in time. */
   movers?: import('./movers').Mover[];
   /** Aircraft that fly: their pieces around the origin (nose along +z), and their route. */
@@ -58,7 +61,7 @@ export function hashRand(seed: number) {
   };
 }
 
-export function generateDistricts(layout: Layout, y0: number, warm: boolean): DistrictData {
+export function generateDistricts(layout: Layout, y0: number, warm: boolean, terrain?: import('./terrain').TerrainData): DistrictData {
   const out: DistrictData = { pieces: [], lights: [], movers: [] };
   if (layout.style !== 'futuristic') return out;
 
@@ -104,6 +107,8 @@ export function generateDistricts(layout: Layout, y0: number, warm: boolean): Di
   }
   if (layout.features) cityFeatures(out, layout, y0, warm);
   if (layout.features?.airport) airport(out, layout.features.airport, y0, warm);
+  // the desert beyond a city on a dry world: a safari camp, a camel track, dune buggies
+  if (layout.features && terrain && (terrain.biome === 'desert' || terrain.biome === 'wasteland')) desertEdge(out, layout, terrain, y0);
   if (warm) boulevardPalms(out, layout, y0);
   return out;
 }

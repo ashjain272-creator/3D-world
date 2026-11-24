@@ -893,3 +893,38 @@ Medium quality, headless software renderer, same three views. Before means the b
 - the theme park's rides staying inside its walls, a car going over the loop, and the gate being open;
 - the desert sites being out of the city, on graded ground and clear of roads, with camels and buggies on the ground, and none of it on wet worlds;
 - the avenues being clear of buildings and podiums, and at least one of them not running along the grid.
+
+## Phase 17: the palm becomes one royal palace estate
+
+The villas, apartment slabs, crescent hotels, monorail and grand hotel are gone from the palm. The whole island is now one estate (`palace.ts`, `palm.ts`).
+
+**The palace** stands on a raised terrace 168 m across, mid-trunk.
+- **Terrace:** a marble terrace with a gilt band, balustrades and lamp urns. A grand staircase rises between gilded fountain urns.
+- **Wings:** four wings, 96 × 120 m and three storeys, round a courtyard.
+  - **Outer facades:** bays of arched windows with carved arch hoods, pilasters with gilt capitals, first-floor balconies with balustrades, gilt string courses, a cornice on brackets with a lit groove, and stepped merlons.
+  - **Courtyard facades:** an open arcade of pointed arches on marble columns, with lanterns.
+- **Entrance portal:** a 38 m portal with a deep pointed iwan framed in gold, tiers of gilded muqarnas, an alfiz frame with a lit inscription band, carved doors standing open, and a fanlight. Two 76 m minarets flank it.
+- **Corner towers:** four octagonal towers 44 m high, with gilt bands, two balcony galleries, arched windows on every face, and golden domes.
+- **Great hall:** at the back of the courtyard, a windowed base under a crenellated parapet carries an octagonal drum with sixteen lit windows. On it sits a ribbed golden dome 22 m high, with a windowed lantern and a finial of stacked spheres and a crescent ring, and four satellite domes.
+- **Roofs:** golden and white domes along the wings.
+- **Courtyard:** a long reflecting pool of paired jets lit from below, a tiered fountain, and four parterres of lawn, hedge borders and flower stars.
+- **Around the palace:**
+  - a forecourt with a great two-tier gilded fountain ringed by jets, a crescent of flags, guard pavilions, lamps and palms;
+  - garden rows beside the terrace and a pool behind it.
+- **Night:** the walls are floodlit (a new `lit` finish that glows warm after dark), with light washing up the facades, towers, portal and dome.
+
+**The estate around it**
+- **Trunk:**
+  - **Gatehouse:** two domed towers with a gilt arch.
+  - **Ceremonial avenue:** a central channel of jets, lawns, palms, lamps and flags.
+  - **Royal gardens:** run behind the palace to a domed rotunda at the tip.
+- **Fronds:** formal gardens with a water channel of jets, paths, hedges, rows of trees and flower beds. Each frond has two domed pavilions and, at its tip, a guest palace with turrets, a dome, a pool, a jetty and a yacht.
+- **Crescent:** a crenellated sea wall with domed watchtowers. At its apex stands a sea pavilion: an octagonal arcaded hall under a great golden dome, with four towers and jetties for the royal yachts. Boats still cruise the lagoon.
+
+**Walking:** the courtyard can be walked into through the portal. The palace wings, towers and great hall are solid.
+
+**Test:** the palace test checks:
+- that no other buildings stand on the island;
+- that the palace and forecourt stand on level land;
+- that there is a clear walk from the forecourt through the portal into the courtyard, while the wings are solid;
+- that the palace has more than 3,000 pieces, with at least ten golden domes.

@@ -310,6 +310,8 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
   const mats = useMemo<Record<DMat, THREE.Material>>(
     () => ({
       plaster: texturedMaterial('plaster', { color: '#ffffff', roughness: 0.85 }),
+      // floodlit stone: plaster that glows warm after dark, for the palace's walls
+      lit: texturedMaterial('plaster', { color: '#ffffff', roughness: 0.8, emissive: new THREE.Color('#ffc880'), emissiveIntensity: 0 }),
       stone: texturedMaterial('paving', { color: '#ffffff', roughness: 0.9 }),
       marble: texturedMaterial('tiles', { color: '#ffffff', roughness: 0.35 }),
       roof: texturedMaterial('tiles', { color: '#ffffff', roughness: 0.85 }),
@@ -353,6 +355,7 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
     glassNight.value = n;
     (mats.water as THREE.MeshStandardMaterial).emissiveIntensity = 0.12 + n * 0.6;
     (mats.atrium as THREE.MeshStandardMaterial).emissiveIntensity = 0.05 + n * 0.75;
+    (mats.lit as THREE.MeshStandardMaterial).emissiveIntensity = n * 0.32;
     // floodlights: the pitch, the court and the crowd carry their own light after dark
     (mats.pitch as THREE.MeshStandardMaterial).emissiveIntensity = n * 0.55;
     (mats.court as THREE.MeshStandardMaterial).emissiveIntensity = 0.2 + n * 0.6;

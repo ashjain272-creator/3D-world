@@ -31,7 +31,7 @@ export function cityFeatures(out: DistrictData, layout: Layout, y0: number, warm
   metro(out, add, f, r);
   for (const e of f.estates) estate(out, add, e, r, warm);
   for (const c of f.compounds) compound(add, c);
-  if (f.palm) palmIsland(out, add, f.palm, r, warm);
+  if (f.palm) palmIsland(out, add, f.palm, r, warm, y0);
   // the avenues that break the grid: a raised planted median with palms and lamp posts
   for (const av of f.avenues ?? [])
     for (let k = 0; k < av.pts.length - 1; k++) {

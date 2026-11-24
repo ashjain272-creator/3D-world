@@ -202,7 +202,7 @@ describe('futuristic districts', () => {
     }
   });
 
-  it('builds a palm island of frond villas inside a crescent, on raised ground, with a monorail to its hotel', () => {
+  it('makes the palm island one royal estate round a walk-in palace', () => {
     const s = cities.find((c) => c.kind === 'capital')!;
     const l = generateLayout(s);
     const f = l.features!;
@@ -214,43 +214,38 @@ describe('futuristic districts', () => {
       const u = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
       return Math.hypot(x - ax - dx * u, z - az - dz * u);
     };
-    // out in the sea, clear of the creek and marina mouths
+    // out in the sea, clear of the creek and marina mouths; fronds inside the crescent and apart
     expect(p.zBase).toBeLessThan(f.shoreZ);
     for (const w of f.waters) {
       if (w.kind === 'canal') continue;
       const mouth = w.pts.reduce((a, b) => (b[1] < a[1] ? b : a));
       expect(Math.abs(mouth[0] - p.xp)).toBeGreaterThan(p.crescent.r + p.crescent.w / 2);
     }
-    // fronds sit inside the crescent and never touch one another
     expect(p.fronds.length).toBe(12);
     for (const fr of p.fronds) expect(Math.hypot(fr.bx - p.crescent.cx, fr.bz - p.crescent.cz) + fr.w / 2).toBeLessThan(p.crescent.r - p.crescent.w / 2);
-    for (let i = 0; i < p.fronds.length; i++)
-      for (let j = i + 1; j < p.fronds.length; j++) {
-        const a = p.fronds[i];
-        const b = p.fronds[j];
-        if (Math.sign(a.bx - p.xp) !== Math.sign(b.bx - p.xp)) continue;
-        expect(dist(b.bx, b.bz, [a.ax, a.az, a.bx, a.bz])).toBeGreaterThan((a.w + b.w) / 2 + 2);
-      }
-    // villas, slabs and hotels all stand on the island's land
-    const onLand = (x: number, z: number) => p.land.some((c) => dist(x, z, c) < c[4]);
-    const isle = l.buildings.filter((b) => (b.plot?.z ?? b.z) < f.shoreZ);
-    expect(isle.filter((b) => b.kind === 'villa').length).toBeGreaterThan(40);
-    expect(isle.some((b) => b.kind === 'mosqueSmall')).toBe(true);
-    for (const b of isle) expect(onLand(b.plot?.x ?? b.x, b.plot?.z ?? b.z), `${b.kind} at ${b.x.toFixed(0)},${b.z.toFixed(0)}`).toBe(true);
-    // the terrain is level under the island and the sea floor stays low between the fronds
+    // one estate: no houses, flats or hotels on the island; the palace stands on its terrace
+    expect(l.buildings.filter((b) => (b.plot?.z ?? b.z) < f.shoreZ)).toEqual([]);
+    const pal = p.palace;
+    expect(pal.w).toBeGreaterThanOrEqual(90);
+    expect(pal.d).toBeGreaterThanOrEqual(110);
+    const onLand = (x: number, z: number) => p.land.some((c) => dist(x, z, c) < c[4] - 2);
+    for (const [dx, dz] of [[0, 0], [pal.w / 2 + 20, pal.d / 2], [-pal.w / 2 - 20, -pal.d / 2], [0, pal.d / 2 + 25 + 26 + 17]]) expect(onLand(pal.x + dx, pal.z + dz)).toBe(true);
+    // level ground under the terrace and the forecourt
     const pl = w.planets[s.planetId];
     const t = generateTerrain(pl, s.regionIndex, pl.regions[s.regionIndex].biome, l.radius + 20, coastLine(s), airportRect(s) ? [airportRect(s)!] : undefined, p.land);
-    // (within the 7.5 m terrain grid's interpolation near the beaches)
-    for (const b of isle) expect(Math.abs(t.height(b.plot?.x ?? b.x, b.plot?.z ?? b.z) - t.flatHeight)).toBeLessThan(0.45);
-    const a0 = p.fronds[0];
-    const a1 = p.fronds[2];
-    const mx = (a0.bx + a1.bx) / 2;
-    const mz = (a0.bz + a1.bz) / 2;
-    expect(t.height(mx, mz)).toBeLessThan(t.flatHeight - 1);
-    // the monorail runs from the shore to the hotel
-    expect(p.monorail.pts[0][1]).toBeGreaterThan(f.shoreZ);
-    const end = p.monorail.pts[p.monorail.pts.length - 1];
-    expect(Math.hypot(end[0] - p.hotel.x, end[1] - p.hotel.z)).toBeLessThan(40);
+    for (const [dx, dz] of [[0, 0], [40, 50], [-40, -50], [0, 110]]) expect(Math.abs(t.height(pal.x + dx, pal.z + dz) - t.flatHeight)).toBeLessThan(0.1);
+    // the road runs from the coast to the forecourt, and you can walk from there through the portal
+    // into the courtyard; the wings and towers are solid
+    const hit = (x: number, z: number) => l.colliders.some((c) => (c.type === 'circle' ? Math.hypot(c.x - x, c.z - z) < c.hw + 0.3 : Math.abs(c.x - x) < c.hw + 0.3 && Math.abs(c.z - z) < c.hd + 0.3));
+    for (let z = pal.z + pal.d / 2 + 25; z > pal.z; z -= 0.5) expect(hit(pal.x, z), `blocked at ${z.toFixed(1)}`).toBe(false);
+    expect(hit(pal.x + 30, pal.z + pal.d / 2 - 5)).toBe(true);
+    expect(hit(pal.x - pal.w / 2 + 5, pal.z)).toBe(true);
+    expect(hit(pal.x, pal.z - pal.d / 2 + 5)).toBe(true);
+    // the palace is drawn with real detail: thousands of pieces round its centre, golden domes
+    const d = generateDistricts(l, 0, true);
+    const near = d.pieces.filter((q) => Math.abs(q.x - pal.x) < pal.w / 2 + 25 && Math.abs(q.z - pal.z) < pal.d / 2 + 30);
+    expect(near.length).toBeGreaterThan(3000);
+    expect(near.filter((q) => q.shape === 'hemi' && q.mat === 'gold').length).toBeGreaterThanOrEqual(10);
   });
 
   it('builds a walk-in theme park whose rides move inside its walls', () => {
@@ -383,14 +378,6 @@ describe('futuristic districts', () => {
       const p0 = m.pose(0)!;
       // theme park rides are tested on their own
       if (tp && Math.abs(p0.x - tp.x) < tp.w / 2 + 1 && Math.abs(p0.z - tp.z) < tp.d / 2 + 1) continue;
-      if (p0.y > 3 && f.palm && Math.abs(p0.x - f.palm.xp) < 20 && p0.z < f.coastRoadZ) {
-        // the palm monorail: always over its guideway
-        for (let t = 0; t < 300; t += 1) {
-          const p = m.pose(t)!;
-          expect(near(f.palm.monorail.pts, p.x, p.z)).toBeLessThan(0.5);
-        }
-        continue;
-      }
       if (p0.y > 3) {
         trains++;
         // on the viaduct, between its ends; and it stands at each station at some moment

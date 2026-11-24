@@ -86,6 +86,7 @@ function Explorer({ target }: { target: Target }) {
   sceneDebug.buildings = layout.buildings.map((b) => ({ x: b.x, z: b.z, w: b.w, d: b.d, h: b.h, kind: b.kind, district: b.district, tone: b.tone }));
   (sceneDebug as { roundabouts?: [number, number][] }).roundabouts = layout.features?.roundabouts ?? [];
   (sceneDebug as { airport?: unknown }).airport = layout.features?.airport;
+  (sceneDebug as { features?: unknown }).features = layout.features;
   sceneDebug.poi = vegetation.poi;
   sceneDebug.shore = useMemo(() => {
     if (terrain.waterLevel === null) return null;

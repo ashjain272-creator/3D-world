@@ -7,6 +7,7 @@ import { frondsGeo, palmTrunkGeo } from './flora';
 import { nightUniform } from './City';
 import type { DMat, DPiece, DShape, DistrictData } from './districts';
 import { flightPose } from './airport';
+import type { Mover } from './movers';
 import { sceneDebug } from './explorerStore';
 
 const archGeo = (() => {
@@ -337,6 +338,7 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
         <TiledInstances key={g.k} items={g.items} levels={g.levels} tileSize={240} name={`district-${g.k}`} />
       ))}
       {data.flights?.map((f, i) => <Flight key={i} f={f} mats={mats} y0={y0} />)}
+      {data.movers?.map((m, i) => <MoverView key={i} m={m} mats={mats} y0={y0} />)}
     </group>
   );
 }
@@ -396,6 +398,29 @@ function Flight({ f, mats, y0 }: { f: NonNullable<DistrictData['flights']>[numbe
           <primitive key={i} object={m} />
         ))}
       </group>
+    </group>
+  );
+}
+
+/** A train or a boat on its route: instanced pieces in a group moved by the mover's pose. */
+function MoverView({ m, mats, y0 }: { m: Mover; mats: Record<DMat, THREE.Material>; y0: number }) {
+  const ref = useRef<THREE.Group>(null);
+  const meshes = useMemo(() => instancesOf(m.pieces, mats), [m, mats]);
+  useEffect(() => () => meshes.forEach((x) => x.dispose()), [meshes]);
+  useFrame(({ clock }) => {
+    const g = ref.current;
+    if (!g) return;
+    const p = m.pose((sceneDebug as { flightTime?: number }).flightTime ?? clock.elapsedTime);
+    g.visible = !!p;
+    if (!p) return;
+    g.position.set(p.x, y0 + p.y, p.z);
+    g.rotation.set(0, p.yaw, p.roll ?? 0, 'YXZ');
+  });
+  return (
+    <group ref={ref}>
+      {meshes.map((x, i) => (
+        <primitive key={i} object={x} />
+      ))}
     </group>
   );
 }

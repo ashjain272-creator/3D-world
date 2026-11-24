@@ -202,6 +202,57 @@ describe('futuristic districts', () => {
     }
   });
 
+  it('runs trains along the metro and boats on the water', () => {
+    const s = cities.find((c) => c.kind === 'capital')!;
+    const l = generateLayout(s);
+    const f = l.features!;
+    const d = generateDistricts(l, 0, true);
+    const movers = d.movers ?? [];
+    expect(movers.length).toBeGreaterThanOrEqual(2 + 3 + 3);
+    const near = (pts: [number, number][], x: number, z: number) => {
+      let best = Infinity;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [ax, az] = pts[i];
+        const [bx, bz] = pts[i + 1];
+        const dx = bx - ax;
+        const dz = bz - az;
+        const u = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+        best = Math.min(best, Math.hypot(x - ax - dx * u, z - az - dz * u));
+      }
+      return best;
+    };
+    let trains = 0;
+    let boats = 0;
+    for (const m of movers) {
+      const p0 = m.pose(0)!;
+      if (p0.y > 3) {
+        trains++;
+        // on the viaduct, between its ends; and it stands at each station at some moment
+        const seen = new Set<number>();
+        for (let t = 0; t < 600; t += 0.5) {
+          const p = m.pose(t)!;
+          expect(Math.abs(p.z - f.metro.z)).toBeLessThan(1.3);
+          expect(p.x).toBeGreaterThanOrEqual(f.metro.x0);
+          expect(p.x).toBeLessThanOrEqual(f.metro.x1);
+          f.metro.stations.forEach((sx, i) => {
+            if (Math.abs(p.x - sx) < 0.5) seen.add(i);
+          });
+        }
+        expect(seen.size).toBe(f.metro.stations.length);
+      } else {
+        boats++;
+        // always on water: inside a channel, or out at sea beyond the shore
+        for (let t = 0; t < 400; t += 1) {
+          const p = m.pose(t)!;
+          const inside = f.waters.some((w) => near(w.pts, p.x, p.z) < w.w / 2 - 0.5) || p.z < f.shoreZ - 2;
+          expect(inside, `boat at ${p.x.toFixed(1)},${p.z.toFixed(1)}`).toBe(true);
+        }
+      }
+    }
+    expect(trains).toBe(2);
+    expect(boats).toBeGreaterThanOrEqual(6);
+  });
+
   it('gives the capital an airport on flattened ground behind the city, reached by an expressway', () => {
     const s = cities.find((c) => c.kind === 'capital')!;
     const l = generateLayout(s);

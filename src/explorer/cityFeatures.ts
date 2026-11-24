@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Building, CityFeatures, Layout } from './layout';
+import { type Mover, type P2, cruise, loopRoute, shuttle } from './movers';
 import { type Add, type DistrictData, archWindow, fountain, frame, hashRand, lounger, minaret, palm, roundTree } from './districts';
 
 /**
@@ -15,6 +16,7 @@ export function cityFeatures(out: DistrictData, layout: Layout, y0: number, warm
   const r = hashRand(layout.radius * 7.3 + f.shoreZ);
   const R = layout.radius;
   out.sea = f.shoreZ;
+  out.movers = out.movers ?? [];
   beach(add, f, R, r, layout, warm);
   for (const w of f.waters) water(out, add, w, layout, r, warm);
   for (const l of f.lakes) lake(out, add, l, r, l === f.lakes[0] && !!f.downtown, warm);
@@ -25,7 +27,7 @@ export function cityFeatures(out: DistrictData, layout: Layout, y0: number, warm
     add('box', 'glow', c.x, 0.4, c.z - c.s / 2 - 0.05, c.s - 2, 2.4, 0.1, '#fff2dc');
     for (const s of [-1, 1]) add('box', 'leaf', c.x + s * (c.s / 2 - 1.2), 5.5, c.z, 1.6, 0.8, c.s - 2, '#4f7a34');
   }
-  metro(add, f, r);
+  metro(out, add, f, r);
   for (const e of f.estates) estate(out, add, e, r, warm);
   for (const c of f.compounds) compound(add, c);
   for (const [x, z] of f.roundabouts ?? []) roundabout(add, x, z, r, warm);
@@ -162,6 +164,25 @@ function water(out: DistrictData, add: Add, w: CityFeatures['waters'][number], l
       }
     }
   }
+  // boats under way: dhows working up and down the creek, yachts cruising out of the marina to sea
+  // and back, each on a loop along its own side of the channel
+  if (out.movers && (w.kind === 'creek' || w.kind === 'marina')) {
+    const route = [...pts];
+    if (w.kind === 'marina') {
+      // carry on out to sea before turning back
+      const [lx, lz] = route[route.length - 1];
+      route.push([lx, lz - 90]);
+    }
+    const loop = loopRoute(route, w.w / 2 - (w.kind === 'creek' ? 9 : 5.5));
+    const n = w.kind === 'creek' ? 3 : 3;
+    for (let k = 0; k < n; k++) {
+      const local: DistrictData = { pieces: [], lights: [] };
+      const b = frame(local, 0, 0, 0, [0, 1]);
+      if (w.kind === 'creek') dhow(b.add, 0, 0, 0, r, 500 + k);
+      else yacht(b.add, 0, 0, 0, r, 600 + k * 3);
+      out.movers.push({ pieces: local.pieces, pose: cruise(loop, w.kind === 'creek' ? 3.2 : 5, k / n, 0, 0.08) });
+    }
+  }
   if (w.kind === 'creek') {
     // abra (water-taxi) piers on both banks near the mouth, with boats waiting
     for (const q of [1, 2]) {
@@ -178,6 +199,18 @@ function water(out: DistrictData, add: Add, w: CityFeatures['waters'][number], l
         add('box', 'cloth', px, 2.8, pz, 5.4, 0.12, 9.4, '#f2efe6', t);
         for (const c of [-1, 1]) for (const e of [-1, 1]) add('box', 'wood', px + nx * c * 2.4 + Math.sin(t) * e * 4.4, 0, pz + nz * c * 2.4 + Math.cos(t) * e * 4.4, 0.18, 2.8, 0.18, '#6a4a30');
         abra(add, px - nx * s * 4.5, pz - nz * s * 4.5, t, r, q * 7 + s);
+      }
+      // a water taxi crossing between this pair of piers
+      if (out.movers) {
+        const local: DistrictData = { pieces: [], lights: [] };
+        const b = frame(local, 0, 0, 0, [0, 1]);
+        abra(b.add, 0, 0, 0, r, 40 + q);
+        const off = 2.2 + q;
+        const route: P2[] = [
+          [ax + nx * (w.w / 2 - 4.5) + Math.sin(t) * off, az + nz * (w.w / 2 - 4.5) + Math.cos(t) * off],
+          [ax - nx * (w.w / 2 - 4.5) + Math.sin(t) * off, az - nz * (w.w / 2 - 4.5) + Math.cos(t) * off],
+        ];
+        out.movers.push({ pieces: local.pieces, pose: shuttle(route, [], 2.5, 7, q * 0.3, 0, 0.06) } as Mover);
       }
     }
   }
@@ -275,15 +308,16 @@ function jbr(add: Add, j: NonNullable<CityFeatures['jbr']>, f: CityFeatures, r: 
   void f;
 }
 
-function metro(add: Add, f: CityFeatures, r: (k: number) => number) {
+function metro(out: DistrictData, add: Add, f: CityFeatures, r: (k: number) => number) {
   const m = f.metro;
   const y = 6;
   const L = m.x1 - m.x0;
   const cx = (m.x0 + m.x1) / 2;
   // the viaduct: a deck on piers, rails and a lit guideway edge
   add('box', 'plaster', cx, y - 1, m.z, L, 1, 4.6, '#e6e9ed');
+  // two tracks, one each way
+  for (const rz of [-1.8, -0.4, 0.4, 1.8]) add('box', 'metal', cx, y, m.z + rz, L, 0.14, 0.12, '#8a8f96');
   for (const s of [-1, 1]) {
-    add('box', 'metal', cx, y, m.z + s * 0.8, L, 0.14, 0.12, '#8a8f96');
     add('box', 'glow', cx, y - 0.7, m.z + s * 2.32, L, 0.12, 0.05, '#bfe0ff');
   }
   for (let x = m.x0 + 6; x < m.x1; x += 22) {
@@ -307,16 +341,30 @@ function metro(add: Add, f: CityFeatures, r: (k: number) => number) {
       add('box', 'glow', sx + 8, y + 1.4, edge + s * 3.05, 2.6, 0.8, 0.1, '#e8402e');
     }
   }
-  // two trains on the line
-  for (const [t0, dir] of [[0.27, 1], [0.71, -1]] as const) {
-    const x0 = m.x0 + L * t0;
+  // trains on both tracks, stopping at every station; each is five cars with a lit cab at each end
+  const train = (): DistrictData['pieces'] => {
+    const local: DistrictData = { pieces: [], lights: [] };
+    const t = frame(local, 0, 0, 0, [0, 1]);
     for (let c = 0; c < 5; c++) {
-      const x = x0 + dir * c * 12.4;
-      add('box', 'metal', x, y + 0.2, m.z + dir * 0.0, 12, 3, 2.9, '#e8ebef');
-      add('box', 'glass', x, y + 1.3, m.z, 11.6, 1.1, 2.95, '#2a3a4a');
-      add('box', 'glow', x, y + 2.95, m.z, 11.4, 0.08, 2.4, '#bfe0ff');
+      const z = -c * 12.4;
+      t.add('box', 'metal', 0, 0.2, z, 2.1, 3, 12, '#e8ebef');
+      t.add('box', 'glass', 0, 1.3, z, 2.15, 1.1, 11.6, '#2a3a4a');
+      t.add('box', 'glow', 0, 2.95, z, 1.8, 0.08, 11.4, '#bfe0ff');
+      t.add('box', 'metal', 0, 0.35, z, 2.16, 0.25, 12, '#c8102e');
     }
-    add('box', 'glow', x0 - dir * 6.1, y + 0.9, m.z, 0.1, 1.2, 2.2, '#ffffff');
+    for (const [z, d] of [[6.1, 1], [-4 * 12.4 - 6.1, -1]] as const) {
+      t.add('box', 'glass', 0, 1.2, z, 1.9, 1.4, 0.1, '#1a2430');
+      for (const sx of [-0.7, 0.7]) t.add('box', 'glow', sx, 0.7, z + d * 0.05, 0.3, 0.2, 0.06, d > 0 ? '#ffffff' : '#ff3020');
+    }
+    return local.pieces;
+  };
+  const stops = m.stations.map((sx) => sx - (m.x0 + 10));
+  for (const [i, tz] of [[0, -1.1], [1, 1.1]] as const) {
+    const route: P2[] = [
+      [m.x0 + 10, m.z + tz],
+      [m.x1 - 10, m.z + tz],
+    ];
+    out.movers!.push({ pieces: train(), pose: shuttle(route, stops, 16, 9, i * 0.37, y + 0.2) });
   }
   void r;
 }

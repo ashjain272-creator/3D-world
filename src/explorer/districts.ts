@@ -31,6 +31,8 @@ export interface DistrictData {
   sea?: number;
   /** Pool and fountain surfaces (lit from below at night). */
   lights: [number, number][];
+  /** Things that move on fixed routes (trains, boats): pieces round the origin and a pose in time. */
+  movers?: import('./movers').Mover[];
   /** Aircraft that fly: their pieces around the origin (nose along +z), and their route. */
   flights?: { pieces: DPiece[]; piecesUp: DPiece[]; mode: 'land' | 'takeoff'; runZ: number; runX0: number; runX1: number }[];
 }

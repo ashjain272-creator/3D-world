@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Building, CityFeatures, Layout } from './layout';
+import { palmIsland } from './palm';
 import { type Mover, type P2, cruise, loopRoute, shuttle } from './movers';
 import { type Add, type DistrictData, archWindow, fountain, frame, hashRand, lounger, minaret, palm, roundTree } from './districts';
 
@@ -30,6 +31,7 @@ export function cityFeatures(out: DistrictData, layout: Layout, y0: number, warm
   metro(out, add, f, r);
   for (const e of f.estates) estate(out, add, e, r, warm);
   for (const c of f.compounds) compound(add, c);
+  if (f.palm) palmIsland(out, add, f.palm, r, warm);
   for (const [x, z] of f.roundabouts ?? []) roundabout(add, x, z, r, warm);
 }
 

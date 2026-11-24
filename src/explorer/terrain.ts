@@ -75,6 +75,8 @@ export interface TerrainData {
   coastZ?: number;
   /** Flattened rectangles beyond the city (an airfield). */
   flats?: FlatRect[];
+  /** Raised strips of land in the sea (an island). */
+  lands?: LandStrip[];
   flatHeight: number;
   seed: number;
   height: (x: number, z: number) => number;
@@ -99,7 +101,10 @@ export function inFlat(t: Pick<TerrainData, 'flats'>, x: number, z: number, pad 
   return !!t.flats?.some((r) => x > r.x0 - pad && x < r.x1 + pad && z > r.z0 - pad && z < r.z1 + pad);
 }
 
-export function generateTerrain(planet: Planet, regionIndex: number, biome: Biome, flatRadius: number, coastZ?: number, flats?: FlatRect[]): TerrainData {
+/** A strip of raised land in the sea: segment (ax, az)-(bx, bz) with half-width r. */
+export type LandStrip = [number, number, number, number, number];
+
+export function generateTerrain(planet: Planet, regionIndex: number, biome: Biome, flatRadius: number, coastZ?: number, flats?: FlatRect[], lands?: LandStrip[]): TerrainData {
   const seed = hashInts(planet.seed, regionIndex, 77);
   const rng = new Rng(seed);
   const n2 = createNoise2D(() => rng.next());
@@ -181,7 +186,21 @@ export function generateTerrain(planet: Planet, regionIndex: number, biome: Biom
     // a coastal city: the ground shelves away beyond the shoreline under a sea that reaches the horizon
     const c = clamp((coastZ + 4 - z) / 14, 0, 1);
     const sea = flatHeight - 4 - Math.max(0, coastZ - z) * 0.02;
-    return land + (Math.min(land, sea) - land) * c * c * (3 - 2 * c);
+    const coastal = land + (Math.min(land, sea) - land) * c * c * (3 - 2 * c);
+    if (!lands?.length) return coastal;
+    // islands built out into the sea: level ground on the strips, a short beach shelving to the bed
+    let dmin = Infinity;
+    for (const [ax, az, bx, bz, r] of lands) {
+      const dx = bx - ax;
+      const dz = bz - az;
+      const u = clamp(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1), 0, 1);
+      // the ground stays level a few metres inside the drawn sand, so the coarse terrain grid never
+      // shows through the narrow channels between the strips
+      dmin = Math.min(dmin, Math.hypot(x - ax - dx * u, z - az - dz * u) - (r - 2));
+    }
+    if (dmin > 10) return coastal;
+    const isle = dmin <= 0 ? flatHeight : flatHeight - 1.2 - dmin * 0.6;
+    return Math.max(coastal, isle);
   };
   const step = size / res;
   for (let j = 0; j <= res; j++) {
@@ -209,5 +228,5 @@ export function generateTerrain(planet: Planet, regionIndex: number, biome: Biom
     const dz = height(x, z + e) - height(x, z - e);
     return Math.sqrt(dx * dx + dz * dz) / (2 * e);
   };
-  return { size, res, heights, look, waterLevel: look.water, flatRadius, flatHeight, seed, height, slope, coastZ, flats };
+  return { size, res, heights, look, waterLevel: look.water, flatRadius, flatHeight, seed, height, slope, coastZ, flats, lands };
 }

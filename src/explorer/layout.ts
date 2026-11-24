@@ -89,6 +89,29 @@ export interface CityFeatures {
   roundabouts: [number, number][];
   /** The capital's airport, inland behind the city. */
   airport?: AirportPlan;
+  /** A palm-shaped island off the coast (capitals). */
+  palm?: PalmPlan;
+}
+
+/** A segment with a radius: a strip of land (terrain is raised under these). */
+export type Capsule = [number, number, number, number, number];
+
+export interface PalmPlan {
+  /** The trunk's centre line x, its base (landward) and tip (seaward) z. */
+  xp: number;
+  zBase: number;
+  zTip: number;
+  trunkW: number;
+  fronds: { ax: number; az: number; bx: number; bz: number; w: number }[];
+  crescent: { cx: number; cz: number; r: number; w: number; th: number };
+  /** The causeway from the coastal road out to the trunk. */
+  causeway: { z0: number; z1: number };
+  /** The grand hotel at the crescent's apex. */
+  hotel: { x: number; z: number };
+  /** The monorail's guideway, from the shore to the hotel, and its stations (distances along). */
+  monorail: { pts: [number, number][]; stops: number[] };
+  /** Land under the island (trunk, fronds, crescent segments, causeway). */
+  land: Capsule[];
 }
 
 /**
@@ -221,7 +244,8 @@ export function airportPlan(R: number, xa: number): AirportPlan {
   ];
   const cx = side > 0 ? conc.x0 - 30 - 110 : conc.x1 + 30;
   const cargo = { x0: cx, x1: cx + 110, z0: R + 150, z1: R + 180 };
-  const fx = side > 0 ? cargo.x0 - 70 : cargo.x1 + 25;
+  // the fire station beyond the cargo terminal, kept inside the airfield
+  const fx = Math.max(-765, Math.min(720, side > 0 ? cargo.x0 - 70 : cargo.x1 + 25));
   return {
     xa,
     rect: { x0: -770, x1: 770, z0: R - 10, z1: R + 375 },
@@ -1044,6 +1068,116 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     const b0 = buildings[live[0]];
     cands.push({ x, z, drop: live, door: kind === 'villa' ? b0.door : door(x, z), size: 20, reach: kind === 'oldhouse' ? 65 : 95, district: b0.district ?? 'villas', plot: kind === 'villa' ? b0.plot : undefined });
   }
+  // ── the palm island (capitals): a trunk out from the beach, fronds of beach villas either side,
+  // a crescent breakwater of resort hotels round it, a causeway and a monorail out to the grand
+  // hotel at the crescent's apex
+  let palm: PalmPlan | undefined;
+  const palmVillas: number[] = [];
+  if (s.kind === 'capital' && big) {
+    const creekMouth = waters.find((w) => w.kind === 'creek')?.pts[0][0] ?? -R;
+    const marinaMouth = hasMarina ? marinaEdge : R;
+    const gapL = creekMouth + 45;
+    const gapR = marinaMouth - 45;
+    const Rc = Math.min(310, (gapR - gapL) / 2 - 15);
+    if (Rc > 180) {
+      const xp = snap((gapL + gapR) / 2);
+      const zBase = shoreZ - 50;
+      const zTip = zBase - 1.15 * Rc;
+      const trunkW = 46;
+      const fronds: PalmPlan['fronds'] = [];
+      const n = 6;
+      for (let k = 0; k < n; k++) {
+        const u = k / (n - 1);
+        const rz = zBase - 0.2 * Rc - u * 0.8 * Rc;
+        const phi = (72 - u * 24) * (Math.PI / 180);
+        const len = Rc * (0.5 + 0.12 * Math.sin(u * Math.PI) - u * 0.14);
+        for (const sd of [-1, 1]) fronds.push({ ax: xp + sd * (trunkW / 2 - 4), az: rz, bx: xp + sd * (trunkW / 2 - 4 + len * Math.sin(phi)), bz: rz - len * Math.cos(phi), w: 36 });
+      }
+      const crescent = { cx: xp, cz: zBase - 0.62 * Rc, r: Rc, w: 30, th: (112 * Math.PI) / 180 };
+      const land: Capsule[] = [[xp, coastRoadZ - 4, xp, zBase + 8, 9], [xp, zBase, xp, zTip, trunkW / 2]];
+      for (const f of fronds) land.push([f.ax, f.az, f.bx, f.bz, f.w / 2]);
+      const arcN = 28;
+      const arcPt = (th: number, rr = crescent.r): [number, number] => [crescent.cx + Math.sin(th) * rr, crescent.cz - Math.cos(th) * rr];
+      for (let k = 0; k < arcN; k++) {
+        const [ax, az] = arcPt(-crescent.th + (2 * crescent.th * k) / arcN);
+        const [bx, bz] = arcPt(-crescent.th + (2 * crescent.th * (k + 1)) / arcN);
+        land.push([ax, az, bx, bz, crescent.w / 2]);
+      }
+      const hotel = { x: crescent.cx, z: crescent.cz - crescent.r };
+      const monoX = xp;
+      const mono: [number, number][] = [
+        [monoX, coastRoadZ - 8],
+        [monoX, zTip + 12],
+        [hotel.x + 15, hotel.z + 30],
+      ];
+      const monoLen = [0, coastRoadZ - 8 - (zTip + 12)];
+      monoLen.push(monoLen[1] + Math.hypot(hotel.x + 15 - monoX, hotel.z + 30 - (zTip + 12)));
+      palm = {
+        xp,
+        zBase,
+        zTip,
+        trunkW,
+        fronds,
+        crescent,
+        causeway: { z0: coastRoadZ, z1: zBase },
+        hotel,
+        monorail: { pts: mono, stops: [0, coastRoadZ - 8 - zBase + (zBase - zTip) * 0.5, monoLen[1], monoLen[2]] },
+        land,
+      };
+      // roads: the trunk boulevard (on from the causeway), a road down each frond, the crescent road
+      pendingLinks.push({ from: [xp, coastRoadZ], to: [xp, zBase], w: 12 });
+      pendingLinks.push({ from: [xp, zBase], to: [xp, zTip + 10], w: 12 });
+      for (const f of fronds) {
+        const dx = f.bx - f.ax;
+        const dz = f.bz - f.az;
+        const len = Math.hypot(dx, dz);
+        const ux = dx / len;
+        const uz = dz / len;
+        const root: [number, number] = [xp, f.az];
+        const tip: [number, number] = [f.bx - ux * 10, f.bz - uz * 10];
+        pendingLinks.push({ from: root, to: tip, w: 7 });
+        // villas both sides of the frond road, facing it, their gardens running down to the beach
+        const ry0 = Math.atan2(-uz, ux);
+        for (const side of [1, -1]) {
+          const nx = -uz * side;
+          const nz = ux * side;
+          const depth = f.w / 2 - 3.5 - 1.5;
+          for (let d = 26; d < len - 18; d += 27) {
+            const px = f.ax + ux * d + nx * (3.5 + depth / 2);
+            const pz = f.az + uz * d + nz * (3.5 + depth / 2);
+            // the plot's front faces the road: towards -n
+            const ry = Math.atan2(-nx, -nz);
+            const hw = rng.range(11, 14);
+            const hd = Math.min(depth - 3, rng.range(8.5, 10));
+            const back = depth / 2 - hd / 2 - 1.5;
+            const x = px - Math.sin(ry) * back;
+            const z = pz - Math.cos(ry) * back;
+            const idx = add({ x, z, w: hw, d: hd, h: rng.range(7.5, 9.5), kind: 'villa', door: [px - nx * (depth / 2 + 1), pz - nz * (depth / 2 + 1)], district: 'villas', plot: { x: px, z: pz, w: 25, d: depth, rot: ry } });
+            palmVillas.push(idx);
+          }
+          void ry0;
+        }
+      }
+      // apartment slabs along the trunk boulevard, clear of the frond roads
+      for (let z = zBase - 14; z > zTip + 24; z -= 26) {
+        if (fronds.some((f) => Math.abs(f.az - z) < 16)) continue;
+        for (const sd of [-1, 1]) add({ x: xp + sd * 15.5, z, w: 11, d: 20, h: rng.range(26, 48), kind: 'slab', role: 'home', door: [xp + sd * 8, z], district: 'marina' });
+      }
+      // resort hotels round the crescent, clear of the apex where the grand hotel stands
+      for (let k = 0; k < 15; k++) {
+        const th = -crescent.th + 0.18 + ((2 * crescent.th - 0.36) * k) / 14;
+        if (Math.abs(th) < 0.38) continue;
+        const [hx, hz] = arcPt(th, crescent.r - 2);
+        add({ x: hx, z: hz, w: 17, d: 17, h: rng.range(18, 34), kind: 'block', role: 'work', door: arcPt(th, crescent.r + 8), district: 'marina' });
+      }
+      // the crescent road behind the hotels
+      for (let k = 0; k < arcN; k++) pendingLinks.push({ from: arcPt(-crescent.th + (2 * crescent.th * k) / arcN, crescent.r + 11), to: arcPt(-crescent.th + (2 * crescent.th * (k + 1)) / arcN, crescent.r + 11), w: 8 });
+    }
+  }
+  for (const idx of palmVillas) {
+    const b = buildings[idx];
+    cands.push({ x: b.plot!.x, z: b.plot!.z, drop: [idx], door: b.door, size: 16, reach: 95, district: 'villas', plot: b.plot });
+  }
   for (const idx of estateVillas) {
     const b = buildings[idx];
     cands.push({ x: b.plot!.x, z: b.plot!.z, drop: [idx], door: b.door, size: Math.min(18, b.plot!.w - 4), reach: 95, district: 'villas', plot: b.plot });
@@ -1179,10 +1313,19 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     compounds,
     roundabouts,
     airport,
+    palm,
   };
   const avoid = (x: number, z: number) => z < coastRoadZ + 8 || nearWater(x, z, 16) || lakes.some((l) => ((x - l.x) / (l.rx + 10)) ** 2 + ((z - l.z) / (l.rz + 10)) ** 2 < 1);
   const out = finish('futuristic', s, rng, R, kept, streets, graph, [plaza], lights, sp, avoid);
   if (airport) out.colliders.push(...airportColliders(airport, R));
+  if (palm) {
+    // the grand hotel's towers, bridge piers and wings
+    const { x: hx, z: hz } = palm.hotel;
+    for (const sd of [-1, 1]) {
+      out.colliders.push({ type: 'box', x: hx + sd * 26, z: hz, hw: 11, hd: 13 });
+      for (let k = 0; k < 4; k++) out.colliders.push({ type: 'box', x: hx + sd * (40 + k * 16), z: hz + k * 2.5, hw: 8, hd: 12 });
+    }
+  }
   return { ...out, features };
 }
 

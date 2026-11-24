@@ -73,13 +73,20 @@ function Explorer({ target }: { target: Target }) {
   const system = w.systems[planet.systemId];
   const civ = settlement ? w.civs[settlement.civId] : region.ownerCivId ? w.civs[region.ownerCivId] : undefined;
   const civColor = civ?.color ?? '#6fd6ff';
-  const terrain = useMemo(() => cloudCity?.terrain ?? generateTerrain(planet, regionIndex, region.biome, settlement ? settlementRadius(settlement) + 20 : 0, settlement ? coastLine(settlement) : undefined, settlement && airportRect(settlement) ? [airportRect(settlement)!] : undefined), [cloudCity, planet, regionIndex, region.biome, settlement]);
+  // the city's layout comes first: its island (if any) raises the terrain under it
+  const cityLayout = useMemo(() => (settlement && !cloudCity ? generateLayout(settlement) : null), [settlement, cloudCity]);
+  const terrain = useMemo(
+    () =>
+      cloudCity?.terrain ??
+      generateTerrain(planet, regionIndex, region.biome, settlement ? settlementRadius(settlement) + 20 : 0, settlement ? coastLine(settlement) : undefined, settlement && airportRect(settlement) ? [airportRect(settlement)!] : undefined, cityLayout?.features?.palm?.land),
+    [cloudCity, planet, regionIndex, region.biome, settlement, cityLayout],
+  );
   const layout = useMemo(() => {
     if (cloudCity) return cloudCity.layout;
-    if (settlement) return generateLayout(settlement);
+    if (cityLayout) return cityLayout;
     // never arrive standing in a lake or on a cliff, and keep landmarks out of the water
     return groundWildLayout(wildLayout(planet.id, regionIndex, terrain.seed, region.name), terrain);
-  }, [cloudCity, settlement, planet.id, regionIndex, terrain, region.name]);
+  }, [cloudCity, cityLayout, planet.id, regionIndex, terrain, region.name]);
   const quality = useApp((s) => s.settings.quality);
   const vegetation = useMemo(() => generateVegetation(terrain, layout, quality), [terrain, layout, quality]);
   sceneDebug.footprints = vegetation.structures.footprints;

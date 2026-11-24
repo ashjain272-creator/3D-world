@@ -91,6 +91,8 @@ export interface CityFeatures {
   airport?: AirportPlan;
   /** A palm-shaped island off the coast (capitals). */
   palm?: PalmPlan;
+  /** Avenues that break the grid: a diagonal and a curved boulevard, each with a planted median. */
+  avenues: { pts: [number, number][]; w: number }[];
   /** Where a safari camp and a camel track go if the city stands in a desert (graded flat). */
   desertSites: { camp: [number, number]; track: [number, number] };
 }
@@ -1247,6 +1249,77 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     add({ x: c.x, z: c.z, w: c.size, d: c.size, h: 9, kind: 'mosqueSmall', role: 'civic', door: c.door, district: c.district, plot: c.plot });
     mosques.push([c.x, c.z]);
   }
+  // ── breaking the grid: a diagonal avenue out from Downtown and a curved boulevard round it. Each
+  // clears ordinary buildings along its line and stops short of anything it may not cut through
+  const avenues: CityFeatures['avenues'] = [];
+  if (big && downtownF) {
+    const protectedKinds: BuildingKind[] = ['mosque', 'mosqueSmall', 'stadium', 'arena', 'themepark', 'mall', 'supertall', 'church', 'temple'];
+    const blocked = (x: number, z: number) =>
+      Math.hypot(x, z) > R - 24 ||
+      z < spineZ + 10 ||
+      lakes.some((l) => ((x - l.x) / (l.rx + 12)) ** 2 + ((z - l.z) / (l.rz + 12)) ** 2 < 1) ||
+      estates.some((e) => Math.abs(x - e.x) < e.w / 2 + 8 && Math.abs(z - e.z) < e.d / 2 + 8) ||
+      compounds.some((c) => Math.abs(x - c.x) < c.w / 2 + 8 && Math.abs(z - c.z) < c.d / 2 + 8) ||
+      buildings.some((b, q) => !removed.has(q) && protectedKinds.includes(b.kind) && Math.abs(x - b.x) < b.w / 2 + 9 && Math.abs(z - b.z) < b.d / 2 + 9);
+    // walk a path in 4 m steps until it meets something it must not cross
+    const trace = (path: [number, number][]): [number, number][] => {
+      if (blocked(path[0][0], path[0][1])) return [];
+      const pts: [number, number][] = [path[0]];
+      for (let i = 0; i < path.length - 1; i++) {
+        const [ax, az] = path[i];
+        const [bx, bz] = path[i + 1];
+        const len = Math.hypot(bx - ax, bz - az);
+        for (let d = 4; d <= len + 0.01; d += 4) {
+          const x = ax + ((bx - ax) * Math.min(d, len)) / len;
+          const z = az + ((bz - az) * Math.min(d, len)) / len;
+          if (blocked(x, z)) return pts;
+        }
+        pts.push([bx, bz]);
+      }
+      return pts;
+    };
+    const lengthOf = (pts: [number, number][]) => pts.reduce((sum, p, k) => (k ? sum + Math.hypot(p[0] - pts[k - 1][0], p[1] - pts[k - 1][1]) : 0), 0);
+    const lay = (pts: [number, number][], w: number) => {
+      if (pts.length < 3) return;
+      // clear the corridor of ordinary buildings, lay the road
+      for (const [q, b] of buildings.entries()) {
+        if (removed.has(q) || protectedKinds.includes(b.kind)) continue;
+        const bx = b.plot?.x ?? b.x;
+        const bz = b.plot?.z ?? b.z;
+        const rad = Math.max(b.plot?.w ?? b.w, b.plot?.d ?? b.d) / 2;
+        if (distToPolyline(pts, bx, bz) < w / 2 + rad + 2) removed.add(q);
+      }
+      for (let k = 0; k < pts.length - 1; k++) pendingLinks.push({ from: pts[k], to: pts[k + 1], w });
+      avenues.push({ pts, w });
+    };
+    // the diagonal: out from Downtown's eastern side across the mixed districts; of a fan of starts
+    // and angles, the longest clear line
+    let bestDiag: [number, number][] = [];
+    for (const dz of [-60, -30, 0, 30, 60])
+      for (const ang of [0.35, 0.5, 0.62, 0.75, 0.9, -0.5, -0.7]) {
+        const d0: [number, number] = [downtownF.x1 + 16, downtownF.z + dz];
+        const path: [number, number][] = [d0];
+        for (let k = 1; k <= 14; k++) path.push([d0[0] + k * 30 * Math.cos(ang), d0[1] + k * 30 * Math.sin(ang)]);
+        const pts = trace(path);
+        if (lengthOf(pts) > lengthOf(bestDiag)) bestDiag = pts;
+      }
+    if (lengthOf(bestDiag) > 120) lay(bestDiag, 14);
+    // the curved boulevard: an arc round Downtown at one of several radii and quarters
+    let bestArc: [number, number][] = [];
+    for (const extra of [50, 75, 100])
+      for (const start of [0.5, 0.85, 1.2, -0.3, 0.15]) {
+        const path: [number, number][] = [];
+        const ra = downtownF.a + extra;
+        const rb = downtownF.b + extra * 0.85;
+        for (let k = 0; k <= 16; k++) {
+          const th = Math.PI * start + (k / 16) * Math.PI * 0.6;
+          path.push([downtownF.x + Math.cos(th) * ra, downtownF.z + Math.sin(th) * rb]);
+        }
+        const pts = trace(path);
+        if (lengthOf(pts) > lengthOf(bestArc)) bestArc = pts;
+      }
+    if (lengthOf(bestArc) > 120) lay(bestArc, 12);
+  }
   const kept = buildings.filter((_, q) => !removed.has(q));
 
   // ── the airport (capitals): its access road leaves the inland expressway along a street line
@@ -1299,6 +1372,27 @@ function futuristic(s: Settlement, rng: Rng): Layout {
   const widthOf = (ax: number, az: number, bz: number) =>
     az === bz ? (az === spineZ ? 16 : az === coastRoadZ ? 12 : az === arterialZ ? 14 : majorH(az) ? 11 : 7) : majorV(ax) ? 11 : 7;
   const villaZone = (z: Zone) => z === 'coast' || z === 'outer' || z === 'estate';
+  // irregular blocks in the mixed districts: some side streets between neighbouring blocks are
+  // dropped (never a collector, and at most one at any crossing), so blocks come in varied sizes
+  {
+    const touched = new Set<string>();
+    const cellZone = (i: number, j: number) => zoneOf((i + 0.5) * sp, (j + 0.5) * sp);
+    for (let i = -n; i <= n; i++)
+      for (let j = -n; j <= n; j++) {
+        const x = i * sp;
+        const z = j * sp;
+        if (rng.chance(0.3) && !majorV(x) && cellZone(i - 1, j) === 'mixed' && cellZone(i, j) === 'mixed' && !touched.has(`${i},${j}`) && !touched.has(`${i},${j + 1}`)) {
+          closedV.add(`${i},${j}`);
+          touched.add(`${i},${j}`);
+          touched.add(`${i},${j + 1}`);
+        }
+        if (rng.chance(0.3) && !majorH(z) && cellZone(i, j - 1) === 'mixed' && cellZone(i, j) === 'mixed' && !touched.has(`${i},${j}`) && !touched.has(`${i + 1},${j}`)) {
+          closedH.add(`${i},${j}`);
+          touched.add(`${i},${j}`);
+          touched.add(`${i + 1},${j}`);
+        }
+      }
+  }
   const roundabouts: [number, number][] = [];
   for (const [key, a] of idx) {
     const [i, j] = key.split(',').map(Number);
@@ -1367,11 +1461,13 @@ function futuristic(s: Settlement, rng: Rng): Layout {
     metro: { z: spineZ + 4, x0: -chordSpine + 10, x1: chordSpine - 10, stations: [-0.6, -0.2, 0.2, 0.6].map((f) => Math.round(f * chordSpine)) },
     estates,
     jbr,
-    jlt,
+    // lake-tower podiums the avenues cut through go with their towers
+    jlt: jlt.filter((c) => avenues.every((av) => distToPolyline(av.pts, c.x, c.z) > av.w / 2 + c.s / 2 + 1)),
     compounds,
     roundabouts,
     airport,
     palm,
+    avenues,
     desertSites: desertSitesFor(R),
   };
   const avoid = (x: number, z: number) => z < coastRoadZ + 8 || nearWater(x, z, 16) || lakes.some((l) => ((x - l.x) / (l.rx + 10)) ** 2 + ((z - l.z) / (l.rz + 10)) ** 2 < 1);

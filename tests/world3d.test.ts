@@ -327,6 +327,36 @@ describe('futuristic districts', () => {
     expect(generateDistricts(l, y0, true).desert).toBeUndefined();
   });
 
+  it('breaks the grid with a diagonal avenue and a curved boulevard that nothing stands in', () => {
+    for (const s of cities.filter((c) => c.kind === 'capital' || c.kind === 'city')) {
+      const l = generateLayout(s);
+      const av = l.features!.avenues;
+      expect(av.length).toBeGreaterThanOrEqual(1);
+      const near = (pts: [number, number][], x: number, z: number) => {
+        let best = Infinity;
+        for (let i = 0; i < pts.length - 1; i++) {
+          const [ax, az] = pts[i];
+          const [bx, bz] = pts[i + 1];
+          const dx = bx - ax;
+          const dz = bz - az;
+          const u = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+          best = Math.min(best, Math.hypot(x - ax - dx * u, z - az - dz * u));
+        }
+        return best;
+      };
+      for (const a of av) {
+        let len = 0;
+        for (let k = 1; k < a.pts.length; k++) len += Math.hypot(a.pts[k][0] - a.pts[k - 1][0], a.pts[k][1] - a.pts[k - 1][1]);
+        expect(len).toBeGreaterThan(120);
+        // no building's centre lies within the carriageway, and no lake-tower podium sits on it
+        for (const b of l.buildings) expect(near(a.pts, b.plot?.x ?? b.x, b.plot?.z ?? b.z), `${b.kind} on the avenue`).toBeGreaterThan(a.w / 2);
+        for (const c of l.features!.jlt) expect(near(a.pts, c.x, c.z)).toBeGreaterThan(a.w / 2 + c.s / 2);
+      }
+      // at least one avenue is not a straight grid line
+      expect(av.some((a) => a.pts.some((p, k) => k > 0 && Math.abs(p[0] - a.pts[k - 1][0]) > 1 && Math.abs(p[1] - a.pts[k - 1][1]) > 1))).toBe(true);
+    }
+  });
+
   it('runs trains along the metro and boats on the water', () => {
     const s = cities.find((c) => c.kind === 'capital')!;
     const l = generateLayout(s);

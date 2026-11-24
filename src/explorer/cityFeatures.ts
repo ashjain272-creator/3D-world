@@ -32,6 +32,26 @@ export function cityFeatures(out: DistrictData, layout: Layout, y0: number, warm
   for (const e of f.estates) estate(out, add, e, r, warm);
   for (const c of f.compounds) compound(add, c);
   if (f.palm) palmIsland(out, add, f.palm, r, warm);
+  // the avenues that break the grid: a raised planted median with palms and lamp posts
+  for (const av of f.avenues ?? [])
+    for (let k = 0; k < av.pts.length - 1; k++) {
+      const [ax, az] = av.pts[k];
+      const [bx, bz] = av.pts[k + 1];
+      const len = Math.hypot(bx - ax, bz - az);
+      const t = Math.atan2(bx - ax, bz - az);
+      add('box', 'stone', (ax + bx) / 2, 0, (az + bz) / 2, 3.2, 0.25, len + 0.4, '#d8d2c4', t);
+      add('box', 'lawn', (ax + bx) / 2, 0.25, (az + bz) / 2, 2.6, 0.08, len + 0.4, '#5e9a48', t);
+      for (let d = 7; d < len; d += 14) {
+        const x = ax + ((bx - ax) * d) / len;
+        const z = az + ((bz - az) * d) / len;
+        if (warm) palm(add, x, z, 6 + r(k * 13 + d) * 3, r, 300 + k * 13 + d, 0.3);
+        else roundTree(add, x, z, 5, '#4f7f3c', r, 300 + k * 13 + d);
+        if (Math.round(d / 14) % 2 === 0) {
+          add('cyl', 'metal', x + Math.cos(t) * 0.9, 0.3, z - Math.sin(t) * 0.9, 0.15, 7, 0.15, '#3a3e44');
+          for (const sd of [-1, 1]) add('box', 'glow', x + Math.cos(t) * (0.9 + sd * 1.4), 7, z - Math.sin(t) * (0.9 + sd * 1.4), 1.2, 0.15, 0.4, '#fff2d6', t + Math.PI / 2);
+        }
+      }
+    }
   for (const [x, z] of f.roundabouts ?? []) roundabout(add, x, z, r, warm);
 }
 

@@ -5,14 +5,17 @@ import * as THREE from 'three';
  * size, colour, turn) and built into one InstancedMesh per shape and material. Boxes, cylinders
  * and cones stand on their base; spheres are centred.
  */
-export type Shape = 'box' | 'sphere' | 'cyl' | 'cone';
-export type Mat = 'white' | 'wall' | 'charcoal' | 'window' | 'railing' | 'glow' | 'leaf' | 'trunk' | 'lawn' | 'paving' | 'asphalt' | 'paint' | 'water' | 'car' | 'carGlass' | 'metal' | 'plinth';
+export type Shape = 'box' | 'sphere' | 'cyl' | 'cone' | 'hemi' | 'oct';
+export type Mat = 'white' | 'wall' | 'charcoal' | 'window' | 'railing' | 'glow' | 'leaf' | 'trunk' | 'lawn' | 'paving' | 'asphalt' | 'paint' | 'water' | 'car' | 'carGlass' | 'metal' | 'plinth' | 'figure' | 'court' | 'glass' | 'sand' | 'gold' | 'stone';
 
 const GEOMETRY: Record<Shape, THREE.BufferGeometry> = {
   box: new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0),
   sphere: new THREE.IcosahedronGeometry(0.5, 2),
   cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 10).translate(0, 0.5, 0),
   cone: new THREE.ConeGeometry(0.5, 1, 10).translate(0, 0.5, 0),
+  // a dome: half a sphere standing on its base (full height at y scale 2)
+  hemi: new THREE.SphereGeometry(0.5, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+  oct: new THREE.CylinderGeometry(0.5, 0.5, 1, 8).translate(0, 0.5, 0),
 };
 
 interface Item {
@@ -26,14 +29,15 @@ export class Kit {
   private e = new THREE.Euler();
   count = 0;
 
-  add(shape: Shape, mat: Mat, x: number, y: number, z: number, sx: number, sy: number, sz: number, color: THREE.ColorRepresentation = '#ffffff', rotY = 0) {
+  /** Turns are applied yaw, then pitch about x, then roll about z (Euler order YXZ). */
+  add(shape: Shape, mat: Mat, x: number, y: number, z: number, sx: number, sy: number, sz: number, color: THREE.ColorRepresentation = '#ffffff', rotY = 0, rotX = 0, rotZ = 0) {
     const key = `${shape}|${mat}`;
     let g = this.groups.get(key);
     if (!g) {
       g = { shape, mat, items: [] };
       this.groups.set(key, g);
     }
-    this.q.setFromEuler(this.e.set(0, rotY, 0));
+    this.q.setFromEuler(this.e.set(rotX, rotY, rotZ, 'YXZ'));
     const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), this.q, new THREE.Vector3(sx, sy, sz));
     g.items.push({ m, c: new THREE.Color(color) });
     this.count++;

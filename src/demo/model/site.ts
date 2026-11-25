@@ -32,10 +32,10 @@ export function buildSite(k: Kit, outside?: Kit) {
     k.add('box', 'paving', x, 0, z, w, base + 0.12, d, '#e4e1da');
   // towers behind a podium arcade
   const towers = [
-    { x: -70, z: -50, w: 26, d: 22, w0: 14, d0: 12, floors: 30 },
-    { x: -2, z: -64, w: 28, d: 22, w0: 15, d0: 12, floors: 34 },
-    { x: 70, z: -52, w: 28, d: 24, w0: 15, d0: 12, floors: 38 },
-    { x: 34, z: -84, w: 20, d: 14, w0: 10, d0: 9, floors: 18 },
+    { x: -70, z: -50, w: 26, d: 22, w0: 14, d0: 12, floors: 30, crown: 'pergola' as const },
+    { x: -2, z: -64, w: 28, d: 22, w0: 15, d0: 12, floors: 34, crown: 'frame' as const },
+    { x: 70, z: -52, w: 28, d: 24, w0: 15, d0: 12, floors: 38, crown: 'stepped' as const },
+    { x: 34, z: -84, w: 20, d: 14, w0: 10, d0: 9, floors: 18, crown: 'pergola' as const },
   ];
   for (const t of towers) {
     tower(k, { ...t, seed: rng(t.floors * 13 + t.x) });
@@ -61,7 +61,53 @@ export function buildSite(k: Kit, outside?: Kit) {
   }
   k.add('box', 'white', px - 31, base, pz, 6, 3, 8, WHITE);
   k.add('box', 'window', px - 31, base + 0.2, pz, 6.2, 2.4, 6, '#ffe2ae');
+  // cabanas along the far side, towels on the loungers, a pool bar
+  for (let a = -18; a <= 18; a += 9) {
+    for (const [q, w] of [[-1.6, 0.12], [1.6, 0.12]] as const) k.add('box', 'white', px + a + q, base, pz - 14.2, w, 2.6, w, WHITE);
+    k.add('box', 'white', px + a, base + 2.6, pz - 14.2, 3.6, 0.12, 2.6, WHITE);
+    for (const q of [-1.6, 1.6]) k.add('box', 'railing', px + a + q, base + 0.3, pz - 14.2, 0.04, 2.2, 2.4, '#ffffff');
+    k.add('box', 'white', px + a, base, pz - 14.2, 2.4, 0.5, 1.6, '#f2ede3');
+  }
+  for (let a = -20; a <= 20; a += 3.4) for (const s of [-1, 1]) if (r() < 0.5) k.add('box', 'figure', px + a, base + 0.48, pz + s * 12.2, 0.7, 0.04, 1.2, ['#e8605a', '#4aa3d8', '#f2c94c', '#ffffff'][Math.floor(r() * 4)]);
+  k.add('box', 'charcoal', px + 30, base, pz - 8, 6, 1.1, 1.6, '#3b3e44');
+  k.add('box', 'white', px + 30, base + 2.8, pz - 8, 8, 0.25, 4, WHITE);
+  for (const q of [-3.6, 3.6]) k.add('box', 'white', px + 30 + q, base, pz - 8, 0.2, 2.8, 0.2, WHITE);
   keep.push({ x: px, z: pz, w: 76, d: 32 });
+  // a tennis court, a play area and a pavilion in the lawns
+  const tc = { x: 105, z: -78 };
+  k.add('box', 'court', tc.x, base, tc.z, 18, 0.06, 36, '#2f6a8a');
+  k.add('box', 'court', tc.x, base, tc.z, 11, 0.08, 24, '#3a85b0');
+  for (const [w, d, ox, oz] of [[11, 0.1, 0, 12], [11, 0.1, 0, -12], [0.1, 24, 5.5, 0], [0.1, 24, -5.5, 0], [0.1, 24, 4.1, 0], [0.1, 24, -4.1, 0], [8.2, 0.1, 0, 6.4], [8.2, 0.1, 0, -6.4], [0.1, 12.8, 0, 0]] as const) k.add('box', 'paint', tc.x + ox, base + 0.09, tc.z + oz, w, 0.02, d, '#ffffff');
+  k.add('box', 'railing', tc.x, base, tc.z, 12, 1.0, 0.05, '#ffffff');
+  for (const [w, d, ox, oz] of [[18, 0.06, 0, 18], [18, 0.06, 0, -18], [0.06, 36, 9, 0], [0.06, 36, -9, 0]] as const) k.add('box', 'railing', tc.x + ox, base, tc.z + oz, w, 3, d, '#cfd8dc');
+  keep.push({ x: tc.x, z: tc.z, w: 20, d: 38 });
+  const pg = { x: -105, z: -78 };
+  k.add('box', 'court', pg.x, base, pg.z, 20, 0.06, 16, '#d85a3a');
+  k.add('box', 'white', pg.x - 4, base, pg.z, 4, 3, 4, '#f2c94c');
+  k.add('cone', 'white', pg.x - 4, base + 3, pg.z, 5, 2, 5, '#e8605a');
+  k.add('box', 'white', pg.x - 4, base + 1, pg.z + 3.5, 1.2, 0.2, 4, '#4aa3d8', 0, -0.45);
+  for (const q of [-2, 2]) k.add('box', 'metal', pg.x + 5 + q, base, pg.z - 3, 0.12, 2.6, 0.12, '#9aa0a6');
+  k.add('box', 'metal', pg.x + 5, base + 2.5, pg.z - 3, 4.2, 0.12, 0.12, '#9aa0a6');
+  k.add('cyl', 'white', pg.x + 4, base, pg.z + 4, 3, 0.4, 3, '#4aa3d8');
+  keep.push({ x: pg.x, z: pg.z, w: 22, d: 18 });
+  // the entrance plaza on the boulevard: gate pillars, a gatehouse, a round fountain, flagpoles
+  const ez = 72;
+  k.add('box', 'paving', -118, base, ez, 26, 0.12, 18, '#dcd6ca');
+  for (const s of [-1, 1]) {
+    k.add('box', 'stone', -128, base, ez + s * 7, 1.6, 3.4, 1.6, '#cdbfa6');
+    k.add('box', 'glow', -128, base + 3.4, ez + s * 7, 0.9, 0.3, 0.9, '#fff0d0');
+  }
+  k.add('box', 'white', -118, base, ez - 11, 6, 3.2, 4, WHITE);
+  k.add('box', 'window', -118, base + 0.4, ez - 11, 6.2, 2.2, 3, '#ffe2ae');
+  k.add('cyl', 'white', -114, base, ez, 9, 0.6, 9, WHITE);
+  k.add('cyl', 'water', -114, base + 0.3, ez, 8, 0.35, 8, '#43c3e6');
+  k.add('cyl', 'white', -114, base, ez, 1.2, 1.6, 1.2, WHITE);
+  k.add('cone', 'glow', -114, base + 1.6, ez, 0.4, 2.4, 0.4, '#e6f6ff');
+  for (let q = 0; q < 3; q++) {
+    k.add('cyl', 'metal', -108, base, ez - 4 + q * 4, 0.12, 9, 0.12, '#d0d4d8');
+    k.add('box', 'figure', -108, base + 7.6, ez - 4 + q * 4 + 0.8, 0.04, 1.1, 1.6, ['#c8102e', '#ffffff', '#00732f'][q]);
+  }
+  keep.push({ x: -118, z: ez, w: 28, d: 26 });
   // terraced mid-rise blocks in front, and two on the east side
   const mids = [
     { x: -88, z: 42, w: 26, d: 18, floors: 5 },
@@ -89,6 +135,25 @@ export function buildSite(k: Kit, outside?: Kit) {
   ];
   for (const p of paths) {
     k.add('box', 'paving', p.x, base, p.z, p.w, 0.1, p.d, '#ebe7df');
+    {
+      const long = p.w > p.d;
+      const len = long ? p.w : p.d;
+      for (let a = -len / 2 + 9; a < len / 2 - 4; a += 18) {
+        // a bench beside the path, a tall lamp opposite, people strolling
+        const bx = p.x + (long ? a : -p.d / 2 - 0.9);
+        const bz = p.z + (long ? -p.d / 2 - 0.9 : a);
+        k.add('box', 'stone', bx, base, bz, long ? 1.8 : 0.5, 0.45, long ? 0.5 : 1.8, '#d8cfbd');
+        k.add('box', 'trunk', bx, base + 0.45, bz, long ? 1.8 : 0.5, 0.06, long ? 0.5 : 1.8, '#8a6a4a');
+        const lx = p.x + (long ? a + 4 : p.d / 2 + 1.2);
+        const lz = p.z + (long ? p.d / 2 + 1.2 : a + 4);
+        k.add('cyl', 'charcoal', lx, base, lz, 0.14, 4.2, 0.14, '#2e3034');
+        k.add('sphere', 'glow', lx, base + 4.3, lz, 0.45, 0.45, 0.45, '#ffe8c0');
+      }
+      for (let i = 0; i < len / 14; i++) {
+        const a = -len / 2 + r() * len;
+        person(k, p.x + (long ? a : (r() - 0.5) * p.d * 0.7), base + 0.1, p.z + (long ? (r() - 0.5) * p.d * 0.7 : a), r);
+      }
+    }
     const long = p.w > p.d;
     const len = long ? p.w : p.d;
     for (let a = -len / 2 + 4; a < len / 2; a += 9) {
@@ -98,6 +163,12 @@ export function buildSite(k: Kit, outside?: Kit) {
       k.add('box', 'glow', bx, base + 0.62, bz, 0.26, 0.12, 0.26, '#ffe2b0');
     }
   }
+  // people on the pool deck and round the plaza
+  for (let i = 0; i < 40; i++) person(k, px + (r() - 0.5) * 66, base + 0.12, pz + (r() < 0.5 ? -1 : 1) * (10 + r() * 4), r);
+  for (let i = 0; i < 8; i++) person(k, -122 + r() * 10, base + 0.12, 64 + r() * 16, r);
+  // a drop-off loop with parked cars by the podium
+  k.add('box', 'asphalt', -40, base, -18, 40, 0.08, 7, '#4a4e54');
+  for (let a = -16; a <= 16; a += 5.5) car(k, -40 + a, -18, 0, r);
   // hedges along the site edge
   for (const [x, z, w, d] of [
     [0, -98, 250, 1.4],
@@ -114,7 +185,8 @@ export function buildSite(k: Kit, outside?: Kit) {
     const x = -124 + r() * 248;
     const z = -94 + r() * 188;
     if (!clear(x, z, 2)) continue;
-    tree(k, x, base, z, 5.5 + r() * 4.5, r);
+    if (r() < 0.12) cypress(k, x, base, z, 9 + r() * 4, r);
+    else tree(k, x, base, z, 5.5 + r() * 4.5, r);
     keep.push({ x, z, w: 3.6, d: 3.6 });
     placed++;
   }
@@ -132,6 +204,15 @@ export function buildSite(k: Kit, outside?: Kit) {
   }
 }
 
+const CLOTHES = ['#f4f4f2', '#1e2a3a', '#c8102e', '#4aa3d8', '#2f4f3f', '#e8a030', '#6a4a8a', '#d8d2c4'];
+
+/** A scale-model figure: a body in coloured clothes and a head. */
+export function person(k: Kit, x: number, y: number, z: number, r: () => number) {
+  const h = 1.55 + r() * 0.3;
+  k.add('cyl', 'figure', x, y, z, 0.42, h * 0.82, 0.32, CLOTHES[Math.floor(r() * CLOTHES.length)], r() * 6);
+  k.add('sphere', 'figure', x, y + h * 0.9, z, 0.26, 0.3, 0.26, ['#e8c4a0', '#c89870', '#8a5a3a', '#f0d0b0'][Math.floor(r() * 4)]);
+}
+
 /** A model tree: a slim trunk and a round, slightly lumpy canopy of foam-green blobs. */
 export function tree(k: Kit, x: number, y: number, z: number, h: number, r: () => number) {
   const col = LEAVES[Math.floor(r() * LEAVES.length)];
@@ -139,6 +220,12 @@ export function tree(k: Kit, x: number, y: number, z: number, h: number, r: () =
   const s = h * 0.62;
   k.add('sphere', 'leaf', x, y + h * 0.62, z, s, s * 0.9, s, col);
   k.add('sphere', 'leaf', x + (r() - 0.5) * s * 0.5, y + h * 0.78, z + (r() - 0.5) * s * 0.5, s * 0.62, s * 0.58, s * 0.62, col);
+}
+
+/** A slim columnar tree. */
+function cypress(k: Kit, x: number, y: number, z: number, h: number, r: () => number) {
+  k.add('cyl', 'trunk', x, y, z, 0.22, h * 0.15, 0.22, '#5b4636');
+  k.add('sphere', 'leaf', x, y + h * 0.55, z, 1.7, h * 0.85, 1.7, LEAVES[Math.floor(r() * 3) + 3]);
 }
 
 /**
@@ -179,6 +266,12 @@ function boulevard(k: Kit, pts: [number, number][], r: () => number) {
       const [yx, yz] = off(s * 10.9);
       k.add('box', 'paint', yx, 0.06, yz, L, 0.02, 0.14, '#e8c040', yaw);
     }
+    // a zebra crossing at the start of each long stretch
+    if (L > 60)
+      for (let q = -9; q <= 9; q += 1.6) {
+        const [zx, zz] = off(q, -L / 2 + 12);
+        k.add('box', 'paint', zx, 0.065, zz, 4, 0.02, 0.8, '#f2f2f2', yaw);
+      }
     // trees on the median and both pavements; lamps between them
     for (let a = -L / 2 + 4; a < L / 2; a += 9) {
       const [tx, tz] = off(0, a);
@@ -225,22 +318,19 @@ function car(k: Kit, x: number, z: number, yaw: number, r: () => number) {
 }
 
 /** The model table: a black lacquered frame round the site and a plinth beneath it. */
-export function buildPlinth(k: Kit) {
-  const x0 = -185;
-  const x1 = 175;
-  const z0 = -140;
-  const z1 = 165;
+export function buildPlinth(k: Kit, x0 = -185, x1 = 175, z0 = -140, z1 = 165) {
   const cx = (x0 + x1) / 2;
   const cz = (z0 + z1) / 2;
   const W = x1 - x0;
   const D = z1 - z0;
   k.add('box', 'plinth', cx, -30, cz, W + 8, 30, D + 8, '#111214');
+  const rim = Math.max(4, W / 90);
   for (const [x, z, w, d] of [
-    [cx, z0 - 2, W + 8, 4],
-    [cx, z1 + 2, W + 8, 4],
-    [x0 - 2, cz, 4, D + 8],
-    [x1 + 2, cz, 4, D + 8],
+    [cx, z0 - rim / 2, W + 2 * rim, rim],
+    [cx, z1 + rim / 2, W + 2 * rim, rim],
+    [x0 - rim / 2, cz, rim, D + 2 * rim],
+    [x1 + rim / 2, cz, rim, D + 2 * rim],
   ])
-    k.add('box', 'plinth', x, -0.5, z, w, 3.2, d, '#16171a');
+    k.add('box', 'plinth', x, -0.5, z, w, 3.2 * (rim / 4), d, '#16171a');
   k.add('box', 'lawn', cx, -0.3, cz, W, 0.3, D, '#c9c4b8');
 }

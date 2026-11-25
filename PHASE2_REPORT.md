@@ -1036,6 +1036,41 @@ A standalone page, `model-demo.html` (code in `src/demo/model/`), tries out the 
   - ambient occlusion;
   - soft bloom on the lights;
   - a tilt-shift blur that makes the scene read as a miniature.
-- **Toggles:** view (model, front, aerial, street, pool), light (dusk or day), setting (on a black model table, or in the city with more towers round it), and miniature blur on or off.
+- **Toggles:** scene, view (model, front, aerial, street, close), light (dusk or day), setting (on a black model table, or in the city), and miniature blur on or off.
+
+**Second pass: more detail**
+- **Towers:**
+  - every window framed with a centre mullion and a transom;
+  - a white divider between each pair of balconies, with planters on some;
+  - stone-clad lobby piers and band;
+  - three kinds of crown: a pergola over a penthouse, a tall open frame lit along its edges, or stepped glass floors.
+- **Site:**
+  - an entrance plaza with gate pillars, a gatehouse, a round fountain and flagpoles;
+  - pool cabanas, towels on the loungers and a pool bar;
+  - a tennis court with lines and a net, and a play area with a slide and swings;
+  - a drop-off loop with parked cars;
+  - benches and tall lamps along every path, zebra crossings, and columnar trees among the round ones;
+  - about 250 people.
+
+**Second scene: Downtown** (`downtown.ts`), after the downtown sales model:
+- **Supertall:** about 680 m to the tip of the spire. It has a Y-shaped plan of three wings round a hexagonal core, and the wings set back one at a time in a spiral. Every floor's windows are lit cool white, with silver fins up the wings, blue light at the wing ends, and a staged spire.
+- **Park:** round the supertall, with pools and palms.
+- **Lake:** two rounded lobes, a promenade, palms, a boardwalk, an arc of 70 lit fountain jets, and rings of light in the water.
+- **Glass towers:** 21 of them, each with a band of windows on every floor, white floor lines, mullions and blue or violet corner light strips.
+  - plans: square, chamfered, round and slim;
+  - some set back, one twisted;
+  - crowns: spires with beacons, sloping tops, helipads and lit rings.
+- **Mall:** four storeys of cream panels and lit glass bands, glazed entrance halls, a roof of barrel skylights with a glass dome, and a four-level car park.
+- **Souk:** across the lake, with arcades of lit arches, seven domes, crenellations and wind towers.
+- **Old town:** a street grid of sand-coloured courtyard blocks, five to nine floors, with:
+  - arched windows lit warm;
+  - shopfronts behind arcades;
+  - crenellated parapets, wind towers and roof pergolas;
+  - a pool and palms in each courtyard.
+- **Mid-rises:** smaller glass ones fill the rest of the grid.
+- **Roads:**
+  - a ring boulevard with a palm median, lamps and cars;
+  - a 10-lane highway with sign gantries and traffic;
+  - an elevated metro with a train and a station under a gold shell.
 
 Screenshots: `docs/screenshots/model-demo/`.

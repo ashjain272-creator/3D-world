@@ -14,7 +14,7 @@ export function windowLight(r: () => number, lit = 0.86): string {
   return WARM[Math.floor(r() * WARM.length)];
 }
 
-type P2 = [number, number];
+export type P2 = [number, number];
 
 /** Outline of a cross-shaped plan (a w × d0 bar crossed by a w0 × d bar), counter-clockwise. */
 function crossPlan(w: number, d: number, w0: number, d0: number): P2[] {
@@ -38,7 +38,7 @@ function crossPlan(w: number, d: number, w0: number, d0: number): P2[] {
   ];
 }
 
-interface Edge {
+export interface Edge {
   mx: number;
   mz: number;
   dx: number;
@@ -49,7 +49,7 @@ interface Edge {
   yaw: number;
 }
 
-function edges(pts: P2[], ox: number, oz: number): Edge[] {
+export function edges(pts: P2[], ox: number, oz: number): Edge[] {
   // outward normals: the plan is counter-clockwise seen from above with +z towards the viewer
   const area = pts.reduce((s, p, i) => {
     const q = pts[(i + 1) % pts.length];
@@ -75,6 +75,8 @@ export interface TowerOpts {
   floors: number;
   seed: () => number;
   lit?: number;
+  /** The top: a pergola over a penthouse, a tall open white frame, or stepped set-back floors. */
+  crown?: 'pergola' | 'frame' | 'stepped';
 }
 
 /**
@@ -107,7 +109,13 @@ export function tower(k: Kit, o: TowerOpts) {
         const [px, pz] = at(a, -0.2);
         if (b === accent && f > 1) k.add('box', 'charcoal', px, y, pz, bw + 0.02, fh, 0.12, CHARCOAL, e.yaw);
         else if (f === 0) k.add('box', 'window', px, 0.15, pz, bw - 0.22, fh * 2 - 0.9, 0.1, '#ffe6bc', e.yaw);
-        else k.add('box', 'window', px, y + 0.4, pz, bw - 0.36, fh - 0.85, 0.1, windowLight(r, lit), e.yaw);
+        else {
+          k.add('box', 'window', px, y + 0.4, pz, bw - 0.36, fh - 0.85, 0.1, windowLight(r, lit), e.yaw);
+          // the frame: a centre mullion and a transom light across the top
+          const [mx, mz] = at(a, -0.12);
+          k.add('box', 'white', mx, y + 0.4, mz, 0.07, fh - 0.85, 0.05, WHITE, e.yaw);
+          k.add('box', 'white', mx, y + fh - 1.05, mz, bw - 0.36, 0.06, 0.05, WHITE, e.yaw);
+        }
       }
       // the slab edge: a crisp white band at every floor
       if (f > 0) {
@@ -124,9 +132,14 @@ export function tower(k: Kit, o: TowerOpts) {
         const [rx, rz] = at((a0 + a1) / 2, 1.65);
         k.add('box', 'railing', rx, y - 0.02, rz, len, 1.0, 0.05, '#d8ecf2', e.yaw);
         k.add('box', 'white', rx, y + 0.98, rz, len, 0.07, 0.09, WHITE, e.yaw);
-        for (const s of [a0, a1]) {
-          const [qx, qz] = at(s, 0.85);
-          k.add('box', 'white', qx, y - 0.02, qz, 0.18, fh - 0.3, 1.7, WHITE, e.yaw);
+        // a white divider between each pair of flats, and planters on some balconies
+        for (let b = b0; b <= b1; b += 2) {
+          const [qx, qz] = at(-e.L / 2 + b * bw, 0.85);
+          k.add('box', 'white', qx, y - 0.02, qz, 0.16, fh - 0.3, 1.7, WHITE, e.yaw);
+          if (b < b1 && r() < 0.35) {
+            const [tx, tz] = at(-e.L / 2 + (b + 1) * bw, 1.35);
+            k.add('box', 'leaf', tx, y - 0.02, tz, 1.4, 0.55, 0.45, '#4a7d34', e.yaw);
+          }
         }
       }
     }
@@ -137,7 +150,13 @@ export function tower(k: Kit, o: TowerOpts) {
     for (const b of fins) {
       const [fx, fz] = at(-e.L / 2 + b * bw, 0.25);
       k.add('box', 'white', fx, 0, fz, 0.42, H + 0.6, 0.9, WHITE, e.yaw);
+      // stone-clad piers along the lobby
+      const [sx, sz] = at(-e.L / 2 + b * bw, 0.35);
+      k.add('box', 'stone', sx, 0, sz, 0.9, fh * 2, 1.1, '#cdbfa6', e.yaw);
     }
+    // a stone plinth band over the lobby, with a lit soffit
+    const [lx, lz] = at(0, 0.3);
+    k.add('box', 'stone', lx, fh * 2 - 0.5, lz, e.L + 0.6, 0.55, 1.0, '#cdbfa6', e.yaw);
     // the crown: a deep white band with a lit groove
     const [cx, cz] = at(0, 0.3);
     k.add('box', 'white', cx, H, cz, e.L + 0.9, 1.6, 1.2, WHITE, e.yaw);
@@ -153,6 +172,26 @@ export function tower(k: Kit, o: TowerOpts) {
   // the roof: a slab, a set-back penthouse with a lit glass band, plant, and a white pergola
   k.add('box', 'white', x, H, z, w - 0.6, 0.6, d0 - 0.6, WHITE);
   k.add('box', 'white', x, H, z, w0 - 0.6, 0.6, d - 0.6, WHITE);
+  if (o.crown === 'frame') {
+    // a tall open frame rising above the roof, lit along its edges
+    const fw = w0 + 1;
+    const fd = d0 + 1;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) k.add('box', 'white', x + (sx * fw) / 2, H, z + (sz * fd) / 2, 0.8, 9, 0.8, WHITE);
+    for (const s of [-1, 1]) {
+      k.add('box', 'white', x, H + 8.2, z + (s * fd) / 2, fw + 0.8, 0.9, 0.8, WHITE);
+      k.add('box', 'white', x + (s * fw) / 2, H + 8.2, z, 0.8, 0.9, fd, WHITE);
+      k.add('box', 'glow', x, H + 8.0, z + (s * fd) / 2, fw - 0.4, 0.1, 0.9, '#e6f0ff');
+      k.add('box', 'glow', x + (s * fw) / 2, H + 8.0, z, 0.9, 0.1, fd - 0.4, '#e6f0ff');
+    }
+  } else if (o.crown === 'stepped') {
+    // two set-back floors of lit glass, each with its own white edge
+    for (let q = 0; q < 2; q++) {
+      const sw = w0 * (0.85 - q * 0.2);
+      const sd = d0 * (1.4 - q * 0.3);
+      k.add('box', 'window', x, H + 0.6 + q * 3.4, z, sw, 3, sd, windowLight(r, 0.95));
+      k.add('box', 'white', x, H + 3.4 + q * 3.4, z, sw + 1, 0.45, sd + 1, WHITE);
+    }
+  }
   k.add('box', 'charcoal', x, H + 0.6, z, w0 * 0.75, 3.6, d0 * 0.6, CHARCOAL);
   k.add('box', 'window', x, H + 1.0, z, w0 * 0.75 + 0.1, 2.2, d0 * 0.6 + 0.1, '#ffe2ae');
   k.add('box', 'white', x, H + 4.2, z, w0 * 0.75 + 1.2, 0.5, d0 * 0.6 + 1.2, WHITE);

@@ -12,6 +12,7 @@ import { VerticalTiltShiftShader } from 'three/examples/jsm/shaders/VerticalTilt
 import { Kit, type Mat, rng } from './kit';
 import { buildPlinth, buildSite } from './site';
 import { tower } from './buildings';
+import { buildDowntown } from './downtown';
 
 /**
  * Scale-model style demo: a standalone page (not part of the game) showing apartment towers and
@@ -34,7 +35,7 @@ const scene = new THREE.Scene();
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 
-const camera = new THREE.PerspectiveCamera(32, window.innerWidth / window.innerHeight, 1, 4000);
+const camera = new THREE.PerspectiveCamera(32, window.innerWidth / window.innerHeight, 1, 8000);
 const controls = new OrbitControls(camera, canvas);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.75;
@@ -69,29 +70,52 @@ const mats: Record<Mat, THREE.MeshStandardMaterial | THREE.MeshBasicMaterial> = 
   carGlass: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.1, metalness: 0.6 }),
   metal: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.35, metalness: 0.7 }),
   plinth: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.18, metalness: 0.2 }),
+  figure: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.7 }),
+  court: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.8 }),
+  // curtain-wall glass: tinted and reflective
+  glass: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.08, metalness: 0.7 }),
+  sand: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85 }),
+  gold: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3, metalness: 0.8, emissive: '#6a4a10', emissiveIntensity: 0.4 }),
+  stone: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.75 }),
 };
 const shadows = (m: Mat) => ({ cast: !['glow', 'railing', 'paint', 'water', 'lawn', 'paving', 'asphalt'].includes(m), receive: !['glow', 'paint'].includes(m) });
 
-// ── the scene: the block, the city round it, the model table
-const siteKit = new Kit();
-const cityKit = new Kit();
-buildSite(siteKit, cityKit);
-// a few more towers across the boulevards, so the block sits in a city
-for (const [i, t] of [
-  { x: -250, z: -60, floors: 26 },
-  { x: -250, z: 50, floors: 32 },
-  { x: -60, z: 230, floors: 22 },
-  { x: 70, z: 240, floors: 28 },
-  { x: 230, z: -60, floors: 36 },
-  { x: 250, z: 40, floors: 24 },
-  { x: -10, z: -230, floors: 40 },
-].entries())
-  tower(cityKit, { ...t, w: 26, d: 22, w0: 14, d0: 12, seed: rng(100 + i) });
-const site = siteKit.build(mats, shadows);
-const city = cityKit.build(mats, shadows);
-const plinthKit = new Kit();
-buildPlinth(plinthKit);
-const plinth = plinthKit.build(mats, shadows);
+// ── the scenes: built when first shown. Each has its block, the city round it, a model table.
+interface Scene {
+  site: THREE.Group;
+  city: THREE.Group | null;
+  plinth: THREE.Group;
+  count: number;
+  shadow: number;
+}
+const scenes: Record<string, Scene> = {};
+function residences(): Scene {
+  const siteKit = new Kit();
+  const cityKit = new Kit();
+  buildSite(siteKit, cityKit);
+  // a few more towers across the boulevards, so the block sits in a city
+  for (const [i, t] of [
+    { x: -250, z: -60, floors: 26 },
+    { x: -250, z: 50, floors: 32 },
+    { x: -60, z: 230, floors: 22 },
+    { x: 70, z: 240, floors: 28 },
+    { x: 230, z: -60, floors: 36 },
+    { x: 250, z: 40, floors: 24 },
+    { x: -10, z: -230, floors: 40 },
+  ].entries())
+    tower(cityKit, { ...t, w: 26, d: 22, w0: 14, d0: 12, seed: rng(100 + i), crown: (['frame', 'pergola', 'stepped'] as const)[i % 3] });
+  const plinthKit = new Kit();
+  buildPlinth(plinthKit);
+  return { site: siteKit.build(mats, shadows), city: cityKit.build(mats, shadows), plinth: plinthKit.build(mats, shadows), count: siteKit.count + cityKit.count, shadow: 260 };
+}
+function downtown(): Scene {
+  const kit = new Kit();
+  buildDowntown(kit);
+  const plinthKit = new Kit();
+  buildPlinth(plinthKit, -690, 690, -570, 570);
+  return { site: kit.build(mats, shadows), city: null, plinth: plinthKit.build(mats, shadows), count: kit.count, shadow: 760 };
+}
+const BUILDERS: Record<string, () => Scene> = { residences, downtown };
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshStandardMaterial({ color: '#b7b2a6', roughness: 0.95 }));
 ground.rotation.x = -Math.PI / 2;
 ground.position.y = -0.02;
@@ -99,7 +123,7 @@ ground.receiveShadow = true;
 const showroom = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshStandardMaterial({ color: '#2a2622', roughness: 0.25, metalness: 0.1 }));
 showroom.rotation.x = -Math.PI / 2;
 showroom.position.y = -30;
-scene.add(site, city, plinth, ground, showroom);
+scene.add(ground, showroom);
 
 // ── light
 const hemi = new THREE.HemisphereLight('#dfe9ff', '#8a8070', 1);
@@ -107,12 +131,8 @@ const sun = new THREE.DirectionalLight('#ffffff', 2);
 sun.castShadow = true;
 sun.shadow.mapSize.set(4096, 4096);
 const sc = sun.shadow.camera;
-sc.left = -260;
-sc.right = 260;
-sc.top = 260;
-sc.bottom = -260;
 sc.near = 10;
-sc.far = 1200;
+sc.far = 4000;
 sun.shadow.bias = -0.0004;
 sun.shadow.normalBias = 0.6;
 scene.add(hemi, sun, sun.target);
@@ -153,7 +173,10 @@ composer.addPass(tiltV);
 composer.addPass(new OutputPass());
 
 // ── state and controls
-const state = { time: 'dusk' as 'dusk' | 'day', plinth: true, tilt: true, view: 'model' };
+const state = { time: 'dusk' as 'dusk' | 'day', plinth: true, tilt: true, view: 'model', scene: 'residences' };
+function current() {
+  return scenes[state.scene];
+}
 function setTilt(on: boolean) {
   state.tilt = on;
   tiltH.enabled = tiltV.enabled = on;
@@ -173,7 +196,12 @@ function setTime(t: 'dusk' | 'day') {
   hemi.intensity = dusk ? 0.5 : 1.0;
   sun.color.set(dusk ? '#ffc48a' : '#fff6ea');
   sun.intensity = dusk ? 1.9 : 3.0;
-  sun.position.set(dusk ? -320 : -180, dusk ? 140 : 380, dusk ? 160 : 260);
+  const sk = current()?.shadow ?? 260;
+  const f = sk / 260;
+  sun.position.set((dusk ? -320 : -180) * f, (dusk ? 140 : 380) * f, (dusk ? 160 : 260) * f);
+  sc.left = sc.bottom = -sk;
+  sc.right = sc.top = sk;
+  sc.updateProjectionMatrix();
   scene.environmentIntensity = dusk ? 0.3 : 0.6;
   bloom.strength = dusk ? 0.32 : 0.12;
   renderer.toneMappingExposure = dusk ? 1.05 : 1.0;
@@ -181,23 +209,56 @@ function setTime(t: 'dusk' | 'day') {
 }
 function applyBackground() {
   scene.background = state.plinth ? skies.model : skies[state.time];
-  scene.fog = state.plinth ? null : (state.time === 'dusk' ? new THREE.Fog('#3d4f78', 350, 1500) : new THREE.Fog('#d6e3ee', 900, 2600));
+  const f = (current()?.shadow ?? 260) / 260;
+  scene.fog = state.plinth ? null : state.time === 'dusk' ? new THREE.Fog('#3d4f78', 350 * f, 1500 * f) : new THREE.Fog('#d6e3ee', 900 * f, 2600 * f);
 }
 function setPlinth(on: boolean) {
   state.plinth = on;
-  plinth.visible = showroom.visible = on;
-  city.visible = ground.visible = !on;
+  const c = current();
+  c.plinth.visible = showroom.visible = on;
+  if (c.city) c.city.visible = !on;
+  ground.visible = !on;
   applyBackground();
 }
-const VIEWS: Record<string, { pos: [number, number, number]; target: [number, number, number]; fov: number }> = {
-  model: { pos: [-260, 175, 300], target: [0, 28, -20], fov: 30 },
-  front: { pos: [40, 60, 300], target: [0, 40, -30], fov: 32 },
-  aerial: { pos: [60, 420, 260], target: [0, 0, -10], fov: 34 },
-  street: { pos: [-140, 1.8, 112], target: [-20, 45, -40], fov: 62 },
-  pool: { pos: [-40, 22, 40], target: [10, 10, -30], fov: 55 },
+function setScene(name: string) {
+  if (!scenes[name]) {
+    const sc2 = BUILDERS[name]();
+    scenes[name] = sc2;
+    scene.add(sc2.site, sc2.plinth);
+    if (sc2.city) scene.add(sc2.city);
+  }
+  for (const v of Object.values(scenes)) {
+    v.site.visible = false;
+    v.plinth.visible = false;
+    if (v.city) v.city.visible = false;
+  }
+  state.scene = name;
+  current().site.visible = true;
+  info.textContent = `${current().count.toLocaleString()} pieces`;
+  setPlinth(state.plinth);
+  setTime(state.time);
+  setView('model');
+}
+type View = { pos: [number, number, number]; target: [number, number, number]; fov: number };
+const SCENE_VIEWS: Record<string, Record<string, View>> = {
+  residences: {
+    model: { pos: [-260, 175, 300], target: [0, 28, -20], fov: 30 },
+    front: { pos: [40, 60, 300], target: [0, 40, -30], fov: 32 },
+    aerial: { pos: [60, 420, 260], target: [0, 0, -10], fov: 34 },
+    street: { pos: [-140, 1.8, 112], target: [-20, 45, -40], fov: 62 },
+    close: { pos: [-40, 22, 40], target: [10, 10, -30], fov: 55 },
+  },
+  downtown: {
+    model: { pos: [560, 560, 1050], target: [20, 170, -40], fov: 36 },
+    front: { pos: [80, 140, 760], target: [0, 200, -60], fov: 40 },
+    aerial: { pos: [0, 1700, 900], target: [0, 0, -20], fov: 38 },
+    street: { pos: [-140, 2.5, 200], target: [0, 160, -60], fov: 64 },
+    close: { pos: [260, 90, 330], target: [40, 60, 60], fov: 50 },
+  },
 };
+const VIEWS = SCENE_VIEWS.residences;
 function setView(v: string) {
-  const p = VIEWS[v];
+  const p = SCENE_VIEWS[state.scene][v];
   state.view = v;
   camera.position.set(...p.pos);
   controls.target.set(...p.target);
@@ -208,6 +269,7 @@ function setView(v: string) {
 
 // a small panel of toggles
 const ui = document.getElementById('ui')!;
+const info = document.getElementById('info')!;
 function button(label: string, onClick: () => void, group: string, key: string) {
   const b = document.createElement('button');
   b.textContent = label;
@@ -227,6 +289,7 @@ function row(title: string, items: HTMLButtonElement[]) {
   r.append(t, ...items);
   ui.append(r);
 }
+row('Scene', [button('Residences', () => setScene('residences'), 'scene', 'residences'), button('Downtown', () => setScene('downtown'), 'scene', 'downtown')]);
 row('View', Object.keys(VIEWS).map((v) => button(v[0].toUpperCase() + v.slice(1), () => setView(v), 'view', v)));
 row('Light', [button('Dusk', () => setTime('dusk'), 'time', 'dusk'), button('Day', () => setTime('day'), 'time', 'day')]);
 row('Setting', [button('Model table', () => setPlinth(true), 'plinth', 'on'), button('In the city', () => setPlinth(false), 'plinth', 'off')]);
@@ -235,17 +298,12 @@ function refresh() {
   for (const b of ui.querySelectorAll('button')) {
     const g = b.dataset.group!;
     const k = b.dataset.key!;
-    const on = g === 'view' ? state.view === k : g === 'time' ? state.time === k : g === 'plinth' ? (state.plinth ? 'on' : 'off') === k : (state.tilt ? 'on' : 'off') === k;
+    const on = g === 'scene' ? state.scene === k : g === 'view' ? state.view === k : g === 'time' ? state.time === k : g === 'plinth' ? (state.plinth ? 'on' : 'off') === k : (state.tilt ? 'on' : 'off') === k;
     b.classList.toggle('on', on);
   }
 }
-const info = document.getElementById('info')!;
-info.textContent = `${(siteKit.count + cityKit.count).toLocaleString()} pieces`;
-
-setTime('dusk');
-setPlinth(true);
 setTilt(true);
-setView('model');
+setScene('residences');
 refresh();
 
 window.addEventListener('resize', () => {
@@ -269,6 +327,7 @@ renderer.setAnimationLoop(() => {
   setTime,
   setPlinth,
   setTilt,
+  setScene,
   frames: () => frames,
   hideUi: (h: boolean) => {
     ui.style.display = info.style.display = h ? 'none' : '';

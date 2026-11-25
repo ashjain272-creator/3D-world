@@ -1,6 +1,6 @@
 import { type Kit, rng } from './kit';
 import { type P2, edges, WHITE } from './buildings';
-import { person } from './site';
+import { person, tree } from './site';
 
 /**
  * A Dubai-style downtown in the manner of a sales model: a supertall needle on a Y-shaped plan
@@ -13,7 +13,8 @@ import { person } from './site';
 const COOL = ['#8fb8e8', '#a8c8f0', '#c0d8f5', '#7aa6e0', '#b8d0f0'];
 const WARM = ['#ffc56e', '#ffd08a', '#ffdba6', '#ffb95c', '#ffe7c2'];
 const DIM = '#1c3352';
-const SAND = ['#e6cfa6', '#dcc196', '#ead7b4', '#d8b98a'];
+const SAND = ['#e6cfa6', '#dcc196', '#ead7b4', '#d8b98a', '#e9d2b0', '#d2b083', '#f0dfc2', '#cfa878'];
+const TRIM = ['#f4ead6', '#c87a4a', '#f4ead6', '#9a6a44', '#ffffff'];
 
 function pick<T>(a: T[], r: () => number) {
   return a[Math.floor(r() * a.length)];
@@ -37,6 +38,12 @@ export function buildDowntown(k: Kit) {
   for (let q = 0; q < 36; q++) {
     const a = (q / 36) * Math.PI * 2;
     palm(k, Math.sin(a) * 105, 0.3, -60 + Math.cos(a) * 105, 11 + r() * 3, r);
+  }
+  for (let q = 0; q < 70; q++) {
+    const a = r() * Math.PI * 2;
+    const d = 62 + r() * 48;
+    if (Math.abs(Math.sin(a * 3)) < 0.2) continue;
+    tree(k, Math.sin(a) * d, 0.3, -60 + Math.cos(a) * d, 6 + r() * 3, r);
   }
   supertall(k, 0, -60, r);
   keep.push({ x: 0, z: -60, w: 240, d: 240 });
@@ -416,56 +423,112 @@ function oldTown(k: Kit, keep: Rect[], r: () => number) {
     }
 }
 
+/**
+ * One old-town block, varied so no two read alike: wings of different heights round a courtyard;
+ * one of three window styles (arched, rectangular behind timber screens, or tall arched bays with
+ * balconies); trim in cream, terracotta or timber; a domed corner tower on some; wind towers,
+ * pergolas, a rooftop pool or a domed pavilion on the roofs; a pool, palms and trees inside.
+ */
 function courtyardBlock(k: Kit, x: number, z: number, w: number, d: number, floors: number, r: () => number) {
   const fh = 3.4;
-  const H = floors * fh;
   const col = pick(SAND, r);
+  const trim = pick(TRIM, r);
+  const style = Math.floor(r() * 3);
   const t = 10; // wing depth round the courtyard
-  for (const [cx, cz, bw, bd] of [
-    [x, z - d / 2 + t / 2, w, t],
-    [x, z + d / 2 - t / 2, w, t],
-    [x - w / 2 + t / 2, z, t, d - 2 * t],
-    [x + w / 2 - t / 2, z, t, d - 2 * t],
-  ])
-    k.add('box', 'sand', cx, 0.2, cz, bw, H, bd, col);
-  // arched windows on the outer faces, lit warm
-  for (let f = 1; f < floors; f++) {
-    const y = 0.2 + f * fh + 0.5;
-    for (const [nx, nz, L, yaw] of [
-      [0, 1, w, 0],
-      [0, -1, w, Math.PI],
-      [1, 0, d, Math.PI / 2],
-      [-1, 0, d, -Math.PI / 2],
-    ] as const) {
-      const n = Math.floor(L / 4);
-      for (let q = 0; q < n; q++) {
-        const a = -L / 2 + (L / n) * (q + 0.5);
-        const wx = x + nx * (w / 2 + 0.06) + (nz !== 0 ? a : 0);
-        const wz = z + nz * (d / 2 + 0.06) + (nx !== 0 ? a : 0);
-        const c = r() < 0.8 ? pick(WARM, r) : DIM;
-        k.add('box', 'window', wx, y, wz, 1.4, 1.8, 0.1, c, yaw);
-        k.add('hemi', 'window', wx, y + 1.8, wz, 1.4, 1.4, 0.1, c, yaw);
-      }
+  // the four wings: centre, size, floors, and the outward face (normal and length)
+  const wings = [
+    { cx: x, cz: z - d / 2 + t / 2, bw: w, bd: t, nx: 0, nz: -1, L: w, yaw: Math.PI },
+    { cx: x, cz: z + d / 2 - t / 2, bw: w, bd: t, nx: 0, nz: 1, L: w, yaw: 0 },
+    { cx: x - w / 2 + t / 2, cz: z, bw: t, bd: d - 2 * t, nx: -1, nz: 0, L: d - 2 * t, yaw: -Math.PI / 2 },
+    { cx: x + w / 2 - t / 2, cz: z, bw: t, bd: d - 2 * t, nx: 1, nz: 0, L: d - 2 * t, yaw: Math.PI / 2 },
+  ].map((wg) => ({ ...wg, f: Math.max(3, floors - Math.floor(r() * 3)) }));
+  for (const wg of wings) {
+    const H = wg.f * fh;
+    k.add('box', 'sand', wg.cx, 0.2, wg.cz, wg.bw, H, wg.bd, col);
+    // the outward face: ground-floor shopfronts behind an arcade, then the upper floors' windows
+    const fx = wg.cx + wg.nx * (wg.bw / 2 + 0.06);
+    const fz = wg.cz + wg.nz * (wg.bd / 2 + 0.06);
+    const along = (a: number): [number, number] => [fx + (wg.nz !== 0 ? a : 0), fz + (wg.nx !== 0 ? a : 0)];
+    const [sx, sz] = along(0);
+    k.add('box', 'window', sx, 0.2, sz, wg.nz !== 0 ? wg.L : 0.12, fh - 0.5, wg.nx !== 0 ? wg.L : 0.12, '#ffd59a');
+    for (let a = -wg.L / 2; a <= wg.L / 2 + 0.01; a += 4) {
+      const [px, pz] = along(a);
+      k.add('box', 'sand', px + wg.nx * 0.4, 0.2, pz + wg.nz * 0.4, 0.8, fh, 0.8, col);
     }
-    // a string course at every other floor
-    if (f % 2 === 0) k.add('box', 'sand', x, 0.2 + f * fh, z, w + 0.6, 0.3, d + 0.6, '#f0e2c6');
+    const n = Math.floor(wg.L / (style === 2 ? 5 : 3.6));
+    for (let f = 1; f < wg.f; f++) {
+      const y = 0.2 + f * fh + 0.45;
+      for (let q = 0; q < n; q++) {
+        const a = -wg.L / 2 + (wg.L / n) * (q + 0.5);
+        const [wx, wz] = along(a);
+        const c = r() < 0.8 ? pick(WARM, r) : DIM;
+        if (style === 0) {
+          k.add('box', 'window', wx, y, wz, 1.4, 1.8, 0.1, c, wg.yaw);
+          k.add('hemi', 'window', wx, y + 1.8, wz, 1.4, 1.4, 0.1, c, wg.yaw);
+        } else if (style === 1) {
+          k.add('box', 'window', wx, y, wz, 1.6, 2.2, 0.1, c, wg.yaw);
+          // a timber screen over the lower half
+          k.add('box', 'trunk', wx + wg.nx * 0.08, y, wz + wg.nz * 0.08, 1.8, 1.1, 0.08, '#8a5a34', wg.yaw);
+        } else {
+          k.add('box', 'window', wx, y - 0.2, wz, 2.2, 2.4, 0.1, c, wg.yaw);
+          k.add('hemi', 'window', wx, y + 2.2, wz, 2.2, 2, 0.1, c, wg.yaw);
+          if (f % 2 === 1) {
+            k.add('box', 'sand', wx + wg.nx * 0.7, y - 0.5, wz + wg.nz * 0.7, wg.nz !== 0 ? 3 : 1.4, 0.25, wg.nx !== 0 ? 3 : 1.4, trim);
+            k.add('box', 'railing', wx + wg.nx * 1.35, y - 0.25, wz + wg.nz * 1.35, wg.nz !== 0 ? 3 : 0.05, 0.9, wg.nx !== 0 ? 3 : 0.05, '#e8e0d0');
+          }
+        }
+      }
+      // a trim band every other floor
+      if (f % 2 === 0) k.add('box', 'sand', wg.cx, 0.2 + f * fh, wg.cz, wg.bw + 0.5, 0.3, wg.bd + 0.5, trim);
+    }
+    // parapet with crenellations along the outward face
+    k.add('box', 'sand', wg.cx, H + 0.2, wg.cz, wg.bw + 0.4, 0.7, wg.bd + 0.4, trim);
+    for (let a = -wg.L / 2; a < wg.L / 2; a += 1.8) {
+      const [px, pz] = along(a);
+      k.add('box', 'sand', px - wg.nx * 0.3, H + 0.9, pz - wg.nz * 0.3, 0.9, 0.7, 0.9, col);
+    }
   }
-  // the ground floor: shopfronts lit behind an arcade
-  k.add('box', 'window', x, 0.2, z, w + 0.2, fh - 0.4, d + 0.2, '#ffd59a');
-  for (let a = -w / 2; a <= w / 2; a += 4) for (const s of [-1, 1]) k.add('box', 'sand', x + a, 0.2, z + s * (d / 2 + 0.3), 0.8, fh, 0.8, col);
-  // parapet with crenellations, a wind tower and a roof pergola
-  k.add('box', 'sand', x, H + 0.2, z, w + 0.4, 0.8, d + 0.4, col);
-  for (let a = -w / 2; a < w / 2; a += 1.8) for (const s of [-1, 1]) k.add('box', 'sand', x + a, H + 1, z + s * (d / 2), 0.9, 0.8, 0.5, col);
-  if (r() < 0.6) {
-    const tx = x + (r() - 0.5) * (w - 12);
-    k.add('box', 'sand', tx, H + 0.2, z - d / 2 + 5, 4, 8, 4, col);
-    for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) k.add('box', 'charcoal', tx + Math.sin(a) * 2.03, H + 5, z - d / 2 + 5 + Math.cos(a) * 2.03, 2.4, 2.6, 0.1, '#3a2c20', a);
+  // a domed corner tower on some blocks
+  if (r() < 0.45) {
+    const sx = r() < 0.5 ? -1 : 1;
+    const sz = r() < 0.5 ? -1 : 1;
+    const H = (floors + 3) * fh;
+    const tx = x + sx * (w / 2 - 4.5);
+    const tz = z + sz * (d / 2 - 4.5);
+    k.add('box', 'sand', tx, 0.2, tz, 9.6, H, 9.6, col);
+    for (let f = 2; f < floors + 3; f++) for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      const c = r() < 0.85 ? pick(WARM, r) : DIM;
+      k.add('box', 'window', tx + Math.sin(a) * 4.86, 0.2 + f * fh + 0.5, tz + Math.cos(a) * 4.86, 1.4, 1.8, 0.1, c, a);
+      k.add('hemi', 'window', tx + Math.sin(a) * 4.86, 0.2 + f * fh + 2.3, tz + Math.cos(a) * 4.86, 1.4, 1.4, 0.1, c, a);
+    }
+    k.add('box', 'sand', tx, H + 0.2, tz, 10.4, 0.8, 10.4, trim);
+    k.add('oct', 'sand', tx, H + 1, tz, 7, 2, 7, col);
+    k.add('hemi', r() < 0.5 ? 'gold' : 'sand', tx, H + 3, tz, 6.6, 8, 6.6, r() < 0.5 ? '#d8b25a' : '#efe2c8');
+    k.add('cone', 'gold', tx, H + 7, tz, 0.4, 2.4, 0.4, '#d8b25a');
   }
-  for (let q = 0; q < 5; q++) k.add('box', 'trunk', x + w / 2 - 4, H + 3.2, z - 4 + q * 2, 6, 0.15, 0.2, '#8a6a4a');
-  // the courtyard: lawn, a lit pool and palms
+  // the roof: a wind tower, a pergola, and a rooftop pool or a domed pavilion
+  const top = wings[1].f * fh;
+  const roofKind = Math.floor(r() * 3);
+  if (roofKind === 0) {
+    const tx = x + (r() - 0.5) * (w - 14);
+    k.add('box', 'sand', tx, top + 0.2, z + d / 2 - 5, 4, 8, 4, col);
+    for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) k.add('box', 'charcoal', tx + Math.sin(a) * 2.03, top + 5, z + d / 2 - 5 + Math.cos(a) * 2.03, 2.4, 2.6, 0.1, '#3a2c20', a);
+  } else if (roofKind === 1) {
+    k.add('box', 'white', x, top + 0.9, z + d / 2 - 5, w * 0.5, 0.5, 6, '#f4f1ea');
+    k.add('box', 'water', x, top + 1.1, z + d / 2 - 5, w * 0.45, 0.4, 4.6, '#43c3e6');
+    for (let q = 0; q < 5; q++) k.add('box', 'white', x - w * 0.2 + q * w * 0.1, top + 0.9, z + d / 2 - 1.5, 0.7, 0.35, 1.8, '#fbfaf7');
+  } else {
+    const px = x - w / 2 + 6;
+    k.add('oct', 'sand', px, top + 0.9, z + d / 2 - 5, 6, 3.4, 6, trim);
+    k.add('hemi', 'sand', px, top + 4.3, z + d / 2 - 5, 5.6, 6, 5.6, '#efe2c8');
+  }
+  for (let q = 0; q < 5; q++) k.add('box', 'trunk', x + w / 2 - 4, wings[3].f * fh + 3.2, z - 4 + q * 2, 6, 0.15, 0.2, '#8a6a4a');
+  // the courtyard: lawn, a lit pool, palms and a tree
   k.add('box', 'lawn', x, 0.2, z, w - 2 * t, 0.15, d - 2 * t, '#5a8c40');
-  k.add('box', 'water', x, 0.3, z, (w - 2 * t) * 0.55, 0.2, (d - 2 * t) * 0.4, '#43c3e6');
+  k.add('box', 'white', x, 0.25, z, (w - 2 * t) * 0.6, 0.3, (d - 2 * t) * 0.45, '#f4f1ea');
+  k.add('box', 'water', x, 0.3, z, (w - 2 * t) * 0.55, 0.35, (d - 2 * t) * 0.4, '#43c3e6');
   for (const s of [-1, 1]) palm(k, x + s * (w / 2 - t - 3), 0.3, z, 7, r);
+  tree(k, x, 0.3, z + (d / 2 - t - 3), 5, r);
 }
 
 // ───────────────────────────── roads ─────────────────────────────
@@ -538,17 +601,40 @@ function highway(k: Kit, r: () => number) {
 
 // ───────────────────────────── small things ─────────────────────────────
 
-/** A date palm: a tall trunk and a crown of drooping fronds. */
+/**
+ * A date palm: a tapered, ringed trunk; a crown of arching fronds (each rising then drooping, in
+ * two segments), a cluster of dates, and a little lean.
+ */
 export function palm(k: Kit, x: number, y: number, z: number, h: number, r: () => number) {
-  k.add('cyl', 'trunk', x, y, z, 0.55, h, 0.55, '#8a6a4a');
-  const n = 9;
-  const col = pick(['#4a7d34', '#567f3a', '#3f6f2e', '#5f8a3e'], r);
-  for (let q = 0; q < n; q++) {
-    const a = (q / n) * Math.PI * 2 + r() * 0.3;
-    const tilt = 0.25 + r() * 0.35;
-    k.add('box', 'leaf', x + Math.sin(a) * 1.9, y + h - Math.sin(tilt) * 1.9, z + Math.cos(a) * 1.9, 0.9, 0.12, 4.2, col, a, tilt);
+  const lean = (r() - 0.5) * 0.6;
+  const lx = Math.sin(lean) * h * 0.12;
+  // the trunk: three tapering stages with rings where they meet
+  for (let q = 0; q < 3; q++) {
+    const rad = 0.62 - q * 0.1;
+    k.add('cyl', 'trunk', x + (lx * q) / 3, y + (h * q) / 3, z, rad, h / 3 + 0.05, rad, q % 2 ? '#8a6a4a' : '#7d5f42');
+    k.add('cyl', 'trunk', x + (lx * q) / 3, y + (h * q) / 3, z, rad + 0.12, 0.18, rad + 0.12, '#6a5038');
   }
-  k.add('sphere', 'leaf', x, y + h, z, 1.1, 0.8, 1.1, col);
+  const tx = x + lx;
+  const ty = y + h;
+  const col = pick(['#4a7d34', '#567f3a', '#3f6f2e', '#5f8a3e', '#4f8838'], r);
+  const n = 12;
+  for (let q = 0; q < n; q++) {
+    const a = (q / n) * Math.PI * 2 + r() * 0.25;
+    const sa = Math.sin(a);
+    const ca = Math.cos(a);
+    // inner segment: rising a little from the crown
+    const l1 = 2.1;
+    const t1 = -0.35 + r() * 0.2;
+    k.add('box', 'leaf', tx + sa * l1 * 0.5, ty + 0.2, z + ca * l1 * 0.5, 0.75, 0.1, l1, col, a, t1);
+    // outer segment: arching down, a little narrower and lighter
+    const ex = tx + sa * l1;
+    const ey = ty + 0.2 - Math.sin(t1) * l1;
+    const l2 = 2.6;
+    const t2 = 0.55 + r() * 0.35;
+    k.add('box', 'leaf', ex + sa * l2 * 0.5 * Math.cos(t2), ey - Math.sin(t2) * l2 * 0.5, z + ca * l1 + ca * l2 * 0.5 * Math.cos(t2), 0.6, 0.08, l2, col, a, t2);
+  }
+  k.add('sphere', 'leaf', tx, ty, z, 1.2, 0.9, 1.2, col);
+  for (let q = 0; q < 4; q++) k.add('sphere', 'trunk', tx + Math.sin(q * 1.6) * 0.55, ty - 0.45, z + Math.cos(q * 1.6) * 0.55, 0.45, 0.6, 0.45, '#c88a3a');
 }
 
 const CAR_COLOURS = ['#f4f4f4', '#1a1a1a', '#8a9098', '#b0202a', '#1e3c6e', '#d8d2c4', '#2f4f3f', '#c8c8cc'];

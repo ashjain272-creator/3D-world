@@ -73,7 +73,7 @@ const mats: Record<Mat, THREE.MeshStandardMaterial | THREE.MeshBasicMaterial> = 
   figure: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.7 }),
   court: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.8 }),
   // curtain-wall glass: tinted and reflective
-  glass: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.08, metalness: 0.7 }),
+  glass: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.34, metalness: 0.55 }),
   sand: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85 }),
   gold: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3, metalness: 0.8, emissive: '#6a4a10', emissiveIntensity: 0.4 }),
   stone: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.75 }),
@@ -328,6 +328,15 @@ renderer.setAnimationLoop(() => {
   setPlinth,
   setTilt,
   setScene,
+  /** Debug: place the camera directly; optionally turn bloom off. */
+  photo: ([pos, target, fov, noBloom]: [[number, number, number], [number, number, number], number, boolean]) => {
+    camera.position.set(...pos);
+    controls.target.set(...target);
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+    controls.update();
+    bloom.enabled = !noBloom;
+  },
   frames: () => frames,
   hideUi: (h: boolean) => {
     ui.style.display = info.style.display = h ? 'none' : '';

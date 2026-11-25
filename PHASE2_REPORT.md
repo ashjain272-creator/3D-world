@@ -928,3 +928,90 @@ The villas, apartment slabs, crescent hotels, monorail and grand hotel are gone 
 - that the palace and forecourt stand on level land;
 - that there is a clear walk from the forecourt through the portal into the courtyard, while the wings are solid;
 - that the palace has more than 3,000 pieces, with at least ten golden domes.
+
+## Phase 18: walk into the palace; gold that glows at night; finer detail
+
+**Fixes from Phase 17**
+- **Gold at night:** gold leaf now glows warm gold after dark (brighter gold emissive, rising with nightfall). This applies everywhere gold is used: palace domes and gilding, mosques, finials.
+- **Walking in:** the terrace was drawn 3 m above the ground but the walker stayed at ground level, so stepping in put the eye inside the marble. The terrace, its grand staircase and the throne dais are now walkable surfaces, like highway decks (`palaceSurface`). The terrace edge is a wall from the ground and holds you from above; it is open at the staircase (`palaceTerraceColliders`).
+- **Rooms:** the great hall and the side wings are now hollow, and their doors line up with the colliders through shared measurements (`PALACE`, `palaceHallZ`, `palaceGalleryDoors` in `layout.ts`).
+- **Towers:** still solid. There is no stair or lift system, so you cannot climb them.
+
+**Throne room (great hall)**
+- **Door:** a 5.2 × 9 m arched door from the courtyard, with a gilt arch, jambs and alfiz, tiled corners, a lit inscription band, and carved doors standing open inside.
+- **Floor:** pale marble with a lapis ring, an eight-pointed gilt star and a medallion, and a crimson runner edged in gold.
+- **Colonnade:** a ring of sixteen marble columns with gilt bases, bands and capitals, carrying arches and an entablature. A lamp hangs in each arch.
+- **Walls:** a turquoise tile dado with a gold rail, gilt string courses, a gilt cornice, and inner faces for every window.
+- **Throne:**
+  - a three-tier marble dais with gilt edges, the runner climbing it;
+  - a gilded throne with crimson cushions, arms, a tall arched back and finials, under a gilt canopy on four columns with drapes;
+  - a lapis niche framed in gold behind it, and braziers either side;
+  - crimson benches with gold cushions along the side walls.
+- **Dome from inside:**
+  - the roof opens in an octagon under the drum;
+  - the drum's eight windows glow;
+  - a gilt ledge rings the foot of the dome;
+  - the dome is painted lapis, with sixteen gold ribs, fifty-four stars and a glowing oculus;
+  - a great three-tier chandelier hangs 47 m from the crown.
+
+**Reception galleries (side wings)**
+- **Shape:** each side wing's ground floor is a gallery 84 m long and 15 m wide. Seven arched doors open into it from the courtyard arcade.
+- **Floor:** bays of two marbles with gilt joints, and a crimson runner.
+- **Columns and ceiling:**
+  - two rows of marble columns, arched along each row and across the gallery;
+  - a coffered ceiling of gilt beams and lapis panels with gilt rosettes;
+  - seven chandeliers.
+- **Furnishings:**
+  - majlis groups between the windows: a rug, a sofa, chairs, a low table with a brass coffee pot, and a lantern;
+  - potted plants by the courtyard windows;
+  - a tile dado.
+
+**Exterior detail**
+- **Facades:**
+  - a turquoise tile frieze with gilt lozenges and white stars under every cornice;
+  - carved surrounds on the upper windows: jambs, a hood following the arch, and a gilt keystone;
+  - keystones, jambs and corbelled sills on the ground windows;
+  - stepped corbels under the balconies;
+  - a rusticated plinth.
+- **Towers:** a tile band with lozenges, a rusticated base, and gilt ribs on their domes. Satellite domes have ribs too.
+- **Portal:** tiled spandrels with gilt lozenges between the arch and the alfiz, and a tiled dado with gilt niches lining the iwan.
+- **Great hall exterior:** carved hoods and keystones on its windows, a tile frieze, and a drum rebuilt with flat faces, stone pilasters and gilt window hoods.
+- **Courtyard and terrace:**
+  - citrus trees in gilt-rimmed marble planters lining the pool;
+  - lantern posts along the arcades;
+  - gilt star inlays in the paving;
+  - urns of flowers and lamps along the terrace balustrade.
+
+**Rendering**
+- **New finishes:**
+  - `ceiling`: painted interior, double-sided;
+  - `hallMarble`: interior marble;
+  - `rug`: interior carpets and cushions;
+  - `lamp`: indoor lights.
+  - The first three glow in each piece's own colour, so a lapis dome reads lapis in a room the sun never reaches. They brighten after dark, so interiors stay readable at night.
+- **New shape:** `octTube`, an open octagonal shell. The drum and the gold ring above it had been closed solids whose bottom faces hid the dome from the hall.
+- **Lamps:** indoor lamps use a medium-detail sphere and cone close by and the simple shape farther away. Streetlights keep their simple shape.
+
+**Cost** (triangles, previous commit → now; headless software renderer, so fps is not meaningful):
+
+| View | Before | Now | Change |
+|---|---|---|---|
+| Street | 1.50M | 1.50M | none |
+| Spine | 1.54M | 1.55M | +0.7% |
+| Downtown | 1.48M | 1.49M | +0.9% |
+| City aerial | 1.64M | 1.66M | +0.9% |
+| Airport aerial | 1.71M | 1.71M | none |
+| Palace aerial | 1.59M | 1.67M | +5% |
+| Palace courtyard | 1.37M | 1.67M | +21% |
+| Throne room | 1.35M | 1.62M | +20% |
+
+Draw calls rise from 268 to 334 at the courtyard and from 266 to 305 in the hall; elsewhere they are within four.
+
+**Tests:** the palace test now also checks:
+- a clear walk from the courtyard through the hall door to the dais, while the hall walls hold;
+- in each wing, a clear walk through an arcade door into the gallery and its full length, while the courtyard wall between doors and the outer wall hold;
+- climbing the grand staircase step by step (no step over 0.6 m, never dropping) to terrace height;
+- standing on the top tier of the dais;
+- the terrace edge as a wall from the ground but not from the terrace top, with the staircase open.
+
+Screenshots: `docs/screenshots/palace/` (pal-halldoor, pal-hall, pal-domein, pal-domeup, pal-throne, pal-gallery, pal-detail, pal-towerd, pal-nightdome, pal-nighthall, pal-nightgal).

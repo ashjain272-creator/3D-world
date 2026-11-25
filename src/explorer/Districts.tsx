@@ -86,10 +86,18 @@ function planform(side: number): THREE.BufferGeometry {
   return new THREE.ExtrudeGeometry(sh, { depth: 1, bevelEnabled: false }).rotateX(Math.PI / 2).translate(0, 0.5, 0);
 }
 
+/** Indoor lights seen up close: rounder than the far stand-ins, far lighter than full detail. */
+const LAMP: Partial<Record<DShape, THREE.BufferGeometry>> = {
+  sphere: new THREE.SphereGeometry(0.5, 8, 6),
+  cone: new THREE.ConeGeometry(0.5, 1, 8).translate(0, 0.5, 0),
+};
+
 const SHAPES: Record<DShape, THREE.BufferGeometry> = {
   box: new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0),
   cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 18).translate(0, 0.5, 0),
   oct: new THREE.CylinderGeometry(0.5, 0.5, 1, 8).translate(0, 0.5, 0),
+  // an octagonal shell open at both ends: the inside of a drum, seen from the room below
+  octTube: new THREE.CylinderGeometry(0.5, 0.5, 1, 8, 1, true).translate(0, 0.5, 0),
   cone: new THREE.ConeGeometry(0.5, 1, 16).translate(0, 0.5, 0),
   hemi: new THREE.SphereGeometry(0.5, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2),
   sphere: new THREE.SphereGeometry(0.5, 14, 10),
@@ -301,6 +309,23 @@ function windowGlass(): THREE.MeshStandardMaterial {
   return m;
 }
 
+/**
+ * Painted interiors (the palace's dome, drum and coffers), seen from inside: double-sided plaster
+ * whose glow takes each piece's own colour, so a lapis dome reads lapis in a room the sun never
+ * reaches, and brightens when the lamps are lit after dark.
+ */
+function paintedMaterial(surface: 'plaster' | 'tiles' | 'cloth' = 'plaster', roughness = 0.7, side: THREE.Side = THREE.DoubleSide, glow = 0.35): THREE.MeshStandardMaterial {
+  const m = texturedMaterial(surface, { color: '#ffffff', roughness, side, emissive: new THREE.Color('#ffffff'), emissiveIntensity: glow });
+  const prev = m.onBeforeCompile;
+  const key = m.customProgramCacheKey();
+  m.onBeforeCompile = (shader, renderer) => {
+    prev.call(m, shader, renderer);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n#ifdef USE_COLOR\n  totalEmissiveRadiance *= vColor.rgb;\n#endif');
+  };
+  m.customProgramCacheKey = () => key + '-painted';
+  return m;
+}
+
 /** Mansions, souk, mall, mosque, temple and boulevard palms of a futuristic city. */
 export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quality: Quality; y0?: number }) {
   const seaY = y0 - 0.85;
@@ -321,7 +346,7 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
       metal: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.35, metalness: 0.6 }),
       // gold leaf: without an environment map a fully metallic surface reads brown, so keep it
       // partly dielectric with a warm glow of its own
-      gold: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3, metalness: 0.45, emissive: new THREE.Color('#6a4a10'), emissiveIntensity: 0.35 }),
+      gold: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.3, metalness: 0.45, emissive: new THREE.Color('#b8862a'), emissiveIntensity: 0.18 }),
       // window glass: dark and reflective by day, warm interior light after dark
       glass: windowGlass(),
       // pools and fountains glow turquoise from underwater lights at night
@@ -329,6 +354,7 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
       leaf: foliageMaterial({ flat: true, double: true, sway: 0.06 }),
       lawn: texturedMaterial('cloth', { color: '#ffffff', roughness: 1 }),
       glow: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }),
+      lamp: new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false }),
       dark: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9 }),
       crowd: crowdMaterial(),
       // light beams: faint, additive, so they read as haze lit by the floodlights
@@ -346,6 +372,13 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
       // so the vault and dome read as glass from inside the rotunda too
       atrium: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.12, metalness: 0.25, emissive: new THREE.Color('#ffd7a0'), emissiveIntensity: 0.05, transparent: true, opacity: 0.72, side: THREE.DoubleSide, depthWrite: false }),
       skylight: new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.45, depthWrite: false }),
+      // painted interiors seen from inside (the palace's dome, drum and vaults): double-sided, with
+      // a little light of their own so rooms out of the sun still read, and lamplit after dark
+      ceiling: paintedMaterial(),
+      // marble indoors: lamplit after dark in its own colour (floors, columns, the dais)
+      hallMarble: paintedMaterial('tiles', 0.35, THREE.FrontSide, 0),
+      // carpets, cushions and drapes indoors, lamplit the same way
+      rug: paintedMaterial('cloth', 0.95, THREE.DoubleSide, 0),
     }),
     [],
   );
@@ -356,6 +389,11 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
     (mats.water as THREE.MeshStandardMaterial).emissiveIntensity = 0.12 + n * 0.6;
     (mats.atrium as THREE.MeshStandardMaterial).emissiveIntensity = 0.05 + n * 0.75;
     (mats.lit as THREE.MeshStandardMaterial).emissiveIntensity = n * 0.32;
+    // gold leaf catches the floodlights after dark: domes, finials and gilding glow warm
+    (mats.gold as THREE.MeshStandardMaterial).emissiveIntensity = 0.18 + n * 0.7;
+    (mats.hallMarble as THREE.MeshStandardMaterial).emissiveIntensity = n * 0.32;
+    (mats.rug as THREE.MeshStandardMaterial).emissiveIntensity = n * 0.4;
+    (mats.ceiling as THREE.MeshStandardMaterial).emissiveIntensity = 0.35 + n * 0.45;
     // floodlights: the pitch, the court and the crowd carry their own light after dark
     (mats.pitch as THREE.MeshStandardMaterial).emissiveIntensity = n * 0.55;
     (mats.court as THREE.MeshStandardMaterial).emissiveIntensity = 0.2 + n * 0.6;
@@ -382,6 +420,12 @@ export function Districts({ data, quality, y0 = 0 }: { data: DistrictData; quali
         levels: (mat === 'glow' && LOW[shape]
           ? // lamps are small and self-lit: the low-detail shape reads the same at any distance
             [{ geometry: LOW[shape]!, material: mats[mat], maxDist: (small ? 240 : 1100) * far, groundScale: small ? 0.4 : size === 't' ? 0.85 : 0.5 }]
+          : mat === 'lamp'
+          ? // indoor lights (chandeliers, lanterns) are seen close up: smooth near, simple far, no shadows
+            [
+              { geometry: LAMP[shape] ?? SHAPES[shape], material: mats[mat], maxDist: 150 * far, groundScale: 1 },
+              { geometry: LOW[shape] ?? LAMP[shape] ?? SHAPES[shape], material: mats[mat], maxDist: 240 * far, groundScale: 0.4 },
+            ]
           : LOW[shape]
           ? [
               // full detail close by, the low-detail stand-in beyond

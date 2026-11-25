@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Collider, Layout } from './layout';
+import { type Collider, type Layout, palaceSurface, palaceTerraceColliders } from './layout';
 import type { TerrainData } from './terrain';
 
 /**
@@ -283,6 +283,18 @@ function corridorHighways(layout: Layout, t: TerrainData): HighwayData {
     }
   }
   const sampler = deckSampler(roads);
+  // the palace on the palm: its terrace, staircase and throne dais are walkable like decks
+  if (f.palm) {
+    const deck = sampler.surface;
+    const palace = palaceSurface(f.palm, y0);
+    colliders.push(...palaceTerraceColliders(f.palm, y0));
+    const surface = (x: number, z: number, y: number) => {
+      const a = deck(x, z, y);
+      const b = palace(x, z, y);
+      return a === null ? b : b === null ? a : Math.max(a, b);
+    };
+    return { roads, pillars, colliders, surface, blocked: sampler.blocked };
+  }
   return { roads, pillars, colliders, surface: sampler.surface, blocked: sampler.blocked };
 }
 

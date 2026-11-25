@@ -394,22 +394,132 @@ export function desertFlats(s: Settlement): { x0: number; x1: number; z0: number
  * The palace's walls: four wings round its courtyard with the great portal open at the front, the
  * corner towers, the entrance towers and the sea pavilion. Gardens and terraces are open ground.
  */
+/**
+ * The palace's shared measurements (local frame: centred on the palace, +z towards the land). The
+ * drawing (palace.ts), the colliders and the walk surface all read these, so doors line up.
+ */
+export const PALACE = {
+  /** Terrace height: the palace floor stands this far above the ground. */
+  T: 3,
+  /** Wing height. */
+  H: 22,
+  wing: 18,
+  /** The great hall: side of its square base, wall thickness, half width and height of its door. */
+  hallB: 34,
+  wall: 1.5,
+  hallDoor: 2.6,
+  hallDoorH: 9,
+  /** Ground-floor galleries in the side wings: ceiling height and half width of their doors. */
+  galleryH: 6.6,
+  galleryDoor: 1.6,
+  /** The throne dais: three tiers against the back wall of the hall. */
+  daisW: 14,
+  daisD: 9,
+  daisStep: 0.35,
+};
+
+/** Centre of the great hall along local z. */
+export const palaceHallZ = (d: number) => -d / 2 + PALACE.wing + 16;
+
+/**
+ * Local z of the doors from the courtyard arcade into the gallery of side wing `s` (every other
+ * bay of the courtyard facade, which runs the other way round on the -x side).
+ */
+export function palaceGalleryDoors(d: number, s: number): number[] {
+  const n = Math.floor((d - 2 * PALACE.wing) / 6);
+  const a0 = -((n - 1) * 6) / 2;
+  const out: number[] = [];
+  for (let k = 0; k < n; k += 2) out.push(s > 0 ? a0 + k * 6 : -(a0 + k * 6));
+  return out;
+}
+
 export function palaceColliders(p: PalmPlan): Collider[] {
   const out: Collider[] = [];
   const { x, z, w, d } = p.palace;
-  const wing = 18;
+  const { wing, wall, hallB: B, hallDoor } = PALACE;
   const box = (cx: number, cz: number, hw: number, hd: number) => out.push({ type: 'box', x: cx, z: cz, hw, hd });
-  // back and side wings, and the front wing either side of the portal
+  const post = (cx: number, cz: number, r: number) => out.push({ type: 'circle', x: cx, z: cz, hw: r, hd: 0 });
+  // the back wing, and the front wing either side of the portal: solid
   box(x, z - d / 2 + wing / 2, w / 2, wing / 2);
-  box(x - w / 2 + wing / 2, z, wing / 2, d / 2);
-  box(x + w / 2 - wing / 2, z, wing / 2, d / 2);
   for (const s of [-1, 1]) box(x + s * (w / 4 + 4), z + d / 2 - wing / 2, w / 4 - 4, wing / 2);
-  // the great hall rising from the back of the courtyard
-  out.push({ type: 'circle', x, z: z - d / 2 + wing + 16, hw: 17, hd: 0 });
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) out.push({ type: 'circle', x: x + sx * (w / 2 + 2), z: z + sz * (d / 2 + 2), hw: 7, hd: 0 });
-  for (const s of [-1, 1]) out.push({ type: 'circle', x: x + s * 16, z: z + d / 2 + 3, hw: 5, hd: 0 });
-  out.push({ type: 'circle', x: p.hotel.x, z: p.hotel.z, hw: 16, hd: 0 });
+  // the side wings: an outer wall, and a courtyard wall with doors into the gallery between them
+  const g0 = -d / 2 + wing;
+  const g1 = d / 2 - wing;
+  for (const s of [-1, 1]) {
+    box(x + s * (w / 2 - wall / 2), z, wall / 2, d / 2);
+    const ix = x + s * (w / 2 - wing + wall / 2);
+    const gaps = palaceGalleryDoors(d, s).sort((a, b) => a - b);
+    let from = g0;
+    for (const dz of [...gaps, Infinity]) {
+      const to = dz === Infinity ? g1 : dz - PALACE.galleryDoor;
+      if (to > from) box(ix, z + (from + to) / 2, wall / 2, (to - from) / 2);
+      from = dz + PALACE.galleryDoor;
+    }
+    // two rows of columns down the gallery
+    for (let b = g0 + 6; b < g1 - 1; b += 6) for (const o of [wing / 2 - 3.5, wing / 2 + 3.5]) post(x + s * (w / 2 - o), z + b, 0.55);
+  }
+  // the great hall: four walls, the courtyard one with a tall door, a ring of columns, the throne
+  const hz = z + palaceHallZ(d);
+  box(x, hz - B / 2 + wall / 2, B / 2, wall / 2);
+  for (const s of [-1, 1]) {
+    box(x + s * (B / 2 - wall / 2), hz, wall / 2, B / 2);
+    box(x + s * (hallDoor + (B / 2 - hallDoor) / 2), hz + B / 2 - wall / 2, (B / 2 - hallDoor) / 2, wall / 2);
+  }
+  for (let q = 0; q < 16; q++) {
+    const a = ((q + 0.5) / 16) * Math.PI * 2;
+    post(x + Math.sin(a) * 11, hz + Math.cos(a) * 11, 0.75);
+  }
+  post(x, hz - B / 2 + wall + 2.6, 1.3);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) post(x + sx * (w / 2 + 2), z + sz * (d / 2 + 2), 7);
+  for (const s of [-1, 1]) post(x + s * 16, z + d / 2 + 3, 5);
+  post(p.hotel.x, p.hotel.z, 16);
   return out;
+}
+
+/**
+ * Where you can stand on the palace: the terrace (and everything on it) at its height, the grand
+ * staircase climbing to it, and the tiers of the throne dais. Like a highway deck: `y` is the
+ * walker's feet, and only surfaces within a step of them count. `y0` is the ground the palace
+ * stands on.
+ */
+export function palaceSurface(p: PalmPlan, y0: number): (x: number, z: number, y: number) => number | null {
+  const { x: px, z: pz, w, d } = p.palace;
+  const { T, daisW, daisD, daisStep, hallB: B, wall } = PALACE;
+  const tw = w + 40;
+  const td = d + 50;
+  const back = palaceHallZ(d) - B / 2 + wall;
+  return (x, z, y) => {
+    const lx = x - px;
+    const lz = z - pz;
+    let h: number | null = null;
+    if (Math.abs(lx) <= tw / 2 && Math.abs(lz) <= td / 2) {
+      h = T;
+      for (let i = 2; i >= 0; i--)
+        if (Math.abs(lx) < (daisW - 2.4 * i) / 2 && lz > back && lz < back + daisD - 1.6 * i) {
+          h = T + daisStep * (i + 1);
+          break;
+        }
+    } else if (Math.abs(lx) < 17 && lz > td / 2 && lz < td / 2 + 6.3) h = (T * (td / 2 + 6.3 - lz)) / 6.3;
+    if (h === null || y0 + h > y + 1.1) return null;
+    return y0 + h;
+  };
+}
+
+/** Low walls round the edge of the terrace (up to its top), open at the grand staircase. */
+export function palaceTerraceColliders(p: PalmPlan, y0: number): Collider[] {
+  const { x, z, w, d } = p.palace;
+  const tw = w + 40;
+  const td = d + 50;
+  const top = y0 + PALACE.T;
+  const e = 0.6;
+  return [
+    { type: 'box', x, z: z - td / 2 + e, hw: tw / 2, hd: e, top },
+    { type: 'box', x: x - tw / 2 + e, z, hw: e, hd: td / 2, top },
+    { type: 'box', x: x + tw / 2 - e, z, hw: e, hd: td / 2, top },
+    ...[-1, 1].map((s) => ({ type: 'box' as const, x: x + s * (17 + (tw / 2 - 17) / 2), z: z + td / 2 - e, hw: (tw / 2 - 17) / 2, hd: e, top })),
+    // the plinths with urns flanking the staircase
+    ...[-1, 1].map((s) => ({ type: 'box' as const, x: x + s * 18.5, z: z + td / 2 + 3, hw: 1.5, hd: 3.25, top: top + 0.9 })),
+  ];
 }
 
 export function settlementRadius(s: Settlement): number {

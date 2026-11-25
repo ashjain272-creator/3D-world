@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { AIRCRAFT, airportRect, coastLine, desertFlats, generateLayout, mallGeometry, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
+import { AIRCRAFT, PALACE, airportRect, palaceGalleryDoors, palaceHallZ, coastLine, desertFlats, generateLayout, mallGeometry, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
 import { generateTerrain, type TerrainData } from '../src/explorer/terrain';
 import { generateVegetation } from '../src/explorer/vegetation';
 import { deckSampler, generateHighways, sampleRoad } from '../src/explorer/roadNetwork';
@@ -234,6 +234,27 @@ describe('futuristic districts', () => {
     const pl = w.planets[s.planetId];
     const t = generateTerrain(pl, s.regionIndex, pl.regions[s.regionIndex].biome, l.radius + 20, coastLine(s), airportRect(s) ? [airportRect(s)!] : undefined, p.land);
     for (const [dx, dz] of [[0, 0], [40, 50], [-40, -50], [0, 110]]) expect(Math.abs(t.height(pal.x + dx, pal.z + dz) - t.flatHeight)).toBeLessThan(0.1);
+    // you climb the grand staircase onto the terrace and stand on it, and on the tiers of the dais;
+    // from the ground beside it the terrace is a wall, and from the terrace its edge holds you
+    const hw = generateHighways(l, t)!;
+    const hz = pal.z + palaceHallZ(pal.d);
+    const B = PALACE.hallB;
+    const y0 = t.flatHeight;
+    let y = y0;
+    for (let z = pal.z + pal.d / 2 + 25 + 8; z > pal.z; z -= 0.25) {
+      const g = Math.max(hw.surface(pal.x, z, y) ?? -Infinity, t.height(pal.x, z));
+      expect(g - y, `step too high at ${z.toFixed(2)}`).toBeLessThan(0.6);
+      expect(y - g, `fell off the stairs at ${z.toFixed(2)}`).toBeLessThan(0.05);
+      y = g;
+    }
+    expect(y).toBeCloseTo(y0 + PALACE.T, 3);
+    expect(hw.surface(pal.x, hz - B / 2 + PALACE.wall + 2.6, y0 + 5)).toBeCloseTo(y0 + PALACE.T + 3 * PALACE.daisStep, 3);
+    expect(hw.surface(pal.x + pal.w / 2 + 10, pal.z, y0)).toBeNull();
+    expect(hw.surface(pal.x + pal.w / 2 + 25, pal.z, y0 + 3)).toBeNull();
+    const wallAt = (x: number, z: number, fy: number) => hw.colliders.some((c) => c.type === 'box' && (c.top === undefined || fy < c.top - 0.3) && Math.abs(c.x - x) < c.hw + 0.3 && Math.abs(c.z - z) < c.hd + 0.3);
+    expect(wallAt(pal.x + pal.w / 2 + 19.5, pal.z, y0)).toBe(true);
+    expect(wallAt(pal.x + pal.w / 2 + 19.5, pal.z, y0 + PALACE.T)).toBe(false);
+    expect(wallAt(pal.x, pal.z + pal.d / 2 + 25, y0)).toBe(false);
     // the road runs from the coast to the forecourt, and you can walk from there through the portal
     // into the courtyard; the wings and towers are solid
     const hit = (x: number, z: number) => l.colliders.some((c) => (c.type === 'circle' ? Math.hypot(c.x - x, c.z - z) < c.hw + 0.3 : Math.abs(c.x - x) < c.hw + 0.3 && Math.abs(c.z - z) < c.hd + 0.3));
@@ -241,6 +262,20 @@ describe('futuristic districts', () => {
     expect(hit(pal.x + 30, pal.z + pal.d / 2 - 5)).toBe(true);
     expect(hit(pal.x - pal.w / 2 + 5, pal.z)).toBe(true);
     expect(hit(pal.x, pal.z - pal.d / 2 + 5)).toBe(true);
+    // walk in: from the courtyard through the tall door into the throne room, up to the dais
+    for (let z = pal.z - 4; z > hz - B / 2 + PALACE.wall + PALACE.daisD + 0.8; z -= 0.5) expect(hit(pal.x, z), `hall blocked at ${z.toFixed(1)}`).toBe(false);
+    expect(hit(pal.x + PALACE.hallDoor + 2, hz + B / 2)).toBe(true);
+    expect(hit(pal.x + B / 2, hz)).toBe(true);
+    // ... and from the courtyard through an arcade door into each side gallery and along it
+    for (const s of [-1, 1]) {
+      const gx = pal.x + s * (pal.w / 2 - PALACE.wing / 2);
+      const dz = pal.z + palaceGalleryDoors(pal.d, s)[2];
+      for (let x = pal.x + s * 20; s * (gx - x) > 0; x += s * 0.5) expect(hit(x, dz), `gallery door blocked at ${x.toFixed(1)}`).toBe(false);
+      for (let z = pal.z - pal.d / 2 + PALACE.wing + 1.5; z < pal.z + pal.d / 2 - PALACE.wing - 1.5; z += 0.5) expect(hit(gx, z), `gallery blocked at ${z.toFixed(1)}`).toBe(false);
+      // between the doors the courtyard wall holds, and the outer wall holds everywhere
+      expect(hit(pal.x + s * (pal.w / 2 - PALACE.wing + 0.7), dz + 4)).toBe(true);
+      expect(hit(pal.x + s * (pal.w / 2 - 0.7), dz)).toBe(true);
+    }
     // the palace is drawn with real detail: thousands of pieces round its centre, golden domes
     const d = generateDistricts(l, 0, true);
     const near = d.pieces.filter((q) => Math.abs(q.x - pal.x) < pal.w / 2 + 25 && Math.abs(q.z - pal.z) < pal.d / 2 + 30);

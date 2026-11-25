@@ -13,8 +13,8 @@ import { desertEdge } from './desert';
  * mall, a mosque and a temple, and palm-lined boulevards. Everything is built
  * from a handful of instanced shapes so a whole district costs a few draw calls.
  */
-export type DShape = 'box' | 'cyl' | 'cone' | 'hemi' | 'sphere' | 'gable' | 'arch' | 'palmTrunk' | 'fronds' | 'oct' | 'hip' | 'ring' | 'dArc' | 'threeArc' | 'beamCone' | 'torus' | 'halfTorus' | 'rod' | 'wingR' | 'wingL' | 'fin';
-export type DMat = 'plaster' | 'stone' | 'roof' | 'glass' | 'water' | 'gold' | 'metal' | 'leaf' | 'bark' | 'glow' | 'wood' | 'lawn' | 'cloth' | 'dark' | 'marble' | 'crowd' | 'pitch' | 'court' | 'net' | 'skylight' | 'paint' | 'beam' | 'nightBeam' | 'atrium' | 'lit';
+export type DShape = 'box' | 'cyl' | 'cone' | 'hemi' | 'sphere' | 'gable' | 'arch' | 'palmTrunk' | 'fronds' | 'oct' | 'hip' | 'ring' | 'dArc' | 'threeArc' | 'beamCone' | 'torus' | 'halfTorus' | 'rod' | 'wingR' | 'wingL' | 'fin' | 'octTube';
+export type DMat = 'plaster' | 'stone' | 'roof' | 'glass' | 'water' | 'gold' | 'metal' | 'leaf' | 'bark' | 'glow' | 'wood' | 'lawn' | 'cloth' | 'dark' | 'marble' | 'crowd' | 'pitch' | 'court' | 'net' | 'skylight' | 'paint' | 'beam' | 'nightBeam' | 'atrium' | 'lit' | 'ceiling' | 'lamp' | 'hallMarble' | 'rug';
 
 export interface DPiece {
   shape: DShape;

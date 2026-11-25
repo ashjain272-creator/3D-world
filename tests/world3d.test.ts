@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { AIRCRAFT, PALACE, airportRect, palaceGalleryDoors, palaceHallZ, coastLine, desertFlats, generateLayout, mallGeometry, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
+import { AIRCRAFT, PALACE, airportRect, estateSites, palaceGalleryDoors, palaceHallZ, coastLine, desertFlats, generateLayout, mallGeometry, groundWildLayout, lineOfSight, settlementRadius, wildLayout, type Building, type Layout } from '../src/explorer/layout';
 import { generateTerrain, type TerrainData } from '../src/explorer/terrain';
 import { generateVegetation } from '../src/explorer/vegetation';
 import { deckSampler, generateHighways, sampleRoad } from '../src/explorer/roadNetwork';
@@ -199,6 +199,48 @@ describe('futuristic districts', () => {
         // every roundabout sits on a street crossing
         for (const [x, z] of l.features!.roundabouts) expect(l.streets.filter((st) => (st.a[0] === x && st.a[1] === z) || (st.b[0] === x && st.b[1] === z)).length).toBe(4);
       }
+    }
+  });
+
+  it('sets the model estates beside the city on level ground, clear of everything else', async () => {
+    const { buildEstates } = await import('../src/explorer/modelEstates');
+    for (const s of cities.filter((c) => c.kind === 'capital' || c.kind === 'city')) {
+      const l = generateLayout(s);
+      const sites = estateSites(s);
+      expect(sites.map((e) => e.kind)).toEqual(['residences', 'downtown']);
+      const ap = airportRect(s);
+      const overlaps = (a: { x0: number; x1: number; z0: number; z1: number }, b: { x0: number; x1: number; z0: number; z1: number }) => a.x0 < b.x1 && a.x1 > b.x0 && a.z0 < b.z1 && a.z1 > b.z0;
+      for (const e of sites) {
+        // nothing of the city stands on an estate, and estates stay off the airport
+        for (const b of l.buildings) expect(b.x > e.rect.x0 - 10 && b.x < e.rect.x1 + 10 && b.z > e.rect.z0 - 10 && b.z < e.rect.z1 + 10, `${b.kind} on ${e.kind}`).toBe(false);
+        for (const st of l.streets) for (const p of [st.a, st.b]) expect(p[0] > e.rect.x0 && p[0] < e.rect.x1 && p[1] > e.rect.z0 && p[1] < e.rect.z1).toBe(false);
+        if (ap) expect(overlaps(e.rect, ap)).toBe(false);
+        expect(e.rect.z0).toBeGreaterThan(l.features!.shoreZ + 50);
+      }
+      expect(overlaps(sites[0].rect, sites[1].rect)).toBe(false);
+      // the ground is level under both, inside the walkable map
+      const pl = w.planets[s.planetId];
+      const flats = [...(ap ? [ap] : []), ...sites.map((e) => e.rect)];
+      const t = generateTerrain(pl, s.regionIndex, pl.regions[s.regionIndex].biome, l.radius + 20, coastLine(s), flats, l.features?.palm?.land);
+      for (const e of sites) {
+        for (const [fx, fz] of [[0.5, 0.5], [0.1, 0.1], [0.9, 0.9], [0.1, 0.9], [0.9, 0.1]]) {
+          const x = e.rect.x0 + (e.rect.x1 - e.rect.x0) * fx;
+          const z = e.rect.z0 + (e.rect.z1 - e.rect.z0) * fz;
+          expect(Math.abs(t.height(x, z) - t.flatHeight)).toBeLessThan(0.1);
+        }
+        expect(Math.max(Math.abs(e.rect.x0), Math.abs(e.rect.x1), Math.abs(e.rect.z1))).toBeLessThan(t.size * 0.47);
+      }
+      // the terrain grid keeps its triangle budget however far the map grows
+      expect(t.res).toBeLessThanOrEqual(352);
+      // the estates are built as in the demo, and their buildings are solid
+      const est = buildEstates(s)!;
+      expect(est.estates[0].kit.count).toBeGreaterThan(20000);
+      expect(est.estates[1].kit.count).toBeGreaterThan(50000);
+      expect(est.colliders.length).toBeGreaterThan(40);
+      const hit = (x: number, z: number) => est.colliders.some((c) => (c.type === 'circle' ? Math.hypot(c.x - x, c.z - z) < c.hw : Math.abs(c.x - x) < c.hw && Math.abs(c.z - z) < c.hd));
+      expect(hit(sites[1].x, sites[1].z - 60)).toBe(true); // the supertall
+      expect(hit(sites[0].x - 2, sites[0].z - 64)).toBe(true); // a tower
+      expect(hit(sites[0].x + 4, sites[0].z - 6)).toBe(false); // the pool deck
     }
   });
 

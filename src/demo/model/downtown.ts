@@ -46,14 +46,20 @@ export function buildDowntown(k: Kit) {
     tree(k, Math.sin(a) * d, 0.3, -60 + Math.cos(a) * d, 6 + r() * 3, r);
   }
   supertall(k, 0, -60, r);
+  k.solidRound(0, -60, 16);
+  for (const a of [Math.PI / 2, Math.PI / 2 + (2 * Math.PI) / 3, Math.PI / 2 + (4 * Math.PI) / 3])
+    for (const f of [0.35, 0.7, 1]) k.solidRound(Math.cos(a) * 44 * f, -60 - Math.sin(a) * 44 * f, 9);
   keep.push({ x: 0, z: -60, w: 240, d: 240 });
   // ── the lake with its fountain, promenades and a boardwalk
   lake(k, r);
   keep.push({ x: 40, z: 110, w: 460, d: 160 });
   // ── the mall beside the lake, and the souk across it
   mall(k, 320, 10, r);
+  k.solid(320, 10, 260, 180);
+  k.solid(330, 10 - 90 - 40, 200, 50);
   keep.push({ x: 320, z: 10, w: 300, d: 230 });
   souk(k, 40, 215, r);
+  k.solid(40, 215, 230, 34);
   keep.push({ x: 40, z: 215, w: 260, d: 60 });
   // ── glass towers round the core
   const spots: [number, number, number][] = [
@@ -68,10 +74,12 @@ export function buildDowntown(k: Kit) {
     const w = plan === 'slim' ? 22 : 30 + r() * 10;
     const d = plan === 'slim' ? 22 : 26 + r() * 10;
     glassTower(k, { x, z, w, d, floors, plan, seed: rng(500 + i), twist: i === 4 ? 0.017 : 0, setbacks: i % 3 === 1, glow: i % 2 ? '#7ab8ff' : '#b49bff', crown: (['spire', 'slope', 'helipad', 'crownRing'] as const)[i % 4] });
+    k.solid(x, z, w, d);
     keep.push({ x, z, w: w + 16, d: d + 16 });
   });
   // the tower beside the lake with a curved crown, and a pair of linked towers
   glassTower(k, { x: 190, z: 95, w: 34, d: 28, floors: 72, plan: 'chamfer', seed: rng(900), glow: '#ffd27a', crown: 'slope', setbacks: true });
+  k.solid(190, 95, 34, 28);
   keep.push({ x: 190, z: 95, w: 50, d: 44 });
   // ── old town: sand-coloured courtyard blocks in a street grid, south and west
   oldTown(k, keep, r);
@@ -402,8 +410,13 @@ function oldTown(k: Kit, keep: Rect[], r: () => number) {
       const d = 38 + r() * 6;
       if (!free(gx, gz, w, d)) continue;
       // south and west of the core: old town; elsewhere, smaller glass mid-rises
-      if (gz > 120 || gx < -330) courtyardBlock(k, gx, gz, w, d, 5 + Math.floor(r() * 5), r);
-      else if (r() < 0.7) glassTower(k, { x: gx, z: gz, w: 26, d: 24, floors: 14 + Math.floor(r() * 16), plan: r() < 0.5 ? 'rect' : 'chamfer', seed: rng(Math.round(gx * 3 + gz)), glow: '#7ab8ff', crown: 'crownRing' });
+      if (gz > 120 || gx < -330) {
+        courtyardBlock(k, gx, gz, w, d, 5 + Math.floor(r() * 5), r);
+        k.solid(gx, gz, w, d);
+      } else if (r() < 0.7) {
+        glassTower(k, { x: gx, z: gz, w: 26, d: 24, floors: 14 + Math.floor(r() * 16), plan: r() < 0.5 ? 'rect' : 'chamfer', seed: rng(Math.round(gx * 3 + gz)), glow: '#7ab8ff', crown: 'crownRing' });
+        k.solid(gx, gz, 26, 24);
+      }
       keep.push({ x: gx, z: gz, w, d });
       // the streets along this cell's south and east sides, with lane marks and the odd car
       k.add('box', 'asphalt', gx, 0.21, gz + cell / 2, cell + 9, 0.05, 9, '#3c4046');

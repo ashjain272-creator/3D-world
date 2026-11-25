@@ -8,7 +8,7 @@ import * as THREE from 'three';
 export type Shape = 'box' | 'sphere' | 'cyl' | 'cone' | 'hemi' | 'oct';
 export type Mat = 'white' | 'wall' | 'charcoal' | 'window' | 'railing' | 'glow' | 'leaf' | 'trunk' | 'lawn' | 'paving' | 'asphalt' | 'paint' | 'water' | 'car' | 'carGlass' | 'metal' | 'plinth' | 'figure' | 'court' | 'glass' | 'sand' | 'gold' | 'stone';
 
-const GEOMETRY: Record<Shape, THREE.BufferGeometry> = {
+export const GEOMETRY: Record<Shape, THREE.BufferGeometry> = {
   box: new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0),
   sphere: new THREE.IcosahedronGeometry(0.5, 2),
   cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 10).translate(0, 0.5, 0),
@@ -28,6 +28,16 @@ export class Kit {
   private q = new THREE.Quaternion();
   private e = new THREE.Euler();
   count = 0;
+  /** Footprints of the solid buildings (local x, z), for walk-through checks in the game. */
+  solids: { type: 'box' | 'circle'; x: number; z: number; hw: number; hd: number }[] = [];
+
+  solid(x: number, z: number, w: number, d: number) {
+    this.solids.push({ type: 'box', x, z, hw: w / 2, hd: d / 2 });
+  }
+
+  solidRound(x: number, z: number, r: number) {
+    this.solids.push({ type: 'circle', x, z, hw: r, hd: 0 });
+  }
 
   /** Turns are applied yaw, then pitch about x, then roll about z (Euler order YXZ). */
   add(shape: Shape, mat: Mat, x: number, y: number, z: number, sx: number, sy: number, sz: number, color: THREE.ColorRepresentation = '#ffffff', rotY = 0, rotX = 0, rotZ = 0) {
@@ -41,6 +51,11 @@ export class Kit {
     const m = new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), this.q, new THREE.Vector3(sx, sy, sz));
     g.items.push({ m, c: new THREE.Color(color) });
     this.count++;
+  }
+
+  /** The pieces grouped by shape and material, for callers that draw them their own way. */
+  groupList() {
+    return [...this.groups.values()];
   }
 
   build(mats: Record<Mat, THREE.Material>, shadows: (m: Mat) => { cast: boolean; receive: boolean }): THREE.Group {

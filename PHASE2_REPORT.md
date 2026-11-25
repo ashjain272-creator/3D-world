@@ -1074,3 +1074,39 @@ A standalone page, `model-demo.html` (code in `src/demo/model/`), tries out the 
   - an elevated metro with a train and a station under a gold shell.
 
 Screenshots: `docs/screenshots/model-demo/`.
+
+## The model estates in the city
+
+The two scenes from the scale-model demo are now in the game beside the futuristic capital and cities. They're built exactly as in the demo, with the same builders, shapes and materials. Nothing in the existing city was changed.
+
+**Placement**
+- **Residences block:** stands west of the city.
+- **Downtown ensemble:** stands inland beyond the airport, or beyond the city where there is no airport.
+
+**Supporting changes**
+- **Ground:** each estate has levelled ground (`estateSites` in `layout.ts`, added to the terrain's flats). The map grows to take Downtown.
+- **Terrain:** the grid keeps its triangle budget, so the larger capital map has coarser ground detail beyond the flat areas.
+- **Collisions:** the buildings block movement. The builders now record their footprints in the kit (`Kit.solid`), and `modelEstates.ts` turns those into colliders.
+- **Drawing:** the estates are drawn in tiles that follow the city's height-aware draw distance (`ModelEstates.tsx`). Tall pieces keep the skyline from the street, and everything draws from high up.
+- **Night:** windows, pools and lamps follow the game's clock instead of the demo's dusk/day switch.
+- **Shared materials:** the demo and the game take them from `src/demo/model/materials.ts`.
+
+**Tests:** a new test checks, for each capital and city:
+- no city building or street stands on an estate, and the estates stay off the airport, the shore and each other;
+- the ground is level under both estates;
+- the estates lie inside the walkable map, and the terrain grid stays within budget;
+- the estates are built in full (more than 20,000 and 50,000 pieces);
+- the supertall and a tower are solid, and the pool deck is open.
+
+**Cost** (triangles, before → now):
+
+| View | Before | Now | Change |
+|---|---|---|---|
+| Street, looking inland towards Downtown | 1.50M | 1.86M | +24% |
+| Walking the spine | 1.54M | 1.60M | +4% |
+| City from the air | 1.64M | 1.85M | +13% |
+| Palace aerial | 1.59M | 1.73M | +9% |
+
+The extra triangles are the estates' towers in view.
+
+Screenshots: `docs/screenshots/estates/`.

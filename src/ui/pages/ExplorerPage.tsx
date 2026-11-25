@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { buildEstates } from '../../explorer/modelEstates';
 import { ExplorerScene } from '../../explorer/ExplorerScene';
 import { Minimap } from '../../explorer/Minimap';
 import { TOPICS, respond, type Topic } from '../../explorer/dialogue';
 import { playerState, sceneDebug, useExplorer } from '../../explorer/explorerStore';
-import { airportRect, buildColliderGrid, coastLine, desertFlats, generateLayout, settlementRadius, wildLayout, groundWildLayout } from '../../explorer/layout';
+import { airportRect, buildColliderGrid, estateSites, coastLine, desertFlats, generateLayout, settlementRadius, wildLayout, groundWildLayout } from '../../explorer/layout';
 import { generateVegetation } from '../../explorer/vegetation';
 import { generateCloudCity } from '../../explorer/cloudCity';
 import { generateHighways } from '../../explorer/roadNetwork';
@@ -52,7 +53,7 @@ function resolveTarget(parts: string[]): Target | null {
 /** Ground the terrain levels for a settlement: its airfield, and in a desert its camp and camel track. */
 function flatsFor(s: Settlement | undefined, biome: Biome) {
   if (!s) return undefined;
-  const out = [...(airportRect(s) ? [airportRect(s)!] : []), ...(biome === 'desert' || biome === 'wasteland' ? desertFlats(s) : [])];
+  const out = [...(airportRect(s) ? [airportRect(s)!] : []), ...(biome === 'desert' || biome === 'wasteland' ? desertFlats(s) : []), ...estateSites(s).map((e) => ({ ...e.rect, ground: 'sand' as const }))];
   return out.length ? out : undefined;
 }
 
@@ -115,7 +116,9 @@ function Explorer({ target }: { target: Target }) {
   // buildings, landmarks, tree trunks and large rocks all block movement
   const highways = useMemo(() => generateHighways(layout, terrain), [layout, terrain]);
   sceneDebug.roads = highways ? highways.roads.map((r) => ({ kind: r.kind, pts: r.pts.filter((_, i) => i % 4 === 0).map((p) => [p.x, p.y, p.z]) })) : [];
-  const colliders = useMemo(() => buildColliderGrid([...layout.colliders, ...vegetation.colliders, ...(highways?.colliders ?? [])]), [layout, vegetation, highways]);
+  // the model estates beside a futuristic city (from the scale-model demo)
+  const estates = useMemo(() => (cityLayout ? buildEstates(settlement) : null), [cityLayout, settlement]);
+  const colliders = useMemo(() => buildColliderGrid([...layout.colliders, ...vegetation.colliders, ...(highways?.colliders ?? []), ...(estates?.colliders ?? [])]), [layout, vegetation, highways, estates]);
   const [ready, setReady] = useState(false);
   const [picker, setPicker] = useState(false);
   const toast = useApp((s) => s.toast);
@@ -198,7 +201,7 @@ function Explorer({ target }: { target: Target }) {
 
   return (
     <div className="canvas-wrap" data-testid="explorer-page">
-      <ExplorerScene planet={planet} system={system} settlement={settlement} terrain={terrain} layout={layout} vegetation={vegetation} colliders={colliders} civColor={civColor} highways={highways} cloud={cloudCity ?? undefined} locationKey={target.key} onInteract={interact} onPick={pick} onReady={() => setReady(true)} />
+      <ExplorerScene planet={planet} system={system} settlement={settlement} terrain={terrain} layout={layout} vegetation={vegetation} colliders={colliders} civColor={civColor} highways={highways} estates={estates} cloud={cloudCity ?? undefined} locationKey={target.key} onInteract={interact} onPick={pick} onReady={() => setReady(true)} />
       <div className="loading-veil" style={{ opacity: ready ? 0 : 1, pointerEvents: 'none' }}>
         <div style={{ textAlign: 'center' }}>
           <div className="eyebrow">Descending to</div>

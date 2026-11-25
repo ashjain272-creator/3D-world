@@ -39,9 +39,12 @@ export function buildSite(k: Kit, outside?: Kit) {
   ];
   for (const t of towers) {
     tower(k, { ...t, seed: rng(t.floors * 13 + t.x) });
+    k.solid(t.x, t.z, t.w, t.d0);
+    k.solid(t.x, t.z, t.w0, t.d);
     keep.push({ x: t.x, z: t.z, w: t.w + 4, d: t.d + 4 });
   }
   podium(k, 0, -29, 150, 10, r);
+  k.solid(0, -29, 150, 10);
   keep.push({ x: 0, z: -29, w: 152, d: 12 });
   // the pool deck: paving, a glowing pool with white coping, loungers, umbrellas, a cabana
   const px = 4;
@@ -98,6 +101,7 @@ export function buildSite(k: Kit, outside?: Kit) {
     k.add('box', 'glow', -128, base + 3.4, ez + s * 7, 0.9, 0.3, 0.9, '#fff0d0');
   }
   k.add('box', 'white', -118, base, ez - 11, 6, 3.2, 4, WHITE);
+  k.solid(-118, ez - 11, 6, 4);
   k.add('box', 'window', -118, base + 0.4, ez - 11, 6.2, 2.2, 3, '#ffe2ae');
   k.add('cyl', 'white', -114, base, ez, 9, 0.6, 9, WHITE);
   k.add('cyl', 'water', -114, base + 0.3, ez, 8, 0.35, 8, '#43c3e6');
@@ -120,6 +124,7 @@ export function buildSite(k: Kit, outside?: Kit) {
   ];
   for (const m of mids) {
     midrise(k, { ...m, seed: rng(m.x * 7 + m.z) });
+    k.solid(m.x, m.z, m.w, m.d + 3);
     keep.push({ x: m.x, z: m.z, w: m.w + 6, d: m.d + 8 });
   }
   // paths: a loop round the pool deck, an entrance spine, walks between the blocks; bollard lights

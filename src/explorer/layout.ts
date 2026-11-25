@@ -522,6 +522,32 @@ export function palaceTerraceColliders(p: PalmPlan, y0: number): Collider[] {
   ];
 }
 
+/**
+ * The two model estates added beside a futuristic capital or city (built from the scale-model
+ * demo, unchanged): the Residences block west of the city, and the Downtown ensemble inland
+ * beyond the airport (or beyond the city where there is none). Each has its centre and the
+ * levelled ground it stands on.
+ */
+export interface EstateSite {
+  kind: 'residences' | 'downtown';
+  x: number;
+  z: number;
+  rect: { x0: number; x1: number; z0: number; z1: number };
+}
+
+export function estateSites(s: Settlement): EstateSite[] {
+  if (s.style !== 'futuristic' || (s.kind !== 'capital' && s.kind !== 'city')) return [];
+  const R = settlementRadius(s);
+  const rx = -(R + 420);
+  const rz = 30;
+  const zStart = (airportRect(s)?.z1 ?? R + 20) + 70;
+  const dz = zStart + 570;
+  return [
+    { kind: 'residences', x: rx, z: rz, rect: { x0: rx - 190, x1: rx + 180, z0: rz - 145, z1: rz + 170 } },
+    { kind: 'downtown', x: 0, z: dz, rect: { x0: -695, x1: 695, z0: dz - 575, z1: dz + 575 } },
+  ];
+}
+
 export function settlementRadius(s: Settlement): number {
   // futuristic cities are laid out in districts (downtown, villa estates, souk, mixed), which need room
   if (s.style === 'futuristic') return s.kind === 'capital' ? 520 : s.kind === 'city' ? 380 : s.kind === 'town' ? 150 : 95;

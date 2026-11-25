@@ -1,4 +1,6 @@
 import { Canvas } from '@react-three/fiber';
+import { ModelEstates } from './ModelEstates';
+import type { Estates } from './modelEstates';
 import { Suspense } from 'react';
 import * as THREE from 'three';
 import type { Planet, Settlement, StarSystem } from '../sim/types';
@@ -36,6 +38,8 @@ interface Props {
   cloud?: CloudCity;
   /** Elevated multi-level road network (futuristic cities). */
   highways?: HighwayData | null;
+  /** The model estates beside a futuristic city. */
+  estates?: Estates | null;
   locationKey: string;
   onInteract: () => void;
   onPick: (id: string) => void;
@@ -74,6 +78,7 @@ export function ExplorerScene(p: Props) {
         )}
         {p.highways && <Highways data={p.highways} quality={quality} civColor={p.civColor} />}
         <City layout={p.layout} t={p.terrain} quality={quality} civColor={p.civColor} />
+        {p.estates && <ModelEstates data={p.estates} y0={p.terrain.flatHeight} quality={quality} />}
         <DrawDistance groundY={p.terrain.flatHeight} />
         {p.settlement && <Inhabitants settlementId={p.settlement.id} layout={p.layout} t={p.terrain} onPick={p.onPick} />}
         {(p.settlement || p.cloud) && <Crowd layout={p.layout} t={p.terrain} population={p.settlement?.population ?? 3000} quality={quality} planetId={p.planet.id} />}

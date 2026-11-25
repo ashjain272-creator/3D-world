@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scale model demo</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #111; font-family: system-ui, sans-serif; }
+      canvas { display: block; width: 100%; height: 100%; }
+      #ui { position: fixed; left: 16px; top: 16px; display: flex; flex-direction: column; gap: 6px; background: rgba(12, 14, 18, 0.72); padding: 10px 12px; border-radius: 10px; color: #ddd; font-size: 12px; backdrop-filter: blur(6px); }
+      .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+      .row span { width: 96px; color: #9aa3ad; }
+      button { background: #22262d; color: #ddd; border: 1px solid #3a404a; border-radius: 6px; padding: 4px 9px; font-size: 12px; cursor: pointer; }
+      button.on { background: #e8d9b8; color: #111; border-color: #e8d9b8; }
+      #info { position: fixed; right: 16px; bottom: 12px; color: #9aa3ad; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="ui"></div>
+    <div id="info"></div>
+    <script type="module" src="/src/demo/model/main.ts"></script>
+  </body>
+</html>

@@ -7,6 +7,8 @@ export default defineConfig({
     target: 'es2022',
     chunkSizeWarningLimit: 1600,
     rollupOptions: {
+      // the game, and the standalone scale-model style demo
+      input: { main: 'index.html', modelDemo: 'model-demo.html' },
       output: {
         manualChunks: {
           three: ['three'],

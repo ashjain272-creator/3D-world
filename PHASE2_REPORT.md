@@ -1015,3 +1015,27 @@ Draw calls rise from 268 to 334 at the courtyard and from 266 to 305 in the hall
 - the terrace edge as a wall from the ground but not from the terrace top, with the staircase open.
 
 Screenshots: `docs/screenshots/palace/` (pal-halldoor, pal-hall, pal-domein, pal-domeup, pal-throne, pal-gallery, pal-detail, pal-towerd, pal-nightdome, pal-nighthall, pal-nightgal).
+
+## Demo (not part of the game): scale-model style
+
+A standalone page, `model-demo.html` (code in `src/demo/model/`), tries out the look of a developer's sales model before anything in the game changes. Nothing in the game imports it.
+
+- **The block:** four towers behind a podium arcade, a pool deck, seven terraced mid-rise blocks, about 560 trees, paths with bollard lights, and a boulevard with a planted median, street lamps and cars.
+- **Towers:**
+  - a cross-shaped plan;
+  - a crisp white slab edge on every floor;
+  - individually lit windows (86% lit, warm amber tones) in white frames;
+  - glass-railed balconies across the long faces;
+  - full-height white fins and charcoal accent strips;
+  - a double-height lit lobby with a canopy;
+  - a crown with a lit groove, a set-back penthouse and a pergola.
+- **Mid-rise blocks:** projecting terrace slabs with glass railings, set-back lit window walls, charcoal unit frames, solid white ends, and a set-back top floor with a pergola.
+- **Look:**
+  - matte white board;
+  - foam-ball trees;
+  - ambient occlusion;
+  - soft bloom on the lights;
+  - a tilt-shift blur that makes the scene read as a miniature.
+- **Toggles:** view (model, front, aerial, street, pool), light (dusk or day), setting (on a black model table, or in the city with more towers round it), and miniature blur on or off.
+
+Screenshots: `docs/screenshots/model-demo/`.

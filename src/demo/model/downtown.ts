@@ -106,15 +106,15 @@ function supertall(k: Kit, x: number, z: number, r: () => number) {
     const ww = wide * wscale;
     const h = perTier * fh;
     // the core and the three wings of this tier, in silver glass
-    k.add('oct', 'glass', x, y, z, 26 * wscale, h, 26 * wscale, '#8fa4b8', Math.PI / 8);
+    k.add('oct', 'glass', x, y, z, 26 * wscale, h, 26 * wscale, '#56687c', Math.PI / 8);
     wings.forEach((a, i) => {
       const L = len[i];
       if (L < 7) return;
       const cx = x + Math.cos(a) * L * 0.5;
       const cz = z - Math.sin(a) * L * 0.5;
-      k.add('box', 'glass', cx, y, cz, L, h, ww, '#8fa4b8', a);
+      k.add('box', 'glass', cx, y, cz, L, h, ww, '#56687c', a);
       // the rounded wing end
-      k.add('cyl', 'glass', x + Math.cos(a) * L, y, z - Math.sin(a) * L, ww, h, ww, '#8fa4b8');
+      k.add('cyl', 'glass', x + Math.cos(a) * L, y, z - Math.sin(a) * L, ww, h, ww, '#56687c');
       const dx = Math.cos(a);
       const dz = -Math.sin(a);
       const nx = -dz;

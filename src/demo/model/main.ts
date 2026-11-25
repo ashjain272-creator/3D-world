@@ -43,7 +43,7 @@ controls.maxPolarAngle = Math.PI * 0.75;
 // ── materials: matte board, painted accents, lit windows, glass rails, foam trees
 /** Instance colour drives only the glow, so unlit windows read as dark glass. */
 function windowMaterial() {
-  const m = new THREE.MeshStandardMaterial({ color: '#2b3540', roughness: 0.18, metalness: 0.35, emissive: '#ffffff', emissiveIntensity: 2 });
+  const m = new THREE.MeshStandardMaterial({ color: '#2b3540', roughness: 0.45, metalness: 0.2, emissive: '#ffffff', emissiveIntensity: 2 });
   m.onBeforeCompile = (sh) => {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <color_fragment>', '')
